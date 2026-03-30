@@ -132,7 +132,7 @@ struct AccountCreateView: View {
                     Picker("種類", selection: $selectedType) {
                         ForEach(AccountType.allCases, id: \.self) { type in Label(type.rawValue, systemImage: type.icon).tag(type) }
                     }
-                    TextField("現在の金額（初期残高）", text: $initial).keyboardType(.numberPad)
+                    TextField("現在の金額", text: $initial).keyboardType(.numberPad)
                 }
             }
             .navigationTitle("新しいお財布")
@@ -148,8 +148,10 @@ struct AccountCreateView: View {
 // --- お財布編集画面 ---
 struct AccountEditView: View {
     @Binding var account: Account; @Binding var transactions: [Transaction]
+    var allAccounts: [Account] // 引き落とし口座選択用
     @State private var editBalance: String = ""
     @Environment(\.dismiss) var dismiss
+    
     var body: some View {
         Form {
             Section(header: Text("基本設定")) {
@@ -159,7 +161,25 @@ struct AccountEditView: View {
                 }
                 Toggle("ホーム上部に表示", isOn: $account.isVisible)
             }
-            Section(header: Text("残高の調整"), footer: Text("現在の金額を入力すると、「残額調整」としてタイムラインに投稿されます。")) {
+            
+            // クレジットカード専用設定
+            if account.type == .credit {
+                Section(header: Text("クレジットカード設定")) {
+                    Stepper("引き落とし日: \(account.payday ?? 1)日", value: Binding(
+                        get: { account.payday ?? 1 },
+                        set: { account.payday = $0 }
+                    ), in: 1...31)
+                    
+                    Picker("引き落とし口座", selection: $account.withdrawalAccountId) {
+                        Text("指定なし").tag(UUID?.none)
+                        ForEach(allAccounts.filter { $0.type == .bank }) { acc in
+                            Text(acc.name).tag(acc.id as UUID?)
+                        }
+                    }
+                }
+            }
+            
+            Section(header: Text("残高の調整")) {
                 HStack {
                     TextField("新しい残高を入力", text: $editBalance).keyboardType(.numberPad)
                     Button("調整投稿") {
