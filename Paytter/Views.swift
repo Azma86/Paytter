@@ -105,7 +105,6 @@ struct PostView: View {
         var words = inputText.components(separatedBy: .whitespacesAndNewlines)
         if !words.isEmpty {
             words[words.count - 1] = suggestion
-            // 候補選択後は必ず後ろにスペースを1つ入れる
             inputText = words.joined(separator: " ") + " "
         }
         suggestions = []
@@ -116,7 +115,6 @@ struct PostView: View {
             let sel = tv.selectedRange
             let cur = tv.text ?? ""
             
-            // カーソル位置の直前の文字を取得
             let lastChar: Character? = {
                 if sel.location > 0 {
                     let index = cur.index(cur.startIndex, offsetBy: sel.location - 1)
@@ -125,7 +123,6 @@ struct PostView: View {
                 return nil
             }()
             
-            // 直前が「全角スペース」「半角スペース」「改行」「文頭」でない場合のみ半角スペースを付与
             let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
             let ins = prefix + sym
             
@@ -169,6 +166,7 @@ struct TransactionDetailView: View {
         }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() } }
         .sheet(isPresented: $isShowingEditSheet) { 
+            // 編集時にもサジェストとスペース補完が効くようにデータを渡す
             PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, onPost: { isInc in updateThis(newInc: isInc) }, transactions: transactions, accounts: accounts) 
         }
     }
