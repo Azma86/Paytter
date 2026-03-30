@@ -117,7 +117,7 @@ struct TransactionDetailView: View {
     }
 }
 
-// --- お財布追加画面 (お財布登録投稿機能を追加) ---
+// --- お財布追加画面 ---
 struct AccountCreateView: View {
     @Binding var accounts: [Account]
     @Binding var transactions: [Transaction]
@@ -125,7 +125,7 @@ struct AccountCreateView: View {
     @State private var name = ""
     @State private var initial = ""
     @State private var selectedType: AccountType = .wallet
-    @State private var payday: Int = 1 // 1~31, 32が月末
+    @State private var payday: Int = 1
     @State private var withdrawalAccountId: UUID? = nil
     
     var bankAccounts: [Account] { accounts.filter { $0.type == .bank } }
@@ -160,7 +160,6 @@ struct AccountCreateView: View {
                 let val = Int(initial) ?? 0
                 let newAcc = Account(name: name, balance: val, type: selectedType, isVisible: true, payday: selectedType == .credit ? payday : nil, withdrawalAccountId: selectedType == .credit ? withdrawalAccountId : nil)
                 accounts.append(newAcc)
-                // バックアップ復元のために初期金額を「お財布登録」として投稿
                 if val != 0 {
                     transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val)", source: name, isIncome: true))
                 }
