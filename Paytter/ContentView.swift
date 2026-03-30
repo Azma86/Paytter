@@ -6,7 +6,8 @@ struct Transaction: Identifiable, Codable {
     let amount: Int
     let date: Date
     let note: String
-    let source: String // お財布、口座、ポイント
+    let source: String
+    let isIncome: Bool // 収入かどうかのフラグ
     
     var cleanNote: String {
         note.components(separatedBy: .whitespacesAndNewlines)
@@ -20,7 +21,6 @@ struct Transaction: Identifiable, Codable {
     }
 }
 
-// 配列保存用の拡張
 extension Array: RawRepresentable where Element: Codable {
     public init?(rawValue: String) {
         guard let data = rawValue.data(using: .utf8),
@@ -76,7 +76,7 @@ struct ContentView: View {
             }
             .tabItem { Label("ホーム", systemImage: "house") }
 
-            // 【2. お財布（分析）】
+            // 【2. お財布】
             NavigationView {
                 WalletAnalysisView(transactions: transactions)
                     .navigationTitle("お財布")
@@ -97,38 +97,39 @@ struct ContentView: View {
             .tabItem { Label("設定", systemImage: "gearshape") }
         }
         .sheet(isPresented: $isShowingInputSheet) {
-            PostView(inputText: $inputText, isPresented: $isShowingInputSheet) {
-                addTransaction()
+            PostView(inputText: $inputText, isPresented: $isShowingInputSheet) { isIncome in
+                addTransaction(isIncome: isIncome)
             }
         }
     }
 
-    func addTransaction() {
+    func addTransaction(isIncome: Bool) {
         let components = inputText.components(separatedBy: .whitespacesAndNewlines)
         let amount = Int(components.filter { Int($0.replacingOccurrences(of: "¥", with: "")) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0") ?? 0
         
-        // 支出先の判定
         var source = "お財布"
         if inputText.contains("@口座") { source = "口座" }
         else if inputText.contains("@ポイント") { source = "ポイント" }
 
+        // 収入か支出かで計算を分ける
+        let change = isIncome ? amount : -amount
+
         switch source {
-        case "口座": bankBalance -= amount
-        case "ポイント": pointBalance -= amount
-        default: walletBalance -= amount
+        case "口座": bankBalance += change
+        case "ポイント": pointBalance += change
+        default: walletBalance += change
         }
         
-        if inputText.contains("ローソン") { pointBalance += (amount / 100) }
+        if !isIncome && inputText.contains("ローソン") { pointBalance += (amount / 100) }
 
-        transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: source))
+        transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: source, isIncome: isIncome))
         inputText = ""
     }
 }
 
-// --- お財布分析画面 ---
 struct WalletAnalysisView: View {
     let transactions: [Transaction]
-    var monthlyTotal: Int { transactions.reduce(0) { $0 + $1.amount } }
+    var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
 
     var body: some View {
         List {
@@ -147,7 +148,6 @@ struct WalletAnalysisView: View {
     }
 }
 
-// --- ヘッダー ---
 struct BalanceHeaderView: View {
     let wallet: Int; let bank: Int; let point: Int
     var body: some View {
@@ -162,7 +162,6 @@ struct BalanceHeaderView: View {
     }
 }
 
-// --- タイムラインの1行 ---
 struct TwitterRow: View {
     let item: Transaction
     var body: some View {
@@ -173,11 +172,10 @@ struct TwitterRow: View {
                     Text("むつき").font(.subheadline).fontWeight(.bold)
                     Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(.secondary)
                 }
-                Text(item.cleanNote).font(.subheadline)
-                HStack(spacing: 8) {
-                    Text("¥\(item.amount)").fontWeight(.bold)
-                    Text(item.source).font(.system(size: 10)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4)
-                }
+                // 本文（金額やハッシュタグを含む元のテキスト）
+                HighlightedText(text: item.note)
+                    .font(.subheadline)
+                
                 if !item.tags.isEmpty {
                     HStack {
                         ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(.blue) }
@@ -192,17 +190,41 @@ struct TwitterRow: View {
     }
 }
 
-// --- 投稿画面 ---
+// ハッシュタグや金額に色をつける
+struct HighlightedText: View {
+    let text: String
+    var body: some View {
+        let words = text.components(separatedBy: " ")
+        return words.reduce(Text("")) { (result, word) in
+            if word.hasPrefix("#") || word.hasPrefix("@") {
+                return result + Text(word + " ").foregroundColor(.blue).fontWeight(.bold)
+            } else if word.contains("¥") || Int(word) != nil {
+                return result + Text(word + " ").foregroundColor(.primary).fontWeight(.bold)
+            } else {
+                return result + Text(word + " ")
+            }
+        }
+    }
+}
+
 struct PostView: View {
     @Binding var inputText: String
     @Binding var isPresented: Bool
-    var onPost: () -> Void
+    var onPost: (Bool) -> Void // Boolで収入(true)か支出(false)かを渡す
+    
     var body: some View {
         NavigationView {
             VStack {
                 HStack(alignment: .top) {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
-                    TextEditor(text: $inputText).frame(minHeight: 150)
+                    ZStack(alignment: .topLeading) {
+                        if inputText.isEmpty {
+                            Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5)
+                        }
+                        TextEditor(text: $inputText)
+                            .frame(minHeight: 150)
+                            .opacity(inputText.isEmpty ? 0.25 : 1)
+                    }
                 }.padding()
                 Spacer()
             }
@@ -219,8 +241,12 @@ struct PostView: View {
             }
             .navigationBarItems(
                 leading: Button("キャンセル") { isPresented = false },
-                trailing: Button("ツイート") { onPost(); isPresented = false }
-                    .padding(.horizontal, 16).padding(.vertical, 8).background(Color.blue).foregroundColor(.white).cornerRadius(20)
+                trailing: HStack(spacing: 12) {
+                    Button("支出") { onPost(false); isPresented = false }
+                        .padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.8)).foregroundColor(.white).cornerRadius(15)
+                    Button("収入") { onPost(true); isPresented = false }
+                        .padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue).foregroundColor(.white).cornerRadius(15)
+                }
             )
         }
     }
