@@ -15,7 +15,7 @@ struct ContentView: View {
     
     // スワイプ削除用
     @State private var isShowingSwipeDeleteAlert = false
-    @State private var transactionToDelete: Transaction? // IndexSetではなくTransaction本体を保持
+    @State private var transactionToDelete: Transaction?
     
     @State private var isShowingAccountCreator = false
     @State private var isShowingRestoreConfirm = false
@@ -24,6 +24,11 @@ struct ContentView: View {
     @State private var backupDateString = ""
     @State private var isShowingCompletionAlert = false
     @State private var completionMessage = ""
+
+    // 描画バグを防ぐため、反転したリストを計算プロパティで用意
+    var displayedTransactions: [Transaction] {
+        transactions.reversed()
+    }
 
     var body: some View {
         TabView {
@@ -41,11 +46,11 @@ struct ContentView: View {
                         }.padding().background(Color(.systemGray6))
                         Divider()
                         List {
-                            ForEach(transactions.reversed()) { item in
+                            // displayedTransactionsを使用し、IDを明示的に指定
+                            ForEach(displayedTransactions, id: \.id) { item in
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
-                                // onDeleteではなくswipeActionsを使用することで勝手な動きを制御
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
                                         self.transactionToDelete = item
@@ -57,15 +62,14 @@ struct ContentView: View {
                             }
                         }
                         .listStyle(.plain)
-                        // スワイプ削除用の確認アラート
                         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                             Button("キャンセル", role: .cancel) {
                                 self.transactionToDelete = nil
                             }
                             Button("削除", role: .destructive) {
                                 if let target = transactionToDelete {
-                                    // 削除処理をアニメーション付きで実行
-                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                    // 削除時のアニメーションを標準的なものに固定
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                         deleteSpecificTransaction(target)
                                     }
                                 }
@@ -153,7 +157,6 @@ struct ContentView: View {
         transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
     }
     
-    // 修正：特定のTransactionを削除する関数
     func deleteSpecificTransaction(_ target: Transaction) {
         if let index = transactions.firstIndex(where: { $0.id == target.id }) {
             transactions.remove(at: index)
