@@ -152,6 +152,11 @@ struct AccountEditView: View {
     @State private var editBalance: String = ""
     @Environment(\.dismiss) var dismiss
     
+    // iOS 16のエラー回避のため、事前にフィルタリングしたリストを用意
+    var bankAccounts: [Account] {
+        allAccounts.filter { $0.type == .bank }
+    }
+    
     var body: some View {
         Form {
             Section(header: Text("基本設定")) {
@@ -169,10 +174,10 @@ struct AccountEditView: View {
                         set: { account.payday = $0 }
                     ), in: 1...31)
                     
+                    // iOS 16で安定するPickerの記述形式
                     Picker("引き落とし口座", selection: $account.withdrawalAccountId) {
                         Text("指定なし").tag(UUID?.none)
-                        // 銀行口座のみを安全に抽出してループ
-                        ForEach(allAccounts.filter { $0.type == .bank }) { acc in
+                        ForEach(bankAccounts) { acc in
                             Text(acc.name).tag(acc.id as UUID?)
                         }
                     }
