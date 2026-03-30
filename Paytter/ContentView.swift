@@ -44,16 +44,39 @@ struct ContentView: View {
                             }
                         }.padding().background(Color(.systemGray6))
                         Divider()
+                        
                         List {
                             ForEach(displayedTransactions, id: \.id) { item in
-                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
-                                    TwitterRow(item: item).listRowInsets(EdgeInsets())
+                                ZStack {
+                                    // 通常の行コンテンツ
+                                    NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
+                                        TwitterRow(item: item).listRowInsets(EdgeInsets())
+                                    }
+                                    
+                                    // 削除ボタンを居座らせるためのオーバーレイ
+                                    // アラートが表示されている間だけ、赤い「削除」という板を表示し続ける
+                                    if isShowingSwipeDeleteAlert && transactionToDelete?.id == item.id {
+                                        HStack {
+                                            Spacer()
+                                            Rectangle()
+                                                .fill(Color.red)
+                                                .frame(width: 80) // 標準的な削除ボタンの幅
+                                                .overlay(
+                                                    Text("削除")
+                                                        .font(.system(size: 15))
+                                                        .foregroundColor(.white)
+                                                )
+                                        }
+                                        .transition(.move(edge: .trailing))
+                                        .zIndex(1)
+                                    }
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button {
-                                        // 状態だけをセット。この時点ではalertを呼ばず、スワイプ状態を維持させる
-                                        self.transactionToDelete = item
-                                        self.isShowingSwipeDeleteAlert = true
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            self.transactionToDelete = item
+                                            self.isShowingSwipeDeleteAlert = true
+                                        }
                                     } label: {
                                         Label("削除", systemImage: "trash")
                                     }
@@ -68,14 +91,15 @@ struct ContentView: View {
                     }.padding(20).padding(.bottom, 10)
                 }
                 .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
-                // 修正：ListではなくNavigationView全体（ZStack）に対してalertをつけることで、
-                // 削除ボタンが表示されたままのリストの状態を維持する
                 .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                     Button("キャンセル", role: .cancel) {
-                        self.transactionToDelete = nil
+                        withAnimation {
+                            self.transactionToDelete = nil
+                        }
                     }
                     Button("削除", role: .destructive) {
                         if let target = transactionToDelete {
+                            // 削除時は居座りボタンも含めてシュッと消す
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 deleteSpecificTransaction(target)
                             }
