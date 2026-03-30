@@ -7,20 +7,23 @@ struct Transaction: Identifiable, Codable {
     let date: Date
     let note: String
     let source: String
-    let isIncome: Bool // 収入かどうかのフラグ
+    let isIncome: Bool
     
+    // 本文からタグとソースを除去したテキスト
     var cleanNote: String {
         note.components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }
             .joined(separator: " ")
     }
     
+    // タグだけを抽出
     var tags: [String] {
         note.components(separatedBy: .whitespacesAndNewlines)
             .filter { $0.hasPrefix("#") }
     }
 }
 
+// AppStorageで配列を扱うための拡張
 extension Array: RawRepresentable where Element: Codable {
     public init?(rawValue: String) {
         guard let data = rawValue.data(using: .utf8),
@@ -37,7 +40,7 @@ extension Array: RawRepresentable where Element: Codable {
 }
 
 struct ContentView: View {
-    @AppStorage("transactions") var transactions: [Transaction] = []
+    @AppStorage("transactions_v2") var transactions: [Transaction] = []
     @AppStorage("walletBalance") var walletBalance: Int = 0
     @AppStorage("bankBalance") var bankBalance: Int = 0
     @AppStorage("pointBalance") var pointBalance: Int = 0
@@ -105,13 +108,13 @@ struct ContentView: View {
 
     func addTransaction(isIncome: Bool) {
         let components = inputText.components(separatedBy: .whitespacesAndNewlines)
-        let amount = Int(components.filter { Int($0.replacingOccurrences(of: "¥", with: "")) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0") ?? 0
+        let amountText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        let amount = Int(amountText) ?? 0
         
         var source = "お財布"
         if inputText.contains("@口座") { source = "口座" }
         else if inputText.contains("@ポイント") { source = "ポイント" }
 
-        // 収入か支出かで計算を分ける
         let change = isIncome ? amount : -amount
 
         switch source {
@@ -122,7 +125,8 @@ struct ContentView: View {
         
         if !isIncome && inputText.contains("ローソン") { pointBalance += (amount / 100) }
 
-        transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: source, isIncome: isIncome))
+        let newTransaction = Transaction(amount: amount, date: Date(), note: inputText, source: source, isIncome: isIncome)
+        transactions.append(newTransaction)
         inputText = ""
     }
 }
@@ -171,14 +175,32 @@ struct TwitterRow: View {
                 HStack {
                     Text("むつき").font(.subheadline).fontWeight(.bold)
                     Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    // 右上にソースバッジを表示
+                    Text(item.source)
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(item.isIncome ? Color.blue.opacity(0.1) : Color.gray.opacity(0.1))
+                        .foregroundColor(item.isIncome ? .blue : .primary)
+                        .cornerRadius(4)
                 }
-                // 本文（金額やハッシュタグを含む元のテキスト）
-                HighlightedText(text: item.note)
+                
+                // 本文（タグと@を除去済み）
+                Text(item.cleanNote)
                     .font(.subheadline)
+                
+                // 金額を太字で表示
+                Text("¥\(item.amount)")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(item.isIncome ? .blue : .primary)
                 
                 if !item.tags.isEmpty {
                     HStack {
-                        ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(.blue) }
+                        ForEach(item.tags, id: \.self) { tag in 
+                            Text(tag).font(.caption).foregroundColor(.blue) 
+                        }
                     }
                 }
                 HStack(spacing: 40) {
@@ -190,27 +212,10 @@ struct TwitterRow: View {
     }
 }
 
-// ハッシュタグや金額に色をつける
-struct HighlightedText: View {
-    let text: String
-    var body: some View {
-        let words = text.components(separatedBy: " ")
-        return words.reduce(Text("")) { (result, word) in
-            if word.hasPrefix("#") || word.hasPrefix("@") {
-                return result + Text(word + " ").foregroundColor(.blue).fontWeight(.bold)
-            } else if word.contains("¥") || Int(word) != nil {
-                return result + Text(word + " ").foregroundColor(.primary).fontWeight(.bold)
-            } else {
-                return result + Text(word + " ")
-            }
-        }
-    }
-}
-
 struct PostView: View {
     @Binding var inputText: String
     @Binding var isPresented: Bool
-    var onPost: (Bool) -> Void // Boolで収入(true)か支出(false)かを渡す
+    var onPost: (Bool) -> Void
     
     var body: some View {
         NavigationView {
@@ -219,11 +224,13 @@ struct PostView: View {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
                     ZStack(alignment: .topLeading) {
                         if inputText.isEmpty {
-                            Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5)
+                            Text("どんな買い物をしましたか？")
+                                .foregroundColor(.gray.opacity(0.7))
+                                .padding(.top, 8)
+                                .padding(.leading, 5)
                         }
                         TextEditor(text: $inputText)
                             .frame(minHeight: 150)
-                            .opacity(inputText.isEmpty ? 0.25 : 1)
                     }
                 }.padding()
                 Spacer()
