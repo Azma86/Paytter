@@ -3,9 +3,9 @@ import SwiftUI
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
     @AppStorage("accounts_v2") var accounts: [Account] = [
-        Account(name: "お財布", balance: 0, isVisible: true),
-        Account(name: "口座", balance: 0, isVisible: true),
-        Account(name: "ポイント", balance: 0, isVisible: true)
+        Account(name: "お財布", balance: 0, initialBalance: 0, isVisible: true),
+        Account(name: "口座", balance: 0, initialBalance: 0, isVisible: true),
+        Account(name: "ポイント", balance: 0, initialBalance: 0, isVisible: true)
     ]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     
@@ -16,11 +16,11 @@ struct ContentView: View {
     @State private var indexSetToDelete: IndexSet?
     @State private var isShowingRestoreAlert = false
     @State private var restoreText: String = ""
-    
     @State private var isShowingAccountCreator = false
 
     var body: some View {
         TabView {
+            // 【ホーム】
             NavigationView {
                 ZStack(alignment: .bottomTrailing) {
                     VStack(spacing: 0) {
@@ -28,20 +28,15 @@ struct ContentView: View {
                             ForEach(accounts.filter { $0.isVisible }) { acc in
                                 BalanceView(title: acc.name, amount: acc.balance, color: .primary)
                             }
-                        }
-                        .padding().background(Color(.systemGray6))
+                        }.padding().background(Color(.systemGray6))
                         Divider()
-                        
                         List {
                             ForEach(transactions.reversed()) { item in
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
                             }
-                            .onDelete { indexSet in
-                                self.indexSetToDelete = indexSet
-                                self.isShowingSwipeDeleteAlert = true
-                            }
+                            .onDelete { indexSet in self.indexSetToDelete = indexSet; self.isShowingSwipeDeleteAlert = true }
                         }
                         .listStyle(.plain)
                         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
@@ -53,101 +48,74 @@ struct ContentView: View {
                         Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color.blue).clipShape(Circle())
                     }.padding(20).padding(.bottom, 10)
                 }
-                .navigationTitle("ホーム")
-                .navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
             }.tabItem { Label("ホーム", systemImage: "house") }
 
-            // --- お財布タブ：ここで管理を行う ---
+            // 【お財布】
             NavigationView {
                 List {
                     Section(header: Text("お財布の管理")) {
                         ForEach($accounts) { $acc in
                             NavigationLink(destination: AccountEditView(account: $acc)) {
-                                HStack {
-                                    Text(acc.name)
-                                    Spacer()
-                                    Text("¥\(acc.balance)").foregroundColor(.secondary)
-                                }
+                                HStack { Text(acc.name); Spacer(); Text("¥\(acc.balance)").foregroundColor(.secondary) }
                             }
-                        }
-                        .onDelete(perform: deleteAccount)
-                        
-                        Button(action: { isShowingAccountCreator = true }) {
-                            Label("新しいお財布を追加", systemImage: "plus.circle")
-                        }
+                        }.onDelete(perform: deleteAccount)
+                        Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }
                     }
-                    
                     Section(header: Text("分析")) {
-                        NavigationLink(destination: WalletAnalysisView(transactions: transactions)) {
-                            Label("今月の収支分析", systemImage: "chart.bar.xaxis")
-                        }
+                        NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis") }
                     }
                 }
                 .navigationTitle("お財布")
-                .sheet(isPresented: $isShowingAccountCreator) {
-                    AccountCreateView(accounts: $accounts)
-                }
+                .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts) }
             }.tabItem { Label("お財布", systemImage: "wallet.pass") }
 
+            // 【設定】
             NavigationView {
                 List {
-                    Section(header: Text("予算設定")) {
-                        Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000)
-                    }
+                    Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
                     Section(header: Text("バックアップと復元")) {
-                        Button("データをコピーする") {
-                            UIPasteboard.general.string = transactions.rawValue
-                        }
-                        Button("バックアップから復元") {
-                            isShowingRestoreAlert = true
-                        }
+                        Button("データをコピーする") { UIPasteboard.general.string = transactions.rawValue }
+                        Button("バックアップから復元") { isShowingRestoreAlert = true }
                     }
-                    Section(header: Text("データ管理")) {
-                        Button("全データをリセット", role: .destructive) { isShowingDeleteAlert = true }
-                    }
+                    Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingDeleteAlert = true } }
                 }
                 .navigationTitle("設定")
                 .alert("復元", isPresented: $isShowingRestoreAlert) {
-                    TextField("バックアップを貼り付け", text: $restoreText)
+                    TextField("貼り付け", text: $restoreText)
                     Button("キャンセル", role: .cancel) { restoreText = "" }
                     Button("復元") { restoreFromText() }
                 }
                 .alert("リセット", isPresented: $isShowingDeleteAlert) {
-                    Button("キャンセル", role: .cancel) { }
-                    Button("削除", role: .destructive) { resetAll() }
+                    Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { resetAll() }
                 }
             }.tabItem { Label("設定", systemImage: "gearshape") }
         }
-        .onAppear { recalculateBalances() } // 起動時に整合性をとる
-        .sheet(isPresented: $isShowingInputSheet) {
-            PostView(inputText: $inputText, isPresented: $isShowingInputSheet) { isInc in addTransaction(isInc: isInc) }
-        }
+        .onAppear { recalculateBalances() }
+        .onChange(of: accounts.count) { _ in recalculateBalances() }
+        .sheet(isPresented: $isShowingInputSheet) { PostView(inputText: $inputText, isPresented: $isShowingInputSheet) { isInc in addTransaction(isInc: isInc) } }
     }
 
     func addTransaction(isInc: Bool) {
         let amount = parseAmount(from: inputText)
         let sourceName = parseSourceName(from: inputText)
-        if let idx = accounts.firstIndex(where: { $0.name == sourceName }) {
-            accounts[idx].balance += (isInc ? amount : -amount)
-        }
         transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
+        recalculateBalances()
         BackupManager.saveAll(transactions: transactions, accounts: accounts)
     }
 
     func deleteTransaction(at offsets: IndexSet) {
         for index in offsets {
             let revIndex = transactions.count - 1 - index
-            let item = transactions[revIndex]
-            if let idx = accounts.firstIndex(where: { $0.name == item.source }) {
-                accounts[idx].balance += (item.isIncome ? -item.amount : item.amount)
-            }
             transactions.remove(at: revIndex)
         }
+        recalculateBalances()
         BackupManager.saveAll(transactions: transactions, accounts: accounts)
     }
     
     func deleteAccount(at offsets: IndexSet) {
         accounts.remove(atOffsets: offsets)
+        recalculateBalances()
         BackupManager.saveAll(transactions: transactions, accounts: accounts)
     }
 
@@ -163,18 +131,12 @@ struct ContentView: View {
 
     func restoreFromText() {
         if let restored = [Transaction](rawValue: restoreText) {
-            transactions = restored
-            recalculateBalances()
-            restoreText = ""
+            transactions = restored; recalculateBalances(); restoreText = ""
         }
     }
 
     func resetAll() {
-        transactions = []
-        for i in 0..<accounts.count {
-            accounts[i].balance = 0
-            accounts[i].initialBalance = 0
-        }
+        transactions = []; for i in 0..<accounts.count { accounts[i].balance = 0; accounts[i].initialBalance = 0 }
         BackupManager.saveAll(transactions: transactions, accounts: accounts)
     }
 
