@@ -16,7 +16,9 @@ struct ContentView: View {
     @State private var indexSetToDelete: IndexSet?
     @State private var isShowingAccountCreator = false
     
+    // 復元用State
     @State private var isShowingRestoreConfirm = false
+    @State private var isRestoringManual = false // 手動か自動か
     @State private var backupDateString = ""
 
     var body: some View {
@@ -74,32 +76,41 @@ struct ContentView: View {
             NavigationView {
                 List {
                     Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
+                    
                     Section(header: Text("バックアップ管理")) {
-                        Button("手動でバックアップ保存") {
-                            BackupManager.saveAll(transactions: transactions, accounts: accounts)
+                        Button("手動バックアップを作成") {
+                            BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
                         }
-                        Button("バックアップから読み込む") {
-                            backupDateString = BackupManager.getBackupDate()
+                        Button("手動バックアップから復元") {
+                            isRestoringManual = true
+                            backupDateString = BackupManager.getBackupDate(isManual: true)
+                            isShowingRestoreConfirm = true
+                        }
+                        Button("自動保存から復元") {
+                            isRestoringManual = false
+                            backupDateString = BackupManager.getBackupDate(isManual: false)
                             isShowingRestoreConfirm = true
                         }
                     }
+                    
                     Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingDeleteAlert = true } }
                 }
                 .navigationTitle("設定")
                 .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) {
                     Button("キャンセル", role: .cancel) { }
                     Button("復元する", role: .destructive) {
-                        if let t = BackupManager.loadTransactions(), let a = BackupManager.loadAccounts() {
+                        if let t = BackupManager.loadTransactions(isManual: isRestoringManual),
+                           let a = BackupManager.loadAccounts(isManual: isRestoringManual) {
                             transactions = t; accounts = a; recalculateBalances()
                         }
                     }
                 } message: {
-                    Text("最終保存日時: \(backupDateString)\n現在のデータは上書きされます。復元しますか？")
+                    Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？")
                 }
                 .alert("リセット", isPresented: $isShowingDeleteAlert) {
                     Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll() }
                 } message: {
-                    Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは削除されません。")
+                    Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。")
                 }
             }.tabItem { Label("設定", systemImage: "gearshape") }
         }
@@ -121,12 +132,11 @@ struct ContentView: View {
             for tx in transactions where tx.source == accounts[i].name { current += (tx.isIncome ? tx.amount : -tx.amount) }
             accounts[i].balance = current
         }
-        // 指示に基づき、通常操作時は自動保存を継続
-        BackupManager.saveAll(transactions: transactions, accounts: accounts)
+        // 通常操作は「自動保存」用ファイルに書き込む
+        BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false)
     }
     
     func resetAll() {
-        // AppStorageの中身を初期値へ。BackupManager.saveAllはあえて呼ばないことでファイルを保護。
         transactions = []
         accounts = [
             Account(name: "お財布", balance: 0, type: .wallet),
