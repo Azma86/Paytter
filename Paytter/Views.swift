@@ -152,7 +152,7 @@ struct AccountEditView: View {
     @State private var editBalance: String = ""
     @Environment(\.dismiss) var dismiss
     
-    // iOS 16のエラー回避のため、事前にフィルタリングしたリストを用意
+    // エラー対策：Pickerの外でフィルタリング済みのリストを定義
     var bankAccounts: [Account] {
         allAccounts.filter { $0.type == .bank }
     }
@@ -167,6 +167,7 @@ struct AccountEditView: View {
                 Toggle("ホーム上部に表示", isOn: $account.isVisible)
             }
             
+            // クレジットカード用設定セクションを独立
             if account.type == .credit {
                 Section(header: Text("クレジットカード設定")) {
                     Stepper("引き落とし日: \(account.payday ?? 1)日", value: Binding(
@@ -174,9 +175,9 @@ struct AccountEditView: View {
                         set: { account.payday = $0 }
                     ), in: 1...31)
                     
-                    // iOS 16で安定するPickerの記述形式
+                    // 中身をForEachだけにしたクリーンなPicker
                     Picker("引き落とし口座", selection: $account.withdrawalAccountId) {
-                        Text("指定なし").tag(UUID?.none)
+                        Text("指定なし").tag(nil as UUID?)
                         ForEach(bankAccounts) { acc in
                             Text(acc.name).tag(acc.id as UUID?)
                         }
