@@ -171,11 +171,9 @@ struct AccountEditView: View {
                     
                     Picker("引き落とし口座", selection: $account.withdrawalAccountId) {
                         Text("指定なし").tag(UUID?.none)
-                        // allAccounts内の口座のみをフィルタリング
-                        ForEach(allAccounts) { acc in
-                            if acc.type == .bank {
-                                Text(acc.name).tag(acc.id as UUID?)
-                            }
+                        // 銀行口座のみを安全に抽出してループ
+                        ForEach(allAccounts.filter { $0.type == .bank }) { acc in
+                            Text(acc.name).tag(acc.id as UUID?)
                         }
                     }
                 }
