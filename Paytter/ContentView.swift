@@ -53,10 +53,17 @@ struct ContentView: View {
                 ZStack(alignment: .bottomTrailing) {
                     VStack(spacing: 0) {
                         BalanceHeaderView(wallet: walletBalance, bank: bankBalance, point: pointBalance)
-                        List(transactions.reversed()) { item in
-                            TwitterRow(item: item)
-                                .listRowSeparator(.visible)
-                                .listRowInsets(EdgeInsets())
+                        
+                        // タイムラインのList（スワイプ削除を実装）
+                        List {
+                            ForEach(transactions.reversed()) { item in
+                                // タップで詳細画面へ遷移
+                                NavigationLink(destination: TransactionDetailView(item: item)) {
+                                    TwitterRow(item: item)
+                                        .listRowInsets(EdgeInsets()) // 余計な空白をなくす
+                                }
+                            }
+                            .onDelete(perform: deleteTransaction) // スワイプ削除
                         }
                         .listStyle(.plain)
                     }
@@ -112,6 +119,7 @@ struct ContentView: View {
         }
     }
 
+    // 投稿の追加ロジック
     func addTransaction(isIncome: Bool) {
         let components = inputText.components(separatedBy: .whitespacesAndNewlines)
         let amountText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
@@ -123,11 +131,7 @@ struct ContentView: View {
 
         let change = isIncome ? amount : -amount
 
-        switch source {
-        case "口座": bankBalance += change
-        case "ポイント": pointBalance += change
-        default: walletBalance += change
-        }
+        updateBalance(source: source, change: change)
         
         if !isIncome && inputText.contains("ローソン") { pointBalance += (amount / 100) }
 
@@ -135,9 +139,39 @@ struct ContentView: View {
         transactions.append(newTransaction)
         inputText = ""
     }
+    
+    // スワイプ削除のロジック
+    func deleteTransaction(at offsets: IndexSet) {
+        // reversed()したListに対応させるため、インデックスを調整
+        for index in offsets {
+            let reversedIndex = transactions.count - 1 - index
+            let item = transactions[reversedIndex]
+            
+            // 残高を元に戻す（支出なら足し、収入なら引く）
+            let change = item.isIncome ? -item.amount : item.amount
+            updateBalance(source: item.source, change: change)
+            
+            // ローソンのポイントも取り消す（簡易実装：支出の場合のみ）
+            if !item.isIncome && item.note.contains("ローソン") {
+                pointBalance -= (item.amount / 100)
+            }
+            
+            // データを削除
+            transactions.remove(at: reversedIndex)
+        }
+    }
+    
+    // 残高を更新する共通ロジック
+    func updateBalance(source: String, change: Int) {
+        switch source {
+        case "口座": bankBalance += change
+        case "ポイント": pointBalance += change
+        default: walletBalance += change
+        }
+    }
 }
 
-// タイムラインの1行
+// タイムラインの1行（バッジ色を統一）
 struct TwitterRow: View {
     let item: Transaction
     var body: some View {
@@ -148,12 +182,13 @@ struct TwitterRow: View {
                     Text("むつき").font(.subheadline).fontWeight(.bold)
                     Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(.secondary)
                     Spacer()
+                    // 右上のソースバッジ（グレーに統一）
                     Text(item.source)
                         .font(.system(size: 9, weight: .bold))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(item.isIncome ? Color.blue.opacity(0.1) : Color.gray.opacity(0.1))
-                        .foregroundColor(item.isIncome ? .blue : .primary)
+                        .background(Color.gray.opacity(0.1)) // 色を統一
+                        .foregroundColor(.primary)
                         .cornerRadius(4)
                 }
                 
@@ -173,7 +208,7 @@ struct TwitterRow: View {
                 }
                 .font(.caption).foregroundColor(.secondary).padding(.top, 6)
             }
-        }.padding()
+        }.padding(.vertical, 8).padding(.horizontal, 16) // NavigationLinkに対応するための余白調整
     }
 }
 
@@ -187,7 +222,7 @@ struct HighlightedText: View {
         return words.reduce(Text("")) { (result, word) in
             if word.contains("¥") || (Int(word.replacingOccurrences(of: "¥", with: "")) != nil) {
                 // 金額部分は支出なら赤、収入なら緑（少し濃いめの緑）
-                return result + Text(word + " ").foregroundColor(isIncome ? .green : .red).fontWeight(.bold)
+                return result + Text(word + " ").foregroundColor(isIncome ? Color(red: 0.1, green: 0.7, blue: 0.1) : .red).fontWeight(.bold)
             } else {
                 return result + Text(word + " ")
             }
@@ -227,6 +262,76 @@ struct BalanceHeaderView: View {
         .padding()
         .background(Color(.systemGray6))
         Divider()
+    }
+}
+
+// 投稿詳細画面
+struct TransactionDetailView: View {
+    let item: Transaction
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // タイムラインとほぼ同じレイアウトで大きく表示
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "person.circle.fill").resizable().frame(width: 56, height: 56).foregroundColor(.gray)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("むつき").font(.headline).fontWeight(.bold)
+                        Text("@Mutsuki_dev").font(.subheadline).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    // ソースバッジ（グレー）
+                    Text(item.source)
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.gray.opacity(0.1))
+                        .foregroundColor(.primary)
+                        .cornerRadius(5)
+                }
+                
+                // 本文（色付け付きで大きく）
+                HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
+                    .font(.title3)
+                
+                // タグ
+                if !item.tags.isEmpty {
+                    HStack(spacing: 12) {
+                        ForEach(item.tags, id: \.self) { tag in 
+                            Text(tag).font(.subheadline).foregroundColor(.blue) 
+                        }
+                    }
+                }
+                
+                Text(item.date, style: .date) + Text(" " ) + Text(item.date, style: .time)
+                    .font(.caption).foregroundColor(.secondary)
+                
+                Divider()
+                
+                // Twitterっぽいアクションアイコン
+                HStack(spacing: 60) {
+                    Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "shareplay")
+                }
+                .font(.subheadline).foregroundColor(.secondary).padding(.top, 8).frame(maxWidth: .infinity)
+                
+                Spacer()
+            }
+            .padding()
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // 右上に編集と削除のボタンを配置（UIのみ）
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack {
+                    Button(action: { /* 編集アクション（今後実装） */ }) {
+                        Image(systemName: "pencil.line")
+                    }
+                    Button(action: { /* 削除アクション（今後実装） */ }) {
+                        Image(systemName: "trash")
+                    }
+                    .foregroundColor(.red)
+                }
+            }
+        }
     }
 }
 
