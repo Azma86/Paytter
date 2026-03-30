@@ -152,22 +152,16 @@ struct AccountEditView: View {
     @State private var editBalance: String = ""
     @Environment(\.dismiss) var dismiss
     
-    // エラー対策：Pickerの外でフィルタリング済みのリストを定義
-    var bankAccounts: [Account] {
-        allAccounts.filter { $0.type == .bank }
-    }
-    
     var body: some View {
         Form {
             Section(header: Text("基本設定")) {
                 TextField("名前", text: $account.name)
-                Picker("種類", selection: $account.type) {
+                Picker(selection: $account.type) {
                     ForEach(AccountType.allCases, id: \.self) { type in Label(type.rawValue, systemImage: type.icon).tag(type) }
-                }
+                } label: { Text("種類") }
                 Toggle("ホーム上部に表示", isOn: $account.isVisible)
             }
             
-            // クレジットカード用設定セクションを独立
             if account.type == .credit {
                 Section(header: Text("クレジットカード設定")) {
                     Stepper("引き落とし日: \(account.payday ?? 1)日", value: Binding(
@@ -175,12 +169,14 @@ struct AccountEditView: View {
                         set: { account.payday = $0 }
                     ), in: 1...31)
                     
-                    // 中身をForEachだけにしたクリーンなPicker
-                    Picker("引き落とし口座", selection: $account.withdrawalAccountId) {
+                    // iOS 16で最も安全なPickerの書き方
+                    Picker(selection: $account.withdrawalAccountId) {
                         Text("指定なし").tag(nil as UUID?)
-                        ForEach(bankAccounts) { acc in
+                        ForEach(allAccounts.filter { $0.type == .bank }) { acc in
                             Text(acc.name).tag(acc.id as UUID?)
                         }
+                    } label: {
+                        Text("引き落とし口座")
                     }
                 }
             }
