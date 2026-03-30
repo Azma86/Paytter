@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 投稿画面 (文中即時サジェスト & インテリジェントスペース機能) ---
+// --- 投稿画面 (即時サジェスト修正版) ---
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool) -> Void
     var transactions: [Transaction]
@@ -50,11 +50,17 @@ struct PostView: View {
                 HStack(alignment: .top) {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
                     ZStack(alignment: .topLeading) {
-                        CustomTextEditor(text: $inputText) { sym in insertAtCursor(sym) }
-                            .frame(minHeight: 150)
-                            .onChange(of: inputText) { _ in
+                        CustomTextEditor(text: $inputText) { sym in 
+                            insertAtCursor(sym)
+                            // 挿入直後にサジェストを更新
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 updateSuggestionsForCursor()
                             }
+                        }
+                        .frame(minHeight: 150)
+                        .onChange(of: inputText) { _ in
+                            updateSuggestionsForCursor()
+                        }
                         if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                     }
                 }.padding()
@@ -94,22 +100,17 @@ struct PostView: View {
         let text = tv.text ?? ""
         
         let prefixText = String(text.prefix(cursorLoc))
-        // スペースや改行で区切られた最後の単語を抽出
         let currentWord = prefixText.components(separatedBy: .whitespacesAndNewlines).last ?? ""
         
         if currentWord == "#" {
-            // # 単体の場合、全タグを表示
             let allTags = transactions.flatMap { $0.tags }
             suggestions = Array(Set(allTags)).sorted()
         } else if currentWord.hasPrefix("#") {
-            // # の後に文字がある場合、前方一致で絞り込み
             let allTags = transactions.flatMap { $0.tags }
             suggestions = Array(Set(allTags.filter { $0.hasPrefix(currentWord) && $0 != currentWord })).sorted()
         } else if currentWord == "@" {
-            // @ 単体の場合、全お財布を表示
             suggestions = accounts.map { "@" + $0.name }.sorted()
         } else if currentWord.hasPrefix("@") {
-            // @ の後に文字がある場合、前方一致で絞り込み
             suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(currentWord) && $0 != currentWord }.sorted()
         } else {
             suggestions = []
@@ -131,7 +132,6 @@ struct PostView: View {
             let startIdx = text.index(text.startIndex, offsetBy: rangeStart)
             let endIdx = text.index(text.startIndex, offsetBy: cursorLoc)
             
-            // 候補置換後に半角スペースを付与
             let newText = text.replacingCharacters(in: startIdx..<endIdx, with: suggestion + " ")
             inputText = newText
             
