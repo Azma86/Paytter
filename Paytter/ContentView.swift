@@ -22,25 +22,38 @@ struct Transaction: Identifiable, Codable {
     }
 }
 
-extension Array: RawRepresentable where Element: Codable {
+// 保存用の拡張（より堅実な実装に変更）
+extension Array: RawRepresentable where Element == Transaction {
     public init?(rawValue: String) {
-        guard let data = rawValue.data(using: .utf8),
-              let result = try? JSONDecoder().decode([Element].self, from: data)
-        else { return nil }
-        self = result
+        guard let data = rawValue.data(using: .utf8) else {
+            self = []
+            return
+        }
+        do {
+            let result = try JSONDecoder().decode([Transaction].self, from: data)
+            self = result
+        } catch {
+            print("Decoding error: \(error)")
+            self = []
+        }
     }
+    
     public var rawValue: String {
-        guard let data = try? JSONEncoder().encode(self),
-              let result = String(data: data, encoding: .utf8)
-        else { return "[]" }
-        return result
+        do {
+            let data = try JSONEncoder().encode(self)
+            return String(data: data, encoding: .utf8) ?? "[]"
+        } catch {
+            print("Encoding error: \(error)")
+            return "[]"
+        }
     }
 }
 
-// --- カーソル位置入力を可能にするカスタムエディタ (ツールバー対応版) ---
+// --- カスタムエディタ ---
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String
-    var onInsert: (String) -> Void // 記号挿入用のクロージャ
+    var placeholder: String
+    var onInsert: (String) -> Void
     
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
@@ -48,10 +61,8 @@ struct CustomTextEditor: UIViewRepresentable {
         textView.backgroundColor = .clear
         textView.delegate = context.coordinator
         
-        // ツールバーの作成
         let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
         let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-        
         let hashBtn = UIBarButtonItem(title: "#", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertHash))
         let yenBtn = UIBarButtonItem(title: "¥", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertYen))
         let atBtn = UIBarButtonItem(title: "@", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertAt))
@@ -59,39 +70,29 @@ struct CustomTextEditor: UIViewRepresentable {
         
         toolbar.items = [hashBtn, yenBtn, atBtn, flexSpace, doneBtn]
         textView.inputAccessoryView = toolbar
-        
         return textView
     }
     
     func updateUIView(_ uiView: UITextView, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
-        }
+        if uiView.text != text { uiView.text = text }
     }
     
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
     
     class Coordinator: NSObject, UITextViewDelegate {
         var parent: CustomTextEditor
         init(_ parent: CustomTextEditor) { self.parent = parent }
-        
-        func textViewDidChange(_ textView: UITextView) {
-            parent.text = textView.text
-        }
-        
+        func textViewDidChange(_ textView: UITextView) { parent.text = textView.text }
         @objc func insertHash() { parent.onInsert("#") }
         @objc func insertYen() { parent.onInsert("¥") }
         @objc func insertAt() { parent.onInsert("@") }
-        @objc func dismissKeyboard() {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        }
+        @objc func dismissKeyboard() { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
     }
 }
 
 struct ContentView: View {
-    @AppStorage("transactions_v3") var transactions: [Transaction] = []
+    // 保存キーを final に変更して安定性を向上
+    @AppStorage("transactions_final") var transactions: [Transaction] = []
     @AppStorage("walletBalance") var walletBalance: Int = 0
     @AppStorage("bankBalance") var bankBalance: Int = 0
     @AppStorage("pointBalance") var pointBalance: Int = 0
@@ -183,7 +184,9 @@ struct ContentView: View {
         let change = isIncome ? amount : -amount
         updateBalance(source: source, change: change)
         if !isIncome && inputText.contains("ローソン") { pointBalance += (amount / 100) }
-        transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: source, isIncome: isIncome))
+        
+        let new = Transaction(amount: amount, date: Date(), note: inputText, source: source, isIncome: isIncome)
+        transactions.append(new)
         inputText = ""
     }
     
@@ -272,8 +275,7 @@ struct TransactionDetailView: View {
     
     func deleteThis() {
         if let index = transactions.firstIndex(where: { $0.id == item.id }) {
-            let change = item.isIncome ? -item.amount : item.amount
-            modifyBalance(source: item.source, change: change)
+            modifyBalance(source: item.source, change: item.isIncome ? -item.amount : item.amount)
             transactions.remove(at: index)
             dismiss()
         }
@@ -316,10 +318,7 @@ struct PostView: View {
                 HStack(alignment: .top) {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
                     ZStack(alignment: .topLeading) {
-                        // カスタムエディタ側に記号挿入ロジックを渡す
-                        CustomTextEditor(text: $inputText) { symbol in
-                            insertAtCursor(symbol)
-                        }
+                        CustomTextEditor(text: $inputText, placeholder: "どんな買い物をしましたか？") { symbol in insertAtCursor(symbol) }
                         .frame(minHeight: 150)
                         if inputText.isEmpty {
                             Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false)
@@ -345,7 +344,6 @@ struct PostView: View {
             let selectedRange = textView.selectedRange
             let insertionText = " " + symbol
             let currentText = textView.text ?? ""
-            
             if let range = Range(selectedRange, in: currentText) {
                 let newText = currentText.replacingCharacters(in: range, with: insertionText)
                 inputText = newText
@@ -357,13 +355,10 @@ struct PostView: View {
     }
 }
 
-// UITextViewを見つけるためのヘルパー
 extension UIView {
     func findTextView() -> UITextView? {
         if let textView = self as? UITextView { return textView }
-        for subview in subviews {
-            if let textView = subview.findTextView() { return textView }
-        }
+        for subview in subviews { if let textView = subview.findTextView() { return textView } }
         return nil
     }
 }
