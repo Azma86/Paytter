@@ -15,7 +15,7 @@ struct ContentView: View {
     
     // スワイプ削除用
     @State private var isShowingSwipeDeleteAlert = false
-    @State private var itemToDelete: Transaction? // IndexSetではなくTransaction本体を保持
+    @State private var transactionToDelete: Transaction? // IndexSetではなくTransaction本体を保持
     
     @State private var isShowingAccountCreator = false
     @State private var isShowingRestoreConfirm = false
@@ -45,11 +45,10 @@ struct ContentView: View {
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
-                                // 標準のonDeleteではなく、swipeActionsを使用することで勝手な動きを制御
+                                // onDeleteではなくswipeActionsを使用することで勝手な動きを制御
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
-                                        // ボタンを押した瞬間にアイテムを保持してアラートを表示
-                                        self.itemToDelete = item
+                                        self.transactionToDelete = item
                                         self.isShowingSwipeDeleteAlert = true
                                     } label: {
                                         Label("削除", systemImage: "trash")
@@ -58,17 +57,19 @@ struct ContentView: View {
                             }
                         }
                         .listStyle(.plain)
+                        // スワイプ削除用の確認アラート
                         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                             Button("キャンセル", role: .cancel) {
-                                self.itemToDelete = nil
+                                self.transactionToDelete = nil
                             }
                             Button("削除", role: .destructive) {
-                                if let target = itemToDelete {
-                                    withAnimation(.easeInOut) {
+                                if let target = transactionToDelete {
+                                    // 削除処理をアニメーション付きで実行
+                                    withAnimation(.easeInOut(duration: 0.3)) {
                                         deleteSpecificTransaction(target)
                                     }
                                 }
-                                self.itemToDelete = nil
+                                self.transactionToDelete = nil
                             }
                         }
                     }
@@ -152,11 +153,10 @@ struct ContentView: View {
         transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
     }
     
-    // スワイプ削除用の新しい削除メソッド（IDで特定して削除）
+    // 修正：特定のTransactionを削除する関数
     func deleteSpecificTransaction(_ target: Transaction) {
         if let index = transactions.firstIndex(where: { $0.id == target.id }) {
             transactions.remove(at: index)
-            recalculateBalances()
         }
     }
     
