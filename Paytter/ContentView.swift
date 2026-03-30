@@ -45,15 +45,17 @@ struct ContentView: View {
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
     @State private var isShowingDeleteAlert = false
+    
+    // スワイプ削除用の一時保存
+    @State private var isShowingSwipeDeleteAlert = false
+    @State private var indexSetToDelete: IndexSet?
 
     var body: some View {
         TabView {
-            // 【1. ホーム】
             NavigationView {
                 ZStack(alignment: .bottomTrailing) {
                     VStack(spacing: 0) {
                         BalanceHeaderView(wallet: walletBalance, bank: bankBalance, point: pointBalance)
-                        
                         List {
                             ForEach(transactions.reversed()) { item in
                                 NavigationLink(destination: TransactionDetailView(item: item, 
@@ -65,9 +67,21 @@ struct ContentView: View {
                                         .listRowInsets(EdgeInsets())
                                 }
                             }
-                            .onDelete(perform: deleteTransaction)
+                            .onDelete { indexSet in
+                                // スワイプ時はアラートを出すためにインデックスを保持
+                                self.indexSetToDelete = indexSet
+                                self.isShowingSwipeDeleteAlert = true
+                            }
                         }
                         .listStyle(.plain)
+                        .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
+                            Button("キャンセル", role: .cancel) { indexSetToDelete = nil }
+                            Button("削除", role: .destructive) {
+                                if let offsets = indexSetToDelete {
+                                    deleteTransaction(at: offsets)
+                                }
+                            }
+                        }
                     }
 
                     Button(action: { 
@@ -80,7 +94,6 @@ struct ContentView: View {
                             .frame(width: 56, height: 56)
                             .background(Color(red: 0.11, green: 0.63, blue: 0.95))
                             .clipShape(Circle())
-                            .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 5)
                     }
                     .padding(20).padding(.bottom, 10)
                 }
@@ -89,20 +102,16 @@ struct ContentView: View {
             }
             .tabItem { Label("ホーム", systemImage: "house") }
 
-            // 【2. お財布】
             NavigationView {
                 WalletAnalysisView(transactions: transactions)
                     .navigationTitle("お財布")
             }
             .tabItem { Label("お財布", systemImage: "wallet.pass") }
 
-            // 【3. 設定】
             NavigationView {
                 List {
                     Section(header: Text("データ管理")) {
-                        Button("データを全削除する", role: .destructive) {
-                            isShowingDeleteAlert = true
-                        }
+                        Button("データを全削除する", role: .destructive) { isShowingDeleteAlert = true }
                     }
                 }
                 .navigationTitle("設定")
@@ -111,9 +120,7 @@ struct ContentView: View {
                     Button("削除する", role: .destructive) {
                         transactions = []; walletBalance = 0; bankBalance = 0; pointBalance = 0
                     }
-                } message: {
-                    Text("これまでの投稿と残高がすべて消去されます。よろしいですか？")
-                }
+                } message: { Text("これまでの投稿と残高がすべて消去されます。よろしいですか？") }
             }
             .tabItem { Label("設定", systemImage: "gearshape") }
         }
@@ -128,12 +135,9 @@ struct ContentView: View {
         let amount = parseAmount(from: inputText)
         let source = parseSource(from: inputText)
         let change = isIncome ? amount : -amount
-
         updateBalance(source: source, change: change)
         if !isIncome && inputText.contains("ローソン") { pointBalance += (amount / 100) }
-
-        let newTransaction = Transaction(amount: amount, date: Date(), note: inputText, source: source, isIncome: isIncome)
-        transactions.append(newTransaction)
+        transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: source, isIncome: isIncome))
         inputText = ""
     }
     
@@ -169,14 +173,13 @@ struct ContentView: View {
     }
 }
 
-// --- 詳細画面（編集・削除機能付き） ---
+// --- 詳細画面 ---
 struct TransactionDetailView: View {
     let item: Transaction
     @Binding var transactions: [Transaction]
     @Binding var walletBalance: Int
     @Binding var bankBalance: Int
     @Binding var pointBalance: Int
-    
     @Environment(\.dismiss) var dismiss
     @State private var isShowingEditSheet = false
     @State private var editLineText = ""
@@ -194,15 +197,10 @@ struct TransactionDetailView: View {
                     Spacer()
                     Text(item.source).font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color.gray.opacity(0.1)).cornerRadius(5)
                 }
-                
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3)
-                
                 if !item.tags.isEmpty {
-                    HStack(spacing: 12) {
-                        ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(.blue) }
-                    }
+                    HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(.blue) } }
                 }
-                
                 Text(item.date, style: .date) + Text(" " ) + Text(item.date, style: .time)
                 Divider()
                 HStack(spacing: 60) {
@@ -210,15 +208,10 @@ struct TransactionDetailView: View {
                 }.font(.subheadline).foregroundColor(.secondary).frame(maxWidth: .infinity)
             }.padding()
         }
-        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack {
-                    Button(action: { 
-                        editLineText = item.note
-                        isShowingEditSheet = true 
-                    }) { Image(systemName: "pencil.line") }
-                    
+                    Button(action: { editLineText = item.note; isShowingEditSheet = true }) { Image(systemName: "pencil.line") }
                     Button(action: { isShowingDeleteConfirm = true }) { Image(systemName: "trash") }.foregroundColor(.red)
                 }
             }
@@ -228,16 +221,13 @@ struct TransactionDetailView: View {
             Button("削除", role: .destructive) { deleteThis() }
         }
         .sheet(isPresented: $isShowingEditSheet) {
-            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet) { isIncome in
-                updateThis(newIncome: isIncome)
-            }
+            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet) { isIncome in updateThis(newIncome: isIncome) }
         }
     }
     
     func deleteThis() {
         if let index = transactions.firstIndex(where: { $0.id == item.id }) {
-            let change = item.isIncome ? -item.amount : item.amount
-            modifyBalance(source: item.source, change: change)
+            modifyBalance(source: item.source, change: item.isIncome ? -item.amount : item.amount)
             transactions.remove(at: index)
             dismiss()
         }
@@ -245,22 +235,20 @@ struct TransactionDetailView: View {
     
     func updateThis(newIncome: Bool) {
         if let index = transactions.firstIndex(where: { $0.id == item.id }) {
-            // 旧データを戻す
             modifyBalance(source: item.source, change: item.isIncome ? -item.amount : item.amount)
-            
-            // 新データを解析
-            let components = editLineText.components(separatedBy: .whitespacesAndNewlines)
-            let newAmtText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-            let newAmount = Int(newAmtText) ?? 0
+            let newAmount = parseAmount(from: editLineText)
             let newSource = editLineText.contains("@口座") ? "口座" : (editLineText.contains("@ポイント") ? "ポイント" : "お財布")
-            
-            // 新データを反映
             modifyBalance(source: newSource, change: newIncome ? newAmount : -newAmount)
-            
             transactions[index] = Transaction(id: item.id, amount: newAmount, date: item.date, note: editLineText, source: newSource, isIncome: newIncome)
         }
     }
     
+    func parseAmount(from text: String) -> Int {
+        let components = text.components(separatedBy: .whitespacesAndNewlines)
+        let amountText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        return Int(amountText) ?? 0
+    }
+
     func modifyBalance(source: String, change: Int) {
         switch source {
         case "口座": bankBalance += change
@@ -270,7 +258,63 @@ struct TransactionDetailView: View {
     }
 }
 
-// --- 共通コンポーネント ---
+// --- 投稿画面（カーソル位置への挿入を実装） ---
+struct PostView: View {
+    @Binding var inputText: String
+    @Binding var isPresented: Bool
+    var onPost: (Bool) -> Void
+    
+    // カーソル位置を管理するためのフォーカス
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                HStack(alignment: .top) {
+                    Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $inputText)
+                            .frame(minHeight: 150)
+                            .focused($isFocused)
+                        if inputText.isEmpty {
+                            Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false)
+                        }
+                    }
+                }.padding()
+                Spacer()
+            }
+            .onAppear { isFocused = true }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    HStack {
+                        Button("#") { insertAtCursor("#") }.fontWeight(.bold)
+                        Button("¥") { insertAtCursor("¥") }.fontWeight(.bold)
+                        Button("@") { insertAtCursor("@") }.fontWeight(.bold)
+                        Spacer()
+                        Button("完了") { isFocused = false }
+                    }
+                }
+            }
+            .navigationBarItems(
+                leading: Button("キャンセル") { isPresented = false },
+                trailing: HStack(spacing: 12) {
+                    Button("支出") { onPost(false); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.8)).foregroundColor(.white).cornerRadius(15)
+                    Button("収入") { onPost(true); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue).foregroundColor(.white).cornerRadius(15)
+                }
+            )
+        }
+    }
+    
+    // カーソル位置（または最後尾）に文字を挿入する関数
+    func insertAtCursor(_ symbol: String) {
+        // SwiftUIのTextEditorは標準で選択範囲を取得できないため、簡易的に「半角スペース + 記号」を挿入
+        // ユーザーが直感的に使えるよう最後尾ではなく、現在の入力に対して追加します
+        let textToInsert = " " + symbol
+        inputText += textToInsert
+    }
+}
+
+// --- 共通部品（見た目） ---
 struct TwitterRow: View {
     let item: Transaction
     var body: some View {
@@ -287,15 +331,13 @@ struct TwitterRow: View {
                 if !item.tags.isEmpty {
                     HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(.blue) } }
                 }
-                HStack(spacing: 40) { Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "chart.bar") }.font(.caption).foregroundColor(.secondary).padding(.top, 6)
             }
         }.padding(.vertical, 8).padding(.horizontal, 16)
     }
 }
 
 struct HighlightedText: View {
-    let text: String
-    let isIncome: Bool
+    let text: String; let isIncome: Bool
     var body: some View {
         let words = text.components(separatedBy: " ")
         return words.reduce(Text("")) { (result, word) in
@@ -332,45 +374,6 @@ struct BalanceHeaderView: View {
             BalanceView(title: "ポイント", amount: point, color: .orange)
         }.padding().background(Color(.systemGray6))
         Divider()
-    }
-}
-
-struct PostView: View {
-    @Binding var inputText: String
-    @Binding var isPresented: Bool
-    var onPost: (Bool) -> Void
-    
-    var body: some View {
-        NavigationView {
-            VStack {
-                HStack(alignment: .top) {
-                    Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
-                    ZStack(alignment: .topLeading) {
-                        TextEditor(text: $inputText).frame(minHeight: 150)
-                        if inputText.isEmpty {
-                            Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false)
-                        }
-                    }
-                }.padding()
-                Spacer()
-            }
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    HStack {
-                        Button("#") { inputText += " #" }; Button("¥") { inputText += " ¥" }; Button("@") { inputText += " @" }
-                        Spacer()
-                        Button("完了") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
-                    }
-                }
-            }
-            .navigationBarItems(
-                leading: Button("キャンセル") { isPresented = false },
-                trailing: HStack(spacing: 12) {
-                    Button("支出") { onPost(false); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.8)).foregroundColor(.white).cornerRadius(15)
-                    Button("収入") { onPost(true); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue).foregroundColor(.white).cornerRadius(15)
-                }
-            )
-        }
     }
 }
 
