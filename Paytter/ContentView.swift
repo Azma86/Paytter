@@ -1,15 +1,16 @@
 import SwiftUI
 
-// --- データ構造 (保存できるように RawRepresentable に対応) ---
+// --- データ構造 ---
 struct Transaction: Identifiable, Codable {
     var id = UUID()
     let amount: Int
     let date: Date
     let note: String
+    let source: String // お財布、口座、ポイントのどこから出たか
     
     var cleanNote: String {
         note.components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.hasPrefix("#") }
+            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }
             .joined(separator: " ")
     }
     
@@ -19,24 +20,7 @@ struct Transaction: Identifiable, Codable {
     }
 }
 
-// 配列をAppStorageで保存するための拡張
-extension Array: RawRepresentable where Element: Codable {
-    public init?(rawValue: String) {
-        guard let data = rawValue.data(using: .utf8),
-              let result = try? JSONDecoder().decode([Element].self, from: data)
-        else { return nil }
-        self = result
-    }
-    public var rawValue: String {
-        guard let data = try? JSONEncoder().encode(self),
-              let result = String(data: data, encoding: .utf8)
-        else { return "[]" }
-        return result
-    }
-}
-
 struct ContentView: View {
-    // --- データの保存 (AppStorage) ---
     @AppStorage("transactions") var transactions: [Transaction] = []
     @AppStorage("walletBalance") var walletBalance: Int = 0
     @AppStorage("bankBalance") var bankBalance: Int = 0
@@ -47,12 +31,11 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            // 【1. ホーム画面】
+            // 【ホーム】
             NavigationView {
                 ZStack(alignment: .bottomTrailing) {
                     VStack(spacing: 0) {
                         BalanceHeaderView(wallet: walletBalance, bank: bankBalance, point: pointBalance)
-                        
                         List(transactions.reversed()) { item in
                             TwitterRow(item: item)
                                 .listRowSeparator(.visible)
@@ -61,7 +44,6 @@ struct ContentView: View {
                         .listStyle(.plain)
                     }
 
-                    // ツイートボタン
                     Button(action: { isShowingInputSheet = true }) {
                         Image(systemName: "plus")
                             .font(.system(size: 22, weight: .bold))
@@ -71,116 +53,63 @@ struct ContentView: View {
                             .clipShape(Circle())
                             .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 5)
                     }
-                    .padding(20)
-                    .padding(.bottom, 10) // タブバーに被らないよう調整
+                    .padding(20).padding(.bottom, 10)
                 }
                 .navigationTitle("ホーム")
                 .navigationBarTitleDisplayMode(.inline)
             }
-            .tabItem {
-                Image(systemName: "house")
-                Text("ホーム")
-            }
+            .tabItem { Label("ホーム", systemImage: "house") }
 
-            // 【2. お財布画面 (仮)】
+            // 【お財布（分析）】
             NavigationView {
-                Text("お財布の分析画面（準備中）")
+                WalletAnalysisView(transactions: transactions)
                     .navigationTitle("お財布")
             }
-            .tabItem {
-                Image(systemName: "wallet.pass")
-                Text("お財布")
-            }
+            .tabItem { Label("お財布", systemImage: "wallet.pass") }
 
-            // 【3. 設定画面 (仮)】
+            // 【設定】
             NavigationView {
                 List {
-                    Button("データをリセットする", role: .destructive) {
-                        transactions = []
-                        walletBalance = 0
-                        bankBalance = 0
-                        pointBalance = 0
+                    Section(header: Text("データ管理")) {
+                        Button("データを全削除する", role: .destructive) {
+                            transactions = []; walletBalance = 0; bankBalance = 0; pointBalance = 0
+                        }
                     }
                 }
                 .navigationTitle("設定")
             }
-            .tabItem {
-                Image(systemName: "gearshape")
-                Text("設定")
-            }
+            .tabItem { Label("設定", systemImage: "gearshape") }
         }
-        // シートはTabViewの外に置く
         .sheet(isPresented: $isShowingInputSheet) {
-            PostView(inputText: $inputText, isPresented: $isShowingInputSheet) {
-                addTransaction()
-            }
+            PostView(inputText: $inputText, isPresented: $isShowingInputSheet) { addTransaction() }
         }
     }
 
     func addTransaction() {
         let components = inputText.components(separatedBy: .whitespacesAndNewlines)
-        let amountStr = components.filter { Int($0.replacingOccurrences(of: "¥", with: "")) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        let amount = Int(amountStr) ?? 0
+        let amount = Int(components.filter { Int($0.replacingOccurrences(of: "¥", with: "")) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0") ?? 0
         
-        if inputText.contains("ローソン") {
-            pointBalance += (amount / 100)
-        }
+        // 支出先の判定（@お財布, @口座, @ポイント）
+        var source = "お財布" // デフォルト
+        if inputText.contains("@口座") { source = "口座" }
+        else if inputText.contains("@ポイント") { source = "ポイント" }
 
-        let newAction = Transaction(amount: amount, date: Date(), note: inputText)
-        transactions.append(newAction)
+        // 残高への反映
+        switch source {
+        case "口座": bankBalance -= amount
+        case "ポイント": pointBalance -= amount
+        default: walletBalance -= amount
+        }
         
-        walletBalance -= amount
+        // ローソンの自動ポイント付与
+        if inputText.contains("ローソン") { pointBalance += (amount / 100) }
+
+        transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: source))
         inputText = ""
     }
 }
 
-// --- コンポーネント分離 ---
-struct BalanceHeaderView: View {
-    let wallet: Int; let bank: Int; let point: Int
-    var body: some View {
-        HStack(spacing: 15) {
-            BalanceView(title: "お財布", amount: wallet, color: .green)
-            BalanceView(title: "口座", amount: bank, color: .blue)
-            BalanceView(title: "ポイント", amount: point, color: .orange)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        Divider()
-    }
-}
-
-struct TwitterRow: View {
-    let item: Transaction
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
-                    Text("むつき").font(.subheadline).fontWeight(.bold)
-                    Image(systemName: "checkmark.seal.fill").foregroundColor(.blue).font(.caption)
-                    Text("@Mutsuki_dev · ").font(.caption).foregroundColor(.secondary)
-                    Text(item.date, style: .time).font(.caption).foregroundColor(.secondary)
-                }
-                Text(item.cleanNote).font(.subheadline)
-                if !item.tags.isEmpty {
-                    HStack(spacing: 8) {
-                        ForEach(item.tags, id: \.self) { tag in
-                            Text(tag).font(.caption).foregroundColor(.blue)
-                        }
-                    }
-                }
-                HStack(spacing: 40) {
-                    Image(systemName: "bubble.left")
-                    Image(systemName: "arrow.2.squarepath")
-                    Image(systemName: "heart")
-                    Image(systemName: "chart.bar")
-                }
-                .font(.caption).foregroundColor(.secondary).padding(.top, 6)
-            }
-        }.padding()
-    }
-}
-
+// --- キーボードツールバーの修正 ---
 struct PostView: View {
     @Binding var inputText: String
     @Binding var isPresented: Bool
@@ -196,8 +125,13 @@ struct PostView: View {
             }
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) {
-                    Button("# (タグ)") { inputText += "#" }.fontWeight(.bold)
-                    Button("¥ (金額)") { inputText += "¥" }.fontWeight(.bold)
+                    HStack {
+                        Button("#") { inputText += " #" }.fontWeight(.bold)
+                        Button("¥") { inputText += " ¥" }.fontWeight(.bold)
+                        Button("@") { inputText += " @" }.fontWeight(.bold)
+                        Spacer()
+                        Button("完了") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
+                    }
                 }
             }
             .navigationBarItems(
@@ -208,6 +142,34 @@ struct PostView: View {
         }
     }
 }
+
+// TwitterRow 内に支出先バッジを表示
+struct TwitterRow: View {
+    let item: Transaction
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("むつき").font(.subheadline).fontWeight(.bold)
+                    Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(.secondary)
+                }
+                Text(item.cleanNote).font(.subheadline)
+                HStack {
+                    Text("¥\(item.amount)").fontWeight(.bold)
+                    Text("from \(item.source)").font(.caption2).padding(4).background(Color.gray.opacity(0.1)).cornerRadius(4)
+                }
+                if !item.tags.isEmpty {
+                    HStack {
+                        ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(.blue) }
+                    }
+                }
+            }
+        }.padding()
+    }
+}
+
+// 他のコンポーネント（BalanceView等）は前回と同じ
 
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color
