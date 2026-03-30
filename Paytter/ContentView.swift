@@ -51,7 +51,6 @@ struct ContentView: View {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    // 標準的なスワイプボタンに戻す
                                     Button {
                                         self.transactionToDelete = item
                                         self.isShowingSwipeDeleteAlert = true
@@ -69,7 +68,7 @@ struct ContentView: View {
                     }.padding(20).padding(.bottom, 10)
                 }
                 .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
-                // 削除確認アラート：メッセージに内容を表示
+                // 削除確認アラート：メッセージには本文（cleanNote）のみを表示
                 .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                     Button("キャンセル", role: .cancel) {
                         self.transactionToDelete = nil
@@ -84,7 +83,7 @@ struct ContentView: View {
                     }
                 } message: {
                     if let target = transactionToDelete {
-                        Text("\(target.cleanNote)\n(¥\(target.amount))")
+                        Text(target.cleanNote)
                     } else {
                         Text("この投稿を削除します。")
                     }
