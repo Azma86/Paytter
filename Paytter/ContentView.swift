@@ -119,7 +119,9 @@ struct ContentView: View {
         }
         .onAppear { recalculateBalances() }
         .onChange(of: transactions.count) { _ in recalculateBalances() }
-        .sheet(isPresented: $isShowingInputSheet) { PostView(inputText: $inputText, isPresented: $isShowingInputSheet) { isInc in addTransaction(isInc: isInc) } }
+        .sheet(isPresented: $isShowingInputSheet) { 
+            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, onPost: { isInc in addTransaction(isInc: isInc) }, transactions: transactions, accounts: accounts) 
+        }
     }
 
     func addTransaction(isInc: Bool) {
