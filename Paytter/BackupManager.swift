@@ -9,13 +9,11 @@ class BackupManager {
     }
     
     static func saveAll(transactions: [Transaction], accounts: [Account]) {
-        saveToFile(data: transactions, filename: transFile)
-        saveToFile(data: accounts, filename: accountsFile)
-    }
-    
-    private static func saveToFile<T: Encodable>(data: T, filename: String) {
-        let url = getDocumentsDirectory().appendingPathComponent(filename)
-        try? JSONEncoder().encode(data).write(to: url)
+        let encoder = JSONEncoder()
+        let tUrl = getDocumentsDirectory().appendingPathComponent(transFile)
+        let aUrl = getDocumentsDirectory().appendingPathComponent(accountsFile)
+        try? encoder.encode(transactions).write(to: tUrl)
+        try? encoder.encode(accounts).write(to: aUrl)
     }
     
     static func loadTransactions() -> [Transaction]? {
