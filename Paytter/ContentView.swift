@@ -37,16 +37,29 @@ extension Array: RawRepresentable where Element: Codable {
     }
 }
 
-// --- カーソル位置入力を可能にするカスタムエディタ ---
+// --- カーソル位置入力を可能にするカスタムエディタ (ツールバー対応版) ---
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String
-    var placeholder: String
+    var onInsert: (String) -> Void // 記号挿入用のクロージャ
     
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.font = .preferredFont(forTextStyle: .body)
         textView.backgroundColor = .clear
         textView.delegate = context.coordinator
+        
+        // ツールバーの作成
+        let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
+        let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
+        
+        let hashBtn = UIBarButtonItem(title: "#", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertHash))
+        let yenBtn = UIBarButtonItem(title: "¥", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertYen))
+        let atBtn = UIBarButtonItem(title: "@", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertAt))
+        let doneBtn = UIBarButtonItem(title: "完了", style: .done, target: context.coordinator, action: #selector(context.coordinator.dismissKeyboard))
+        
+        toolbar.items = [hashBtn, yenBtn, atBtn, flexSpace, doneBtn]
+        textView.inputAccessoryView = toolbar
+        
         return textView
     }
     
@@ -63,14 +76,22 @@ struct CustomTextEditor: UIViewRepresentable {
     class Coordinator: NSObject, UITextViewDelegate {
         var parent: CustomTextEditor
         init(_ parent: CustomTextEditor) { self.parent = parent }
+        
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
+        }
+        
+        @objc func insertHash() { parent.onInsert("#") }
+        @objc func insertYen() { parent.onInsert("¥") }
+        @objc func insertAt() { parent.onInsert("@") }
+        @objc func dismissKeyboard() {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
     }
 }
 
 struct ContentView: View {
-    @AppStorage("transactions_v2") var transactions: [Transaction] = []
+    @AppStorage("transactions_v3") var transactions: [Transaction] = []
     @AppStorage("walletBalance") var walletBalance: Int = 0
     @AppStorage("bankBalance") var bankBalance: Int = 0
     @AppStorage("pointBalance") var pointBalance: Int = 0
@@ -295,25 +316,17 @@ struct PostView: View {
                 HStack(alignment: .top) {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
                     ZStack(alignment: .topLeading) {
-                        CustomTextEditor(text: $inputText, placeholder: "どんな買い物をしましたか？")
-                            .frame(minHeight: 150)
+                        // カスタムエディタ側に記号挿入ロジックを渡す
+                        CustomTextEditor(text: $inputText) { symbol in
+                            insertAtCursor(symbol)
+                        }
+                        .frame(minHeight: 150)
                         if inputText.isEmpty {
                             Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false)
                         }
                     }
                 }.padding()
                 Spacer()
-            }
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    HStack {
-                        Button("#") { insertAtCursor("#") }.fontWeight(.bold)
-                        Button("¥") { insertAtCursor("¥") }.fontWeight(.bold)
-                        Button("@") { insertAtCursor("@") }.fontWeight(.bold)
-                        Spacer()
-                        Button("完了") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
-                    }
-                }
             }
             .navigationBarItems(
                 leading: Button("キャンセル") { isPresented = false },
@@ -325,9 +338,7 @@ struct PostView: View {
         }
     }
     
-    // カーソル位置に文字を挿入する
     func insertAtCursor(_ symbol: String) {
-        // 現在のTextEditorの第一応答者（キーボードが出ているUITextView）を取得して操作する
         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let window = scene.windows.first,
            let textView = window.findTextView() {
@@ -338,15 +349,10 @@ struct PostView: View {
             if let range = Range(selectedRange, in: currentText) {
                 let newText = currentText.replacingCharacters(in: range, with: insertionText)
                 inputText = newText
-                
-                // 挿入後にカーソル位置を調整（少しディレイが必要な場合がある）
                 DispatchQueue.main.async {
                     textView.selectedRange = NSRange(location: selectedRange.location + insertionText.count, length: 0)
                 }
             }
-        } else {
-            // 見つからない場合は最後尾（バックアップ）
-            inputText += " " + symbol
         }
     }
 }
@@ -362,7 +368,7 @@ extension UIView {
     }
 }
 
-// --- 共通部品（見た目） ---
+// --- 共通部品 ---
 struct TwitterRow: View {
     let item: Transaction
     var body: some View {
