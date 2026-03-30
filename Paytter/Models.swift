@@ -42,6 +42,9 @@ struct Account: Identifiable, Codable {
     var balance: Int
     var type: AccountType = .wallet
     var isVisible: Bool = true
+    // クレジットカード用に追加
+    var payday: Int? = 1
+    var withdrawalAccountId: UUID? = nil
 }
 
 extension Array: RawRepresentable where Element: Codable {
