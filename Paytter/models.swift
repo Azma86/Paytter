@@ -5,7 +5,7 @@ struct Transaction: Identifiable, Codable {
     var amount: Int
     var date: Date
     var note: String
-    var source: String // 元のsourceを維持
+    var source: String
     var isIncome: Bool
     
     var cleanNote: String {
@@ -24,7 +24,8 @@ struct Account: Identifiable, Codable {
     var id = UUID()
     var name: String
     var balance: Int
-    var isVisible: Bool
+    var initialBalance: Int = 0 // 初期設定時の金額を保持
+    var isVisible: Bool = true
 }
 
 extension Array: RawRepresentable where Element: Codable {
