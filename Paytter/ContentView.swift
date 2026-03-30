@@ -47,36 +47,14 @@ struct ContentView: View {
                         
                         List {
                             ForEach(displayedTransactions, id: \.id) { item in
-                                ZStack {
-                                    // 通常の行コンテンツ
-                                    NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
-                                        TwitterRow(item: item).listRowInsets(EdgeInsets())
-                                    }
-                                    
-                                    // 削除ボタンを居座らせるためのオーバーレイ
-                                    // アラートが表示されている間だけ、赤い「削除」という板を表示し続ける
-                                    if isShowingSwipeDeleteAlert && transactionToDelete?.id == item.id {
-                                        HStack {
-                                            Spacer()
-                                            Rectangle()
-                                                .fill(Color.red)
-                                                .frame(width: 80) // 標準的な削除ボタンの幅
-                                                .overlay(
-                                                    Text("削除")
-                                                        .font(.system(size: 15))
-                                                        .foregroundColor(.white)
-                                                )
-                                        }
-                                        .transition(.move(edge: .trailing))
-                                        .zIndex(1)
-                                    }
+                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
+                                    TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    // 標準的なスワイプボタンに戻す
                                     Button {
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                            self.transactionToDelete = item
-                                            self.isShowingSwipeDeleteAlert = true
-                                        }
+                                        self.transactionToDelete = item
+                                        self.isShowingSwipeDeleteAlert = true
                                     } label: {
                                         Label("削除", systemImage: "trash")
                                     }
@@ -91,20 +69,24 @@ struct ContentView: View {
                     }.padding(20).padding(.bottom, 10)
                 }
                 .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+                // 削除確認アラート：メッセージに内容を表示
                 .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                     Button("キャンセル", role: .cancel) {
-                        withAnimation {
-                            self.transactionToDelete = nil
-                        }
+                        self.transactionToDelete = nil
                     }
                     Button("削除", role: .destructive) {
                         if let target = transactionToDelete {
-                            // 削除時は居座りボタンも含めてシュッと消す
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 deleteSpecificTransaction(target)
                             }
                         }
                         self.transactionToDelete = nil
+                    }
+                } message: {
+                    if let target = transactionToDelete {
+                        Text("\(target.cleanNote)\n(¥\(target.amount))")
+                    } else {
+                        Text("この投稿を削除します。")
                     }
                 }
             }.tabItem { Label("ホーム", systemImage: "house") }
