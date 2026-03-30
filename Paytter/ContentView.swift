@@ -22,37 +22,24 @@ struct Transaction: Identifiable, Codable {
     }
 }
 
-// 保存用の拡張（より堅実な実装に変更）
-extension Array: RawRepresentable where Element == Transaction {
+extension Array: RawRepresentable where Element: Codable {
     public init?(rawValue: String) {
-        guard let data = rawValue.data(using: .utf8) else {
-            self = []
-            return
-        }
-        do {
-            let result = try JSONDecoder().decode([Transaction].self, from: data)
-            self = result
-        } catch {
-            print("Decoding error: \(error)")
-            self = []
-        }
+        guard let data = rawValue.data(using: .utf8),
+              let result = try? JSONDecoder().decode([Element].self, from: data)
+        else { return nil }
+        self = result
     }
-    
     public var rawValue: String {
-        do {
-            let data = try JSONEncoder().encode(self)
-            return String(data: data, encoding: .utf8) ?? "[]"
-        } catch {
-            print("Encoding error: \(error)")
-            return "[]"
-        }
+        guard let data = try? JSONEncoder().encode(self),
+              let result = String(data: data, encoding: .utf8)
+        else { return "[]" }
+        return result
     }
 }
 
 // --- カスタムエディタ ---
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String
-    var placeholder: String
     var onInsert: (String) -> Void
     
     func makeUIView(context: Context) -> UITextView {
@@ -60,14 +47,12 @@ struct CustomTextEditor: UIViewRepresentable {
         textView.font = .preferredFont(forTextStyle: .body)
         textView.backgroundColor = .clear
         textView.delegate = context.coordinator
-        
         let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
         let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
         let hashBtn = UIBarButtonItem(title: "#", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertHash))
         let yenBtn = UIBarButtonItem(title: "¥", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertYen))
         let atBtn = UIBarButtonItem(title: "@", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertAt))
         let doneBtn = UIBarButtonItem(title: "完了", style: .done, target: context.coordinator, action: #selector(context.coordinator.dismissKeyboard))
-        
         toolbar.items = [hashBtn, yenBtn, atBtn, flexSpace, doneBtn]
         textView.inputAccessoryView = toolbar
         return textView
@@ -91,8 +76,7 @@ struct CustomTextEditor: UIViewRepresentable {
 }
 
 struct ContentView: View {
-    // 保存キーを final に変更して安定性を向上
-    @AppStorage("transactions_final") var transactions: [Transaction] = []
+    @AppStorage("transactions_v4") var transactions: [Transaction] = []
     @AppStorage("walletBalance") var walletBalance: Int = 0
     @AppStorage("bankBalance") var bankBalance: Int = 0
     @AppStorage("pointBalance") var pointBalance: Int = 0
@@ -102,6 +86,10 @@ struct ContentView: View {
     @State private var isShowingDeleteAlert = false
     @State private var isShowingSwipeDeleteAlert = false
     @State private var indexSetToDelete: IndexSet?
+    
+    // バックアップ用
+    @State private var isShowingRestoreAlert = false
+    @State private var restoreText: String = ""
 
     var body: some View {
         TabView {
@@ -111,11 +99,7 @@ struct ContentView: View {
                         BalanceHeaderView(wallet: walletBalance, bank: bankBalance, point: pointBalance)
                         List {
                             ForEach(transactions.reversed()) { item in
-                                NavigationLink(destination: TransactionDetailView(item: item, 
-                                                                                transactions: $transactions,
-                                                                                walletBalance: $walletBalance,
-                                                                                bankBalance: $bankBalance,
-                                                                                pointBalance: $pointBalance)) {
+                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, walletBalance: $walletBalance, bankBalance: $bankBalance, pointBalance: $pointBalance)) {
                                     TwitterRow(item: item)
                                         .listRowInsets(EdgeInsets())
                                 }
@@ -128,75 +112,71 @@ struct ContentView: View {
                         .listStyle(.plain)
                         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                             Button("キャンセル", role: .cancel) { indexSetToDelete = nil }
-                            Button("削除", role: .destructive) {
-                                if let offsets = indexSetToDelete { deleteTransaction(at: offsets) }
-                            }
+                            Button("削除", role: .destructive) { if let offsets = indexSetToDelete { deleteTransaction(at: offsets) } }
                         }
                     }
-
                     Button(action: { inputText = ""; isShowingInputSheet = true }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 56, height: 56)
-                            .background(Color(red: 0.11, green: 0.63, blue: 0.95))
-                            .clipShape(Circle())
-                    }
-                    .padding(20).padding(.bottom, 10)
+                        Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color.blue).clipShape(Circle())
+                    }.padding(20).padding(.bottom, 10)
                 }
                 .navigationTitle("ホーム")
                 .navigationBarTitleDisplayMode(.inline)
-            }
-            .tabItem { Label("ホーム", systemImage: "house") }
+            }.tabItem { Label("ホーム", systemImage: "house") }
 
             NavigationView {
-                WalletAnalysisView(transactions: transactions)
-                    .navigationTitle("お財布")
-            }
-            .tabItem { Label("お財布", systemImage: "wallet.pass") }
+                WalletAnalysisView(transactions: transactions).navigationTitle("お財布")
+            }.tabItem { Label("お財布", systemImage: "wallet.pass") }
 
             NavigationView {
                 List {
+                    Section(header: Text("バックアップ")) {
+                        Button("バックアップをコピー") {
+                            UIPasteboard.general.string = transactions.rawValue
+                        }
+                        Button("バックアップから復元") {
+                            isShowingRestoreAlert = true
+                        }
+                    }
                     Section(header: Text("データ管理")) {
                         Button("データを全削除する", role: .destructive) { isShowingDeleteAlert = true }
                     }
                 }
                 .navigationTitle("設定")
-                .alert("データの全削除", isPresented: $isShowingDeleteAlert) {
-                    Button("キャンセル", role: .cancel) { }
-                    Button("削除する", role: .destructive) {
-                        transactions = []; walletBalance = 0; bankBalance = 0; pointBalance = 0
+                .alert("バックアップから復元", isPresented: $isShowingRestoreAlert) {
+                    TextField("ここにバックアップを貼り付け", text: $restoreText)
+                    Button("キャンセル", role: .cancel) { restoreText = "" }
+                    Button("復元実行") {
+                        if let restored = [Transaction](rawValue: restoreText) {
+                            transactions = restored
+                            restoreText = ""
+                        }
                     }
-                } message: { Text("これまでの投稿と残高がすべて消去されます。よろしいですか？") }
-            }
-            .tabItem { Label("設定", systemImage: "gearshape") }
+                } message: { Text("入力されたデータでタイムラインを上書きします。") }
+                .alert("全削除", isPresented: $isShowingDeleteAlert) {
+                    Button("キャンセル", role: .cancel) { }
+                    Button("削除する", role: .destructive) { transactions = []; walletBalance = 0; bankBalance = 0; pointBalance = 0 }
+                } message: { Text("すべて消去されます。よろしいですか？") }
+            }.tabItem { Label("設定", systemImage: "gearshape") }
         }
         .sheet(isPresented: $isShowingInputSheet) {
-            PostView(inputText: $inputText, isPresented: $isShowingInputSheet) { isIncome in
-                addTransaction(isIncome: isIncome)
-            }
+            PostView(inputText: $inputText, isPresented: $isShowingInputSheet) { isInc in addTransaction(isInc: isInc) }
         }
     }
 
-    func addTransaction(isIncome: Bool) {
+    func addTransaction(isInc: Bool) {
         let amount = parseAmount(from: inputText)
         let source = parseSource(from: inputText)
-        let change = isIncome ? amount : -amount
-        updateBalance(source: source, change: change)
-        if !isIncome && inputText.contains("ローソン") { pointBalance += (amount / 100) }
-        
-        let new = Transaction(amount: amount, date: Date(), note: inputText, source: source, isIncome: isIncome)
-        transactions.append(new)
-        inputText = ""
+        updateBalance(source: source, change: isInc ? amount : -amount)
+        if !isInc && inputText.contains("ローソン") { pointBalance += (amount / 100) }
+        transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: source, isIncome: isInc))
     }
     
     func deleteTransaction(at offsets: IndexSet) {
         for index in offsets {
-            let reversedIndex = transactions.count - 1 - index
-            let item = transactions[reversedIndex]
+            let revIndex = transactions.count - 1 - index
+            let item = transactions[revIndex]
             updateBalance(source: item.source, change: item.isIncome ? -item.amount : item.amount)
-            if !item.isIncome && item.note.contains("ローソン") { pointBalance -= (item.amount / 100) }
-            transactions.remove(at: reversedIndex)
+            transactions.remove(at: revIndex)
         }
     }
     
@@ -210,28 +190,19 @@ struct ContentView: View {
     
     func parseAmount(from text: String) -> Int {
         let components = text.components(separatedBy: .whitespacesAndNewlines)
-        let amountText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amountText) ?? 0
+        let amt = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        return Int(amt) ?? 0
     }
     
     func parseSource(from text: String) -> String {
-        if text.contains("@口座") { return "口座" }
-        if text.contains("@ポイント") { return "ポイント" }
-        return "お財布"
+        text.contains("@口座") ? "口座" : (text.contains("@ポイント") ? "ポイント" : "お財布")
     }
 }
 
-// --- 詳細画面 ---
 struct TransactionDetailView: View {
-    let item: Transaction
-    @Binding var transactions: [Transaction]
-    @Binding var walletBalance: Int
-    @Binding var bankBalance: Int
-    @Binding var pointBalance: Int
-    @Environment(\.dismiss) var dismiss
-    @State private var isShowingEditSheet = false
-    @State private var editLineText = ""
-    @State private var isShowingDeleteConfirm = false
+    let item: Transaction; @Binding var transactions: [Transaction]
+    @Binding var walletBalance: Int; @Binding var bankBalance: Int; @Binding var pointBalance: Int
+    @Environment(\.dismiss) var dismiss; @State private var isShowingEditSheet = false; @State private var editLineText = ""; @State private var isShowingDeleteConfirm = false
     
     var body: some View {
         ScrollView {
@@ -246,14 +217,10 @@ struct TransactionDetailView: View {
                     Text(item.source).font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color.gray.opacity(0.1)).cornerRadius(5)
                 }
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3)
-                if !item.tags.isEmpty {
-                    HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(.blue) } }
-                }
+                if !item.tags.isEmpty { HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(.blue) } } }
                 Text(item.date, style: .date) + Text(" " ) + Text(item.date, style: .time)
                 Divider()
-                HStack(spacing: 60) {
-                    Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "shareplay")
-                }.font(.subheadline).foregroundColor(.secondary).frame(maxWidth: .infinity)
+                HStack(spacing: 60) { Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "shareplay") }.font(.subheadline).foregroundColor(.secondary).frame(maxWidth: .infinity)
             }.padding()
         }
         .toolbar {
@@ -265,36 +232,34 @@ struct TransactionDetailView: View {
             }
         }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) {
-            Button("キャンセル", role: .cancel) { }
-            Button("削除", role: .destructive) { deleteThis() }
+            Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() }
         }
         .sheet(isPresented: $isShowingEditSheet) {
-            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet) { isIncome in updateThis(newIncome: isIncome) }
+            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet) { isInc in updateThis(newInc: isInc) }
         }
     }
     
     func deleteThis() {
-        if let index = transactions.firstIndex(where: { $0.id == item.id }) {
+        if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             modifyBalance(source: item.source, change: item.isIncome ? -item.amount : item.amount)
-            transactions.remove(at: index)
-            dismiss()
+            transactions.remove(at: idx); dismiss()
         }
     }
     
-    func updateThis(newIncome: Bool) {
-        if let index = transactions.firstIndex(where: { $0.id == item.id }) {
+    func updateThis(newInc: Bool) {
+        if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             modifyBalance(source: item.source, change: item.isIncome ? -item.amount : item.amount)
-            let newAmount = parseAmount(from: editLineText)
-            let newSource = editLineText.contains("@口座") ? "口座" : (editLineText.contains("@ポイント") ? "ポイント" : "お財布")
-            modifyBalance(source: newSource, change: newIncome ? newAmount : -newAmount)
-            transactions[index] = Transaction(id: item.id, amount: newAmount, date: item.date, note: editLineText, source: newSource, isIncome: newIncome)
+            let nAmt = parseAmount(from: editLineText)
+            let nSrc = editLineText.contains("@口座") ? "口座" : (editLineText.contains("@ポイント") ? "ポイント" : "お財布")
+            modifyBalance(source: nSrc, change: newInc ? nAmt : -nAmt)
+            transactions[idx] = Transaction(id: item.id, amount: nAmt, date: item.date, note: editLineText, source: nSrc, isIncome: newInc)
         }
     }
     
     func parseAmount(from text: String) -> Int {
         let components = text.components(separatedBy: .whitespacesAndNewlines)
-        let amountText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amountText) ?? 0
+        let amtText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        return Int(amtText) ?? 0
     }
 
     func modifyBalance(source: String, change: Int) {
@@ -306,50 +271,33 @@ struct TransactionDetailView: View {
     }
 }
 
-// --- 投稿画面 ---
 struct PostView: View {
-    @Binding var inputText: String
-    @Binding var isPresented: Bool
-    var onPost: (Bool) -> Void
-    
+    @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool) -> Void
     var body: some View {
         NavigationView {
             VStack {
                 HStack(alignment: .top) {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
                     ZStack(alignment: .topLeading) {
-                        CustomTextEditor(text: $inputText, placeholder: "どんな買い物をしましたか？") { symbol in insertAtCursor(symbol) }
-                        .frame(minHeight: 150)
-                        if inputText.isEmpty {
-                            Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false)
-                        }
+                        CustomTextEditor(text: $inputText) { sym in insertAtCursor(sym) }.frame(minHeight: 150)
+                        if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                     }
                 }.padding()
                 Spacer()
             }
-            .navigationBarItems(
-                leading: Button("キャンセル") { isPresented = false },
-                trailing: HStack(spacing: 12) {
-                    Button("支出") { onPost(false); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.8)).foregroundColor(.white).cornerRadius(15)
-                    Button("収入") { onPost(true); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue).foregroundColor(.white).cornerRadius(15)
-                }
-            )
+            .navigationBarItems(leading: Button("キャンセル") { isPresented = false }, trailing: HStack(spacing: 12) {
+                Button("支出") { onPost(false); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.8)).foregroundColor(.white).cornerRadius(15)
+                Button("収入") { onPost(true); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue).foregroundColor(.white).cornerRadius(15)
+            })
         }
     }
-    
-    func insertAtCursor(_ symbol: String) {
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = scene.windows.first,
-           let textView = window.findTextView() {
-            let selectedRange = textView.selectedRange
-            let insertionText = " " + symbol
-            let currentText = textView.text ?? ""
-            if let range = Range(selectedRange, in: currentText) {
-                let newText = currentText.replacingCharacters(in: range, with: insertionText)
-                inputText = newText
-                DispatchQueue.main.async {
-                    textView.selectedRange = NSRange(location: selectedRange.location + insertionText.count, length: 0)
-                }
+    func insertAtCursor(_ sym: String) {
+        if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
+            let sel = tv.selectedRange; let ins = " " + sym; let cur = tv.text ?? ""
+            if let ran = Range(sel, in: cur) {
+                let nText = cur.replacingCharacters(in: ran, with: ins)
+                inputText = nText
+                DispatchQueue.main.async { tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0) }
             }
         }
     }
@@ -357,13 +305,12 @@ struct PostView: View {
 
 extension UIView {
     func findTextView() -> UITextView? {
-        if let textView = self as? UITextView { return textView }
-        for subview in subviews { if let textView = subview.findTextView() { return textView } }
+        if let tv = self as? UITextView { return tv }
+        for sv in subviews { if let tv = sv.findTextView() { return tv } }
         return nil
     }
 }
 
-// --- 共通部品 ---
 struct TwitterRow: View {
     let item: Transaction
     var body: some View {
@@ -377,9 +324,7 @@ struct TwitterRow: View {
                     Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4)
                 }
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline)
-                if !item.tags.isEmpty {
-                    HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(.blue) } }
-                }
+                if !item.tags.isEmpty { HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(.blue) } } }
             }
         }.padding(.vertical, 8).padding(.horizontal, 16)
     }
@@ -389,10 +334,10 @@ struct HighlightedText: View {
     let text: String; let isIncome: Bool
     var body: some View {
         let words = text.components(separatedBy: " ")
-        return words.reduce(Text("")) { (result, word) in
+        return words.reduce(Text("")) { (res, word) in
             if word.contains("¥") || (Int(word.replacingOccurrences(of: "¥", with: "")) != nil) {
-                return result + Text(word + " ").foregroundColor(isIncome ? Color(red: 0.1, green: 0.7, blue: 0.1) : .red).fontWeight(.bold)
-            } else { return result + Text(word + " ") }
+                return res + Text(word + " ").foregroundColor(isIncome ? .green : .red).fontWeight(.bold)
+            } else { return res + Text(word + " ") }
         }
     }
 }
