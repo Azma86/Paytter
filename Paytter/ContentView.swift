@@ -15,6 +15,10 @@ struct ContentView: View {
     @State private var isShowingSwipeDeleteAlert = false
     @State private var indexSetToDelete: IndexSet?
     @State private var isShowingAccountCreator = false
+    
+    // バックアップ復元用
+    @State private var isShowingRestoreConfirm = false
+    @State private var backupDateString = ""
 
     var body: some View {
         TabView {
@@ -56,7 +60,7 @@ struct ContentView: View {
                 List {
                     Section(header: Text("お財布の管理")) {
                         ForEach($accounts) { $acc in
-                            NavigationLink(destination: AccountEditView(account: $acc, transactions: $transactions)) {
+                            NavigationLink(destination: AccountEditView(account: $acc, transactions: $transactions, allAccounts: accounts)) {
                                 HStack { Image(systemName: acc.type.icon).foregroundColor(.secondary); Text(acc.name); Spacer(); Text("¥\(acc.balance)").foregroundColor(.secondary) }
                             }
                         }.onDelete(perform: deleteAccount)
@@ -74,16 +78,28 @@ struct ContentView: View {
             NavigationView {
                 List {
                     Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
-                    Section(header: Text("バックアップ")) {
-                        Button("内蔵ファイルから読み込む") {
-                            if let t = BackupManager.loadTransactions(), let a = BackupManager.loadAccounts() {
-                                transactions = t; accounts = a; recalculateBalances()
-                            }
+                    Section(header: Text("バックアップ管理")) {
+                        Button("手動でバックアップ保存") {
+                            BackupManager.saveAll(transactions: transactions, accounts: accounts)
+                        }
+                        Button("バックアップから読み込む") {
+                            backupDateString = BackupManager.getBackupDate()
+                            isShowingRestoreConfirm = true
                         }
                     }
                     Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingDeleteAlert = true } }
                 }
                 .navigationTitle("設定")
+                .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) {
+                    Button("キャンセル", role: .cancel) { }
+                    Button("復元する", role: .destructive) {
+                        if let t = BackupManager.loadTransactions(), let a = BackupManager.loadAccounts() {
+                            transactions = t; accounts = a; recalculateBalances()
+                        }
+                    }
+                } message: {
+                    Text("最終保存日時: \(backupDateString)\n現在のデータは上書きされます。復元しますか？")
+                }
                 .alert("リセット", isPresented: $isShowingDeleteAlert) {
                     Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { resetAll() }
                 }
@@ -99,15 +115,18 @@ struct ContentView: View {
         transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
     }
     func deleteTransaction(at offsets: IndexSet) { for index in offsets { let revIndex = transactions.count - 1 - index; transactions.remove(at: revIndex) } }
-    func deleteAccount(at offsets: IndexSet) { accounts.remove(atOffsets: offsets) }
+    func deleteAccount(at offsets: IndexSet) { accounts.remove(atOffsets: offsets); recalculateBalances() }
+    
     func recalculateBalances() {
         for i in 0..<accounts.count {
             var current = 0
             for tx in transactions where tx.source == accounts[i].name { current += (tx.isIncome ? tx.amount : -tx.amount) }
             accounts[i].balance = current
         }
+        // 自動保存
         BackupManager.saveAll(transactions: transactions, accounts: accounts)
     }
+    
     func resetAll() {
         transactions = []; for i in 0..<accounts.count { accounts[i].balance = 0 }
         BackupManager.saveAll(transactions: transactions, accounts: accounts)
