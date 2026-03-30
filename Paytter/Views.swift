@@ -169,11 +169,13 @@ struct AccountEditView: View {
                         set: { account.payday = $0 }
                     ), in: 1...31)
                     
-                    // エラー回避のため、明示的にUUID?として扱うPicker
                     Picker("引き落とし口座", selection: $account.withdrawalAccountId) {
-                        Text("指定なし").tag(nil as UUID?)
-                        ForEach(allAccounts.filter { $0.type == .bank }) { acc in
-                            Text(acc.name).tag(acc.id as UUID?)
+                        Text("指定なし").tag(UUID?.none)
+                        // allAccounts内の口座のみをフィルタリング
+                        ForEach(allAccounts) { acc in
+                            if acc.type == .bank {
+                                Text(acc.name).tag(acc.id as UUID?)
+                            }
                         }
                     }
                 }
