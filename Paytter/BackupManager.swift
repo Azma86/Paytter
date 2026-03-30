@@ -1,31 +1,32 @@
 import Foundation
 
 class BackupManager {
-    static let filename = "paytter_backup.json"
+    static let transFile = "paytter_transactions.json"
+    static let accountsFile = "paytter_accounts.json"
     
     static func getDocumentsDirectory() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
     
-    static func saveToFile(transactions: [Transaction]) {
-        let url = getDocumentsDirectory().appendingPathComponent(filename)
-        do {
-            let data = try JSONEncoder().encode(transactions)
-            try data.write(to: url, options: [.atomicWrite, .completeFileProtection])
-        } catch {
-            print("Failed to save backup: \(error.localizedDescription)")
-        }
+    static func saveAll(transactions: [Transaction], accounts: [Account]) {
+        saveToFile(data: transactions, filename: transFile)
+        saveToFile(data: accounts, filename: accountsFile)
     }
     
-    static func loadFromFile() -> [Transaction]? {
+    private static func saveToFile<T: Encodable>(data: T, filename: String) {
         let url = getDocumentsDirectory().appendingPathComponent(filename)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        do {
-            let data = try Data(contentsOf: url)
-            return try JSONDecoder().decode([Transaction].self, from: data)
-        } catch {
-            print("Failed to load backup: \(error.localizedDescription)")
-            return nil
-        }
+        try? JSONEncoder().encode(data).write(to: url)
+    }
+    
+    static func loadTransactions() -> [Transaction]? {
+        let url = getDocumentsDirectory().appendingPathComponent(transFile)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode([Transaction].self, from: data)
+    }
+    
+    static func loadAccounts() -> [Account]? {
+        let url = getDocumentsDirectory().appendingPathComponent(accountsFile)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode([Account].self, from: data)
     }
 }
