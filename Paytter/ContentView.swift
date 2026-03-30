@@ -16,11 +16,15 @@ struct ContentView: View {
     @State private var indexSetToDelete: IndexSet?
     @State private var isShowingAccountCreator = false
     
-    // 復元・保存用State
+    // 復元・保存・完了用State
     @State private var isShowingRestoreConfirm = false
-    @State private var isShowingSaveConfirm = false // 手動保存の確認用
+    @State private var isShowingSaveConfirm = false
     @State private var isRestoringManual = false
     @State private var backupDateString = ""
+    
+    // 完了通知用
+    @State private var isShowingCompletionAlert = false
+    @State private var completionMessage = ""
 
     var body: some View {
         TabView {
@@ -103,6 +107,8 @@ struct ContentView: View {
                     Button("キャンセル", role: .cancel) { }
                     Button("上書き保存", role: .none) {
                         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
+                        completionMessage = "手動バックアップの保存が完了しました。"
+                        isShowingCompletionAlert = true
                     }
                 } message: {
                     Text("前回の手動保存日時: \(backupDateString)\n現在のデータでお財布設定と投稿を上書きしますか？")
@@ -114,15 +120,28 @@ struct ContentView: View {
                         if let t = BackupManager.loadTransactions(isManual: isRestoringManual),
                            let a = BackupManager.loadAccounts(isManual: isRestoringManual) {
                             transactions = t; accounts = a; recalculateBalances()
+                            completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"
+                            isShowingCompletionAlert = true
                         }
                     }
                 } message: {
                     Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？")
                 }
+                // リセットの確認
                 .alert("リセット", isPresented: $isShowingDeleteAlert) {
-                    Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll() }
+                    Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { 
+                        resetAll()
+                        completionMessage = "全てのデータを初期状態にリセットしました。"
+                        isShowingCompletionAlert = true
+                    }
                 } message: {
                     Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。")
+                }
+                // 完了通知用ダイアログ
+                .alert("完了", isPresented: $isShowingCompletionAlert) {
+                    Button("OK", role: .none) { }
+                } message: {
+                    Text(completionMessage)
                 }
             }.tabItem { Label("設定", systemImage: "gearshape") }
         }
