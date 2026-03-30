@@ -1,6 +1,6 @@
 import SwiftUI
 
-// --- お財布追加画面 ---
+// --- お財布追加画面 (新規作成用) ---
 struct AccountCreateView: View {
     @Binding var accounts: [Account]
     @Environment(\.dismiss) var dismiss
@@ -10,21 +10,28 @@ struct AccountCreateView: View {
     var body: some View {
         NavigationView {
             Form {
-                TextField("お財布の名前", text: $name)
-                TextField("現在の金額（初期残高）", text: $initial).keyboardType(.numberPad)
+                Section(header: Text("基本情報")) {
+                    TextField("お財布の名前", text: $name)
+                    TextField("現在の金額（初期残高）", text: $initial)
+                        .keyboardType(.numberPad)
+                }
             }
             .navigationTitle("新しいお財布")
-            .navigationBarItems(leading: Button("キャンセル"){ dismiss() }, trailing: Button("追加") {
-                let val = Int(initial) ?? 0
-                let newAcc = Account(name: name, balance: val, initialBalance: val)
-                accounts.append(newAcc)
-                dismiss()
-            })
+            .navigationBarItems(
+                leading: Button("キャンセル") { dismiss() },
+                trailing: Button("追加") {
+                    let val = Int(initial) ?? 0
+                    // 新しいお財布を作成
+                    let newAcc = Account(name: name, balance: val, initialBalance: val, isVisible: true)
+                    accounts.append(newAcc)
+                    dismiss()
+                }.disabled(name.isEmpty) // 名前がない時は押せないように
+            )
         }
     }
 }
 
-// --- お財布編集画面 ---
+// --- お財布編集画面 (名前変更・残高調整用) ---
 struct AccountEditView: View {
     @Binding var account: Account
     @State private var editBalance: String = ""
@@ -36,16 +43,19 @@ struct AccountEditView: View {
                 Toggle("ホーム上部に表示", isOn: $account.isVisible)
             }
             Section(header: Text("金額の修正"), footer: Text("現在の正しい金額を入力してください。")) {
-                TextField("現在の金額: ¥\(account.balance)", text: $editBalance)
-                    .keyboardType(.numberPad)
-                Button("金額を更新する") {
-                    if let newVal = Int(editBalance) {
-                        // 差分を initialBalance に加算することで、過去の投稿を維持したまま残高を合わせる
-                        let diff = newVal - account.balance
-                        account.initialBalance += diff
-                        account.balance = newVal
-                        editBalance = ""
+                HStack {
+                    TextField("新しい残高を入力", text: $editBalance)
+                        .keyboardType(.numberPad)
+                    Button("更新") {
+                        if let newVal = Int(editBalance) {
+                            // 差分を initialBalance に加算して整合性をとる
+                            let diff = newVal - account.balance
+                            account.initialBalance += diff
+                            account.balance = newVal
+                            editBalance = ""
+                        }
                     }
+                    .buttonStyle(.borderedProminent)
                 }
             }
         }
