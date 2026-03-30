@@ -1,9 +1,8 @@
-import SwiftUI // これが「View」や「AppStorage」を使うために必須です
+import SwiftUI
 
 // --- タイムラインの1行 ---
 struct TwitterRow: View {
     let item: Transaction
-    // 「S」は大文字です
     @AppStorage("accounts_v1") var accounts: [Account] = [] 
 
     var body: some View {
@@ -15,7 +14,6 @@ struct TwitterRow: View {
                     Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(.secondary)
                     Spacer()
                     
-                    // accountId からお財布の名前を探してバッジを表示
                     if let accountId = item.accountId,
                        let account = accounts.first(where: { $0.id == accountId }) {
                         Text(account.name)
@@ -264,7 +262,7 @@ struct BalanceView: View {
 struct TransactionDetailView: View {
     let item: Transaction
     @Binding var transactions: [Transaction]
-    @Binding var accounts: [Account] // 修正：残高更新のため accounts を Binding で受け取る
+    @Binding var accounts: [Account]
     
     @Environment(\.dismiss) var dismiss
     @State private var isShowingEditSheet = false
@@ -317,7 +315,6 @@ struct TransactionDetailView: View {
     
     func deleteThis() {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
-            // 残高を戻す
             if let accId = item.accountId, let accIdx = accounts.firstIndex(where: { $0.id == accId }) {
                 accounts[accIdx].balance += (item.isIncome ? -item.amount : item.amount)
             }
@@ -329,19 +326,13 @@ struct TransactionDetailView: View {
     
     func updateThis(newInc: Bool, newAccId: UUID?) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
-            // 旧データを戻す
             if let oldAccId = item.accountId, let oldAccIdx = accounts.firstIndex(where: { $0.id == oldAccId }) {
                 accounts[oldAccIdx].balance += (item.isIncome ? -item.amount : item.amount)
             }
-            
-            // 新データを解析
             let nAmt = parseAmount(from: editLineText)
-            
-            // 新データを反映
             if let nAccId = newAccId, let nAccIdx = accounts.firstIndex(where: { $0.id == nAccId }) {
                 accounts[nAccIdx].balance += (newInc ? nAmt : -nAmt)
             }
-            
             transactions[idx] = Transaction(id: item.id, amount: nAmt, date: item.date, note: editLineText, accountId: newAccId, isIncome: newInc)
             BackupManager.saveAll(transactions: transactions, accounts: accounts)
         }
@@ -350,6 +341,6 @@ struct TransactionDetailView: View {
     func parseAmount(from text: String) -> Int {
         let components = text.components(separatedBy: .whitespacesAndNewlines)
         let amtText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amtText) ?? "0"
+        return Int(amtText) ?? 0 // 修正：ここを 0 にしました
     }
 }
