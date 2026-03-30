@@ -20,11 +20,27 @@ struct Transaction: Identifiable, Codable {
     }
 }
 
+enum AccountType: String, Codable, CaseIterable {
+    case wallet = "お財布"
+    case bank = "口座"
+    case credit = "クレジットカード"
+    case point = "ポイント"
+    
+    var icon: String {
+        switch self {
+        case .wallet: return "wallet.pass"
+        case .bank: return "building.columns"
+        case .credit: return "creditcard"
+        case .point: return "p.circle"
+        }
+    }
+}
+
 struct Account: Identifiable, Codable {
     var id = UUID()
     var name: String
     var balance: Int
-    var initialBalance: Int = 0 // 残高の整合性を保つための初期値
+    var type: AccountType = .wallet // 種類を追加
     var isVisible: Bool = true
 }
 
