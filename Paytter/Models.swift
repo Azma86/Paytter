@@ -40,7 +40,7 @@ struct Account: Identifiable, Codable {
     var id = UUID()
     var name: String
     var balance: Int
-    var type: AccountType = .wallet // 種類を追加
+    var type: AccountType = .wallet
     var isVisible: Bool = true
 }
 
