@@ -25,6 +25,7 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
+            // 【ホーム】
             NavigationView {
                 ZStack(alignment: .bottomTrailing) {
                     VStack(spacing: 0) {
@@ -43,12 +44,27 @@ struct ContentView: View {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
                             }
-                            .onDelete { indexSet in self.indexSetToDelete = indexSet; self.isShowingSwipeDeleteAlert = true }
+                            .onDelete { indexSet in
+                                // スワイプ後の「無駄な戻り」を防ぐため、即座にインデックスを保存
+                                self.indexSetToDelete = indexSet
+                                self.isShowingSwipeDeleteAlert = true
+                            }
                         }
                         .listStyle(.plain)
                         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
-                            Button("キャンセル", role: .cancel) { }
-                            Button("削除", role: .destructive) { if let offsets = indexSetToDelete { deleteTransaction(at: offsets) } }
+                            Button("キャンセル", role: .cancel) {
+                                // キャンセル時はスワイプ状態を戻すためにインデックスをクリア
+                                self.indexSetToDelete = nil
+                            }
+                            Button("削除", role: .destructive) {
+                                if let offsets = indexSetToDelete {
+                                    // アニメーションを明示的に指定して削除
+                                    withAnimation {
+                                        deleteTransaction(at: offsets)
+                                    }
+                                }
+                                self.indexSetToDelete = nil
+                            }
                         }
                     }
                     Button(action: { inputText = ""; isShowingInputSheet = true }) {
@@ -57,6 +73,7 @@ struct ContentView: View {
                 }.navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
             }.tabItem { Label("ホーム", systemImage: "house") }
 
+            // 【お財布】
             NavigationView {
                 List {
                     Section(header: Text("お財布の管理")) {
@@ -75,6 +92,7 @@ struct ContentView: View {
                 .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
             }.tabItem { Label("お財布", systemImage: "wallet.pass") }
 
+            // 【設定】
             NavigationView {
                 List {
                     Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
@@ -128,8 +146,21 @@ struct ContentView: View {
         let amount = parseAmount(from: inputText); let sourceName = parseSourceName(from: inputText)
         transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
     }
-    func deleteTransaction(at offsets: IndexSet) { for index in offsets { let revIndex = transactions.count - 1 - index; transactions.remove(at: revIndex) } }
-    func deleteAccount(at offsets: IndexSet) { accounts.remove(atOffsets: offsets); recalculateBalances() }
+    
+    func deleteTransaction(at offsets: IndexSet) {
+        for index in offsets {
+            let revIndex = transactions.count - 1 - index
+            transactions.remove(at: revIndex)
+        }
+        // 削除後に即座に残高を再計算して保存
+        recalculateBalances()
+    }
+    
+    func deleteAccount(at offsets: IndexSet) {
+        accounts.remove(atOffsets: offsets)
+        recalculateBalances()
+    }
+    
     func recalculateBalances() {
         for i in 0..<accounts.count {
             var current = 0
@@ -138,12 +169,15 @@ struct ContentView: View {
         }
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false)
     }
+    
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
+    
     func parseAmount(from text: String) -> Int {
         let components = text.components(separatedBy: .whitespacesAndNewlines)
         let amt = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
         return Int(amt) ?? 0
     }
+    
     func parseSourceName(from text: String) -> String {
         for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
         return accounts.first?.name ?? "お財布"
