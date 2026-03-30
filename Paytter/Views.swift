@@ -36,11 +36,11 @@ struct HighlightedText: View {
     }
 }
 
-// --- 投稿画面 (履歴サジェスト機能付き) ---
+// --- 投稿画面 (履歴サジェスト & インテリジェントスペース機能) ---
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool) -> Void
-    var transactions: [Transaction] // 履歴参照用
-    var accounts: [Account]       // @候補用
+    var transactions: [Transaction]
+    var accounts: [Account]
     
     @State private var suggestions: [String] = []
     
@@ -59,18 +59,13 @@ struct PostView: View {
                     }
                 }.padding()
                 
-                // サジェスト候補の表示エリア
                 if !suggestions.isEmpty {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(suggestions, id: \.self) { suggestion in
                                 Button(action: { applySuggestion(suggestion) }) {
                                     VStack(alignment: .leading) {
-                                        Text(suggestion)
-                                            .font(.body)
-                                            .foregroundColor(.primary)
-                                            .padding(.vertical, 12)
-                                            .padding(.horizontal, 20)
+                                        Text(suggestion).font(.body).foregroundColor(.primary).padding(.vertical, 12).padding(.horizontal, 20)
                                         Divider()
                                     }
                                 }
@@ -81,7 +76,6 @@ struct PostView: View {
                     .background(Color(.systemBackground))
                     .transition(.move(edge: .bottom))
                 }
-                
                 Spacer()
             }
             .navigationBarItems(leading: Button("キャンセル") { isPresented = false }, trailing: HStack(spacing: 12) {
@@ -91,33 +85,27 @@ struct PostView: View {
         }
     }
     
-    // サジェスト候補の更新ロジック
     func updateSuggestions(for text: String) {
         let words = text.components(separatedBy: .whitespacesAndNewlines)
         guard let lastWord = words.last, !lastWord.isEmpty else {
             suggestions = []
             return
         }
-        
         if lastWord.hasPrefix("#") {
-            // 全投稿からハッシュタグを抽出して重複を排除
             let allTags = transactions.flatMap { $0.tags }
-            let prefix = lastWord
-            suggestions = Array(Set(allTags.filter { $0.hasPrefix(prefix) && $0 != prefix })).sorted()
+            suggestions = Array(Set(allTags.filter { $0.hasPrefix(lastWord) && $0 != lastWord })).sorted()
         } else if lastWord.hasPrefix("@") {
-            // お財布一覧から候補を表示
-            let prefix = lastWord.replacingOccurrences(of: "@", with: "")
             suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(lastWord) && $0 != lastWord }.sorted()
         } else {
             suggestions = []
         }
     }
     
-    // 候補を選択した時の処理
     func applySuggestion(_ suggestion: String) {
         var words = inputText.components(separatedBy: .whitespacesAndNewlines)
         if !words.isEmpty {
             words[words.count - 1] = suggestion
+            // 候補選択後は必ず後ろにスペースを1つ入れる
             inputText = words.joined(separator: " ") + " "
         }
         suggestions = []
@@ -125,11 +113,28 @@ struct PostView: View {
     
     func insertAtCursor(_ sym: String) {
         if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
-            let sel = tv.selectedRange; let ins = " " + sym; let cur = tv.text ?? ""
+            let sel = tv.selectedRange
+            let cur = tv.text ?? ""
+            
+            // カーソル位置の直前の文字を取得
+            let lastChar: Character? = {
+                if sel.location > 0 {
+                    let index = cur.index(cur.startIndex, offsetBy: sel.location - 1)
+                    return cur[index]
+                }
+                return nil
+            }()
+            
+            // 直前が「全角スペース」「半角スペース」「改行」「文頭」でない場合のみ半角スペースを付与
+            let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
+            let ins = prefix + sym
+            
             if let ran = Range(sel, in: cur) {
                 let nText = cur.replacingCharacters(in: ran, with: ins)
                 inputText = nText
-                DispatchQueue.main.async { tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0) }
+                DispatchQueue.main.async {
+                    tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0)
+                }
             }
         }
     }
@@ -208,14 +213,12 @@ struct AccountCreateView: View {
                     } label: { Text("種類") }
                     TextField("現在の金額", text: $initial).keyboardType(.numberPad)
                 }
-                
                 if selectedType == .credit {
                     Section(header: Text("クレジットカード設定")) {
                         Picker(selection: $payday) {
                             ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
                             Text("月末").tag(32)
                         } label: { Text("引き落とし日") }.pickerStyle(.menu)
-                        
                         Picker(selection: $withdrawalAccountId) {
                             Text("指定なし").tag(nil as UUID?)
                             ForEach(bankAccounts) { acc in Text(acc.name).tag(acc.id as UUID?) }
@@ -253,7 +256,6 @@ struct AccountEditView: View {
                 } label: { Text("種類") }
                 Toggle("ホーム上部に表示", isOn: $account.isVisible)
             }
-            
             if account.type == .credit {
                 Section(header: Text("クレジットカード設定")) {
                     Picker(selection: Binding(
@@ -263,7 +265,6 @@ struct AccountEditView: View {
                         ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
                         Text("月末").tag(32)
                     } label: { Text("引き落とし日") }.pickerStyle(.menu)
-                    
                     Picker(selection: $account.withdrawalAccountId) {
                         Text("指定なし").tag(nil as UUID?)
                         ForEach(allAccounts.filter { $0.type == .bank }) { acc in
@@ -272,7 +273,6 @@ struct AccountEditView: View {
                     } label: { Text("引き落とし口座") }.pickerStyle(.menu)
                 }
             }
-            
             Section(header: Text("残高の調整")) {
                 HStack {
                     TextField("新しい残高を入力", text: $editBalance).keyboardType(.numberPad)
