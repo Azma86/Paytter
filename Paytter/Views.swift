@@ -117,28 +117,59 @@ struct TransactionDetailView: View {
     }
 }
 
-// --- お財布追加画面 ---
+// --- お財布追加画面 (クレジットカード設定を追加) ---
 struct AccountCreateView: View {
     @Binding var accounts: [Account]
     @Environment(\.dismiss) var dismiss
     @State private var name = ""
     @State private var initial = ""
     @State private var selectedType: AccountType = .wallet
+    @State private var payday: Int = 1
+    @State private var withdrawalAccountId: UUID? = nil
+    
+    // エラー対策：Pickerの外でフィルタリング済みのリストを定義
+    var bankAccounts: [Account] {
+        accounts.filter { $0.type == .bank }
+    }
+    
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("基本情報")) {
                     TextField("お財布の名前", text: $name)
-                    Picker("種類", selection: $selectedType) {
+                    Picker(selection: $selectedType) {
                         ForEach(AccountType.allCases, id: \.self) { type in Label(type.rawValue, systemImage: type.icon).tag(type) }
-                    }
+                    } label: { Text("種類") }
                     TextField("現在の金額", text: $initial).keyboardType(.numberPad)
+                }
+                
+                if selectedType == .credit {
+                    Section(header: Text("クレジットカード設定")) {
+                        Stepper("引き落とし日: \(payday)日", value: $payday, in: 1...31)
+                        
+                        Picker(selection: $withdrawalAccountId) {
+                            Text("指定なし").tag(nil as UUID?)
+                            ForEach(bankAccounts) { acc in
+                                Text(acc.name).tag(acc.id as UUID?)
+                            }
+                        } label: {
+                            Text("引き落とし口座")
+                        }
+                    }
                 }
             }
             .navigationTitle("新しいお財布")
             .navigationBarItems(leading: Button("キャンセル"){ dismiss() }, trailing: Button("追加") {
                 let val = Int(initial) ?? 0
-                accounts.append(Account(name: name, balance: val, type: selectedType))
+                let newAcc = Account(
+                    name: name,
+                    balance: val,
+                    type: selectedType,
+                    isVisible: true,
+                    payday: selectedType == .credit ? payday : nil,
+                    withdrawalAccountId: selectedType == .credit ? withdrawalAccountId : nil
+                )
+                accounts.append(newAcc)
                 dismiss()
             }.disabled(name.isEmpty))
         }
