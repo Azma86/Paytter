@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // --- データ構造 ---
 struct Transaction: Identifiable, Codable {
@@ -36,6 +37,38 @@ extension Array: RawRepresentable where Element: Codable {
     }
 }
 
+// --- カーソル位置入力を可能にするカスタムエディタ ---
+struct CustomTextEditor: UIViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.font = .preferredFont(forTextStyle: .body)
+        textView.backgroundColor = .clear
+        textView.delegate = context.coordinator
+        return textView
+    }
+    
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UITextViewDelegate {
+        var parent: CustomTextEditor
+        init(_ parent: CustomTextEditor) { self.parent = parent }
+        func textViewDidChange(_ textView: UITextView) {
+            parent.text = textView.text
+        }
+    }
+}
+
 struct ContentView: View {
     @AppStorage("transactions_v2") var transactions: [Transaction] = []
     @AppStorage("walletBalance") var walletBalance: Int = 0
@@ -45,8 +78,6 @@ struct ContentView: View {
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
     @State private var isShowingDeleteAlert = false
-    
-    // スワイプ削除用の一時保存
     @State private var isShowingSwipeDeleteAlert = false
     @State private var indexSetToDelete: IndexSet?
 
@@ -68,7 +99,6 @@ struct ContentView: View {
                                 }
                             }
                             .onDelete { indexSet in
-                                // スワイプ時はアラートを出すためにインデックスを保持
                                 self.indexSetToDelete = indexSet
                                 self.isShowingSwipeDeleteAlert = true
                             }
@@ -77,17 +107,12 @@ struct ContentView: View {
                         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                             Button("キャンセル", role: .cancel) { indexSetToDelete = nil }
                             Button("削除", role: .destructive) {
-                                if let offsets = indexSetToDelete {
-                                    deleteTransaction(at: offsets)
-                                }
+                                if let offsets = indexSetToDelete { deleteTransaction(at: offsets) }
                             }
                         }
                     }
 
-                    Button(action: { 
-                        inputText = ""
-                        isShowingInputSheet = true 
-                    }) {
+                    Button(action: { inputText = ""; isShowingInputSheet = true }) {
                         Image(systemName: "plus")
                             .font(.system(size: 22, weight: .bold))
                             .foregroundColor(.white)
@@ -145,8 +170,7 @@ struct ContentView: View {
         for index in offsets {
             let reversedIndex = transactions.count - 1 - index
             let item = transactions[reversedIndex]
-            let change = item.isIncome ? -item.amount : item.amount
-            updateBalance(source: item.source, change: change)
+            updateBalance(source: item.source, change: item.isIncome ? -item.amount : item.amount)
             if !item.isIncome && item.note.contains("ローソン") { pointBalance -= (item.amount / 100) }
             transactions.remove(at: reversedIndex)
         }
@@ -227,7 +251,8 @@ struct TransactionDetailView: View {
     
     func deleteThis() {
         if let index = transactions.firstIndex(where: { $0.id == item.id }) {
-            modifyBalance(source: item.source, change: item.isIncome ? -item.amount : item.amount)
+            let change = item.isIncome ? -item.amount : item.amount
+            modifyBalance(source: item.source, change: change)
             transactions.remove(at: index)
             dismiss()
         }
@@ -258,14 +283,11 @@ struct TransactionDetailView: View {
     }
 }
 
-// --- 投稿画面（カーソル位置への挿入を実装） ---
+// --- 投稿画面 ---
 struct PostView: View {
     @Binding var inputText: String
     @Binding var isPresented: Bool
     var onPost: (Bool) -> Void
-    
-    // カーソル位置を管理するためのフォーカス
-    @FocusState private var isFocused: Bool
     
     var body: some View {
         NavigationView {
@@ -273,9 +295,8 @@ struct PostView: View {
                 HStack(alignment: .top) {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
                     ZStack(alignment: .topLeading) {
-                        TextEditor(text: $inputText)
+                        CustomTextEditor(text: $inputText, placeholder: "どんな買い物をしましたか？")
                             .frame(minHeight: 150)
-                            .focused($isFocused)
                         if inputText.isEmpty {
                             Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false)
                         }
@@ -283,7 +304,6 @@ struct PostView: View {
                 }.padding()
                 Spacer()
             }
-            .onAppear { isFocused = true }
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) {
                     HStack {
@@ -291,7 +311,7 @@ struct PostView: View {
                         Button("¥") { insertAtCursor("¥") }.fontWeight(.bold)
                         Button("@") { insertAtCursor("@") }.fontWeight(.bold)
                         Spacer()
-                        Button("完了") { isFocused = false }
+                        Button("完了") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
                     }
                 }
             }
@@ -305,12 +325,40 @@ struct PostView: View {
         }
     }
     
-    // カーソル位置（または最後尾）に文字を挿入する関数
+    // カーソル位置に文字を挿入する
     func insertAtCursor(_ symbol: String) {
-        // SwiftUIのTextEditorは標準で選択範囲を取得できないため、簡易的に「半角スペース + 記号」を挿入
-        // ユーザーが直感的に使えるよう最後尾ではなく、現在の入力に対して追加します
-        let textToInsert = " " + symbol
-        inputText += textToInsert
+        // 現在のTextEditorの第一応答者（キーボードが出ているUITextView）を取得して操作する
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = scene.windows.first,
+           let textView = window.findTextView() {
+            let selectedRange = textView.selectedRange
+            let insertionText = " " + symbol
+            let currentText = textView.text ?? ""
+            
+            if let range = Range(selectedRange, in: currentText) {
+                let newText = currentText.replacingCharacters(in: range, with: insertionText)
+                inputText = newText
+                
+                // 挿入後にカーソル位置を調整（少しディレイが必要な場合がある）
+                DispatchQueue.main.async {
+                    textView.selectedRange = NSRange(location: selectedRange.location + insertionText.count, length: 0)
+                }
+            }
+        } else {
+            // 見つからない場合は最後尾（バックアップ）
+            inputText += " " + symbol
+        }
+    }
+}
+
+// UITextViewを見つけるためのヘルパー
+extension UIView {
+    func findTextView() -> UITextView? {
+        if let textView = self as? UITextView { return textView }
+        for subview in subviews {
+            if let textView = subview.findTextView() { return textView }
+        }
+        return nil
     }
 }
 
