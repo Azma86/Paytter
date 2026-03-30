@@ -9,21 +9,18 @@ struct Transaction: Identifiable, Codable {
     let source: String
     let isIncome: Bool
     
-    // 本文からタグとソースを除去したテキスト
     var cleanNote: String {
         note.components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }
             .joined(separator: " ")
     }
     
-    // タグだけを抽出
     var tags: [String] {
         note.components(separatedBy: .whitespacesAndNewlines)
             .filter { $0.hasPrefix("#") }
     }
 }
 
-// AppStorageで配列を扱うための拡張
 extension Array: RawRepresentable where Element: Codable {
     public init?(rawValue: String) {
         guard let data = rawValue.data(using: .utf8),
@@ -47,6 +44,7 @@ struct ContentView: View {
     
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
+    @State private var isShowingDeleteAlert = false
 
     var body: some View {
         TabView {
@@ -91,11 +89,19 @@ struct ContentView: View {
                 List {
                     Section(header: Text("データ管理")) {
                         Button("データを全削除する", role: .destructive) {
-                            transactions = []; walletBalance = 0; bankBalance = 0; pointBalance = 0
+                            isShowingDeleteAlert = true
                         }
                     }
                 }
                 .navigationTitle("設定")
+                .alert("データの全削除", isPresented: $isShowingDeleteAlert) {
+                    Button("キャンセル", role: .cancel) { }
+                    Button("削除する", role: .destructive) {
+                        transactions = []; walletBalance = 0; bankBalance = 0; pointBalance = 0
+                    }
+                } message: {
+                    Text("これまでの投稿と残高がすべて消去されます。よろしいですか？")
+                }
             }
             .tabItem { Label("設定", systemImage: "gearshape") }
         }
@@ -131,6 +137,64 @@ struct ContentView: View {
     }
 }
 
+// タイムラインの1行
+struct TwitterRow: View {
+    let item: Transaction
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("むつき").font(.subheadline).fontWeight(.bold)
+                    Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Text(item.source)
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(item.isIncome ? Color.blue.opacity(0.1) : Color.gray.opacity(0.1))
+                        .foregroundColor(item.isIncome ? .blue : .primary)
+                        .cornerRadius(4)
+                }
+                
+                // 本文（cleanNote）に色付けを適用
+                HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
+                    .font(.subheadline)
+                
+                if !item.tags.isEmpty {
+                    HStack {
+                        ForEach(item.tags, id: \.self) { tag in 
+                            Text(tag).font(.caption).foregroundColor(.blue) 
+                        }
+                    }
+                }
+                HStack(spacing: 40) {
+                    Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "chart.bar")
+                }
+                .font(.caption).foregroundColor(.secondary).padding(.top, 6)
+            }
+        }.padding()
+    }
+}
+
+// 金額やタグをハイライトするコンポーネント
+struct HighlightedText: View {
+    let text: String
+    let isIncome: Bool
+    
+    var body: some View {
+        let words = text.components(separatedBy: " ")
+        return words.reduce(Text("")) { (result, word) in
+            if word.contains("¥") || (Int(word.replacingOccurrences(of: "¥", with: "")) != nil) {
+                // 金額部分は支出なら赤、収入なら緑（少し濃いめの緑）
+                return result + Text(word + " ").foregroundColor(isIncome ? .green : .red).fontWeight(.bold)
+            } else {
+                return result + Text(word + " ")
+            }
+        }
+    }
+}
+
 struct WalletAnalysisView: View {
     let transactions: [Transaction]
     var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
@@ -163,52 +227,6 @@ struct BalanceHeaderView: View {
         .padding()
         .background(Color(.systemGray6))
         Divider()
-    }
-}
-
-struct TwitterRow: View {
-    let item: Transaction
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("むつき").font(.subheadline).fontWeight(.bold)
-                    Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(.secondary)
-                    Spacer()
-                    // 右上にソースバッジを表示
-                    Text(item.source)
-                        .font(.system(size: 9, weight: .bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(item.isIncome ? Color.blue.opacity(0.1) : Color.gray.opacity(0.1))
-                        .foregroundColor(item.isIncome ? .blue : .primary)
-                        .cornerRadius(4)
-                }
-                
-                // 本文（タグと@を除去済み）
-                Text(item.cleanNote)
-                    .font(.subheadline)
-                
-                // 金額を太字で表示
-                Text("¥\(item.amount)")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .foregroundColor(item.isIncome ? .blue : .primary)
-                
-                if !item.tags.isEmpty {
-                    HStack {
-                        ForEach(item.tags, id: \.self) { tag in 
-                            Text(tag).font(.caption).foregroundColor(.blue) 
-                        }
-                    }
-                }
-                HStack(spacing: 40) {
-                    Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "chart.bar")
-                }
-                .font(.caption).foregroundColor(.secondary).padding(.top, 6)
-            }
-        }.padding()
     }
 }
 
