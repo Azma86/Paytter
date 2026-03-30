@@ -148,7 +148,7 @@ struct AccountCreateView: View {
 // --- お財布編集画面 ---
 struct AccountEditView: View {
     @Binding var account: Account; @Binding var transactions: [Transaction]
-    var allAccounts: [Account] // 引き落とし口座選択用
+    var allAccounts: [Account]
     @State private var editBalance: String = ""
     @Environment(\.dismiss) var dismiss
     
@@ -162,7 +162,6 @@ struct AccountEditView: View {
                 Toggle("ホーム上部に表示", isOn: $account.isVisible)
             }
             
-            // クレジットカード専用設定
             if account.type == .credit {
                 Section(header: Text("クレジットカード設定")) {
                     Stepper("引き落とし日: \(account.payday ?? 1)日", value: Binding(
@@ -170,8 +169,9 @@ struct AccountEditView: View {
                         set: { account.payday = $0 }
                     ), in: 1...31)
                     
+                    // エラー回避のため、明示的にUUID?として扱うPicker
                     Picker("引き落とし口座", selection: $account.withdrawalAccountId) {
-                        Text("指定なし").tag(UUID?.none)
+                        Text("指定なし").tag(nil as UUID?)
                         ForEach(allAccounts.filter { $0.type == .bank }) { acc in
                             Text(acc.name).tag(acc.id as UUID?)
                         }
