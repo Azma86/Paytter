@@ -169,7 +169,6 @@ struct AccountEditView: View {
                         set: { account.payday = $0 }
                     ), in: 1...31)
                     
-                    // iOS 16で最も安全なPickerの書き方
                     Picker(selection: $account.withdrawalAccountId) {
                         Text("指定なし").tag(nil as UUID?)
                         ForEach(allAccounts.filter { $0.type == .bank }) { acc in
