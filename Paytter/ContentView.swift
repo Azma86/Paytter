@@ -12,10 +12,13 @@ struct ContentView: View {
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
     @State private var isShowingDeleteAlert = false
-    @State private var isShowingSwipeDeleteAlert = false
-    @State private var indexSetToDelete: IndexSet?
-    @State private var isShowingAccountCreator = false
     
+    // スワイプ削除用のアラート表示フラグ
+    @State private var isShowingSwipeDeleteAlert = false
+    // 削除対象のインデックスを保持
+    @State private var indexSetToDelete: IndexSet?
+    
+    @State private var isShowingAccountCreator = false
     @State private var isShowingRestoreConfirm = false
     @State private var isShowingSaveConfirm = false
     @State private var isRestoringManual = false
@@ -45,20 +48,23 @@ struct ContentView: View {
                                 }
                             }
                             .onDelete { indexSet in
-                                // スワイプ後の「無駄な戻り」を防ぐため、即座にインデックスを保存
+                                // 標準の削除アニメーションを止めるため、ここでは削除せず
+                                // インデックスを保持してアラートを表示
                                 self.indexSetToDelete = indexSet
                                 self.isShowingSwipeDeleteAlert = true
                             }
                         }
                         .listStyle(.plain)
+                        // スワイプ削除用の確認アラート
                         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                             Button("キャンセル", role: .cancel) {
-                                // キャンセル時はスワイプ状態を戻すためにインデックスをクリア
+                                // キャンセル時は何もしない（行は元の位置に戻る）
                                 self.indexSetToDelete = nil
                             }
                             Button("削除", role: .destructive) {
                                 if let offsets = indexSetToDelete {
-                                    // アニメーションを明示的に指定して削除
+                                    // アラートの dismiss アニメーションと同期させるため
+                                    // 明示的にアニメーションを指定してデータを削除
                                     withAnimation {
                                         deleteTransaction(at: offsets)
                                     }
@@ -147,13 +153,12 @@ struct ContentView: View {
         transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
     }
     
+    // deleteTransaction 内のアニメーションを整理
     func deleteTransaction(at offsets: IndexSet) {
         for index in offsets {
             let revIndex = transactions.count - 1 - index
             transactions.remove(at: revIndex)
         }
-        // 削除後に即座に残高を再計算して保存
-        recalculateBalances()
     }
     
     func deleteAccount(at offsets: IndexSet) {
