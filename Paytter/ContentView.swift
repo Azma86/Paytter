@@ -16,13 +16,10 @@ struct ContentView: View {
     @State private var indexSetToDelete: IndexSet?
     @State private var isShowingAccountCreator = false
     
-    // 復元・保存・完了用State
     @State private var isShowingRestoreConfirm = false
     @State private var isShowingSaveConfirm = false
     @State private var isRestoringManual = false
     @State private var backupDateString = ""
-    
-    // 完了通知用
     @State private var isShowingCompletionAlert = false
     @State private var completionMessage = ""
 
@@ -75,76 +72,49 @@ struct ContentView: View {
                     }
                 }
                 .navigationTitle("お財布")
-                // ContentView.swift 内
-                .sheet(isPresented: $isShowingAccountCreator) { 
-                    AccountCreateView(accounts: $accounts, transactions: $transactions) // $transactionsを追加
-                }
+                .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            }.tabItem { Label("お財布", systemImage: "wallet.pass") }
 
             NavigationView {
                 List {
                     Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
-                    
                     Section(header: Text("バックアップ管理")) {
                         Button("手動バックアップを作成") {
                             backupDateString = BackupManager.getBackupDate(isManual: true)
                             isShowingSaveConfirm = true
                         }
                         Button("手動バックアップから復元") {
-                            isRestoringManual = true
-                            backupDateString = BackupManager.getBackupDate(isManual: true)
-                            isShowingRestoreConfirm = true
+                            isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true
                         }
                         Button("自動保存から復元") {
-                            isRestoringManual = false
-                            backupDateString = BackupManager.getBackupDate(isManual: false)
-                            isShowingRestoreConfirm = true
+                            isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true
                         }
                     }
-                    
                     Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingDeleteAlert = true } }
                 }
                 .navigationTitle("設定")
-                // 保存の確認
                 .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
                     Button("キャンセル", role: .cancel) { }
                     Button("上書き保存", role: .none) {
                         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
-                        completionMessage = "手動バックアップの保存が完了しました。"
-                        isShowingCompletionAlert = true
+                        completionMessage = "手動バックアップの保存が完了しました。"; isShowingCompletionAlert = true
                     }
-                } message: {
-                    Text("前回の手動保存日時: \(backupDateString)\n現在のデータでお財布設定と投稿を上書きしますか？")
-                }
-                // 復元の確認
+                } message: { Text("前回の手動保存日時: \(backupDateString)\n現在のデータでお財布設定と投稿を上書きしますか？") }
                 .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) {
                     Button("キャンセル", role: .cancel) { }
                     Button("復元する", role: .destructive) {
-                        if let t = BackupManager.loadTransactions(isManual: isRestoringManual),
-                           let a = BackupManager.loadAccounts(isManual: isRestoringManual) {
+                        if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) {
                             transactions = t; accounts = a; recalculateBalances()
-                            completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"
-                            isShowingCompletionAlert = true
+                            completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"; isShowingCompletionAlert = true
                         }
                     }
-                } message: {
-                    Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？")
-                }
-                // リセットの確認
+                } message: { Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？") }
                 .alert("リセット", isPresented: $isShowingDeleteAlert) {
                     Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { 
-                        resetAll()
-                        completionMessage = "全てのデータを初期状態にリセットしました。"
-                        isShowingCompletionAlert = true
+                        resetAll(); completionMessage = "全てのデータを初期状態にリセットしました。"; isShowingCompletionAlert = true
                     }
-                } message: {
-                    Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。")
-                }
-                // 完了通知用ダイアログ
-                .alert("完了", isPresented: $isShowingCompletionAlert) {
-                    Button("OK", role: .none) { }
-                } message: {
-                    Text(completionMessage)
-                }
+                } message: { Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。") }
+                .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK", role: .none) { } } message: { Text(completionMessage) }
             }.tabItem { Label("設定", systemImage: "gearshape") }
         }
         .onAppear { recalculateBalances() }
@@ -158,7 +128,6 @@ struct ContentView: View {
     }
     func deleteTransaction(at offsets: IndexSet) { for index in offsets { let revIndex = transactions.count - 1 - index; transactions.remove(at: revIndex) } }
     func deleteAccount(at offsets: IndexSet) { accounts.remove(atOffsets: offsets); recalculateBalances() }
-    
     func recalculateBalances() {
         for i in 0..<accounts.count {
             var current = 0
@@ -167,17 +136,7 @@ struct ContentView: View {
         }
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false)
     }
-    
-    func resetAll() {
-        transactions = []
-        accounts = [
-            Account(name: "お財布", balance: 0, type: .wallet),
-            Account(name: "口座", balance: 0, type: .bank),
-            Account(name: "ポイント", balance: 0, type: .point)
-        ]
-        monthlyBudget = 50000
-    }
-    
+    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
     func parseAmount(from text: String) -> Int {
         let components = text.components(separatedBy: .whitespacesAndNewlines)
         let amt = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
