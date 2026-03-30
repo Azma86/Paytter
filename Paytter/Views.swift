@@ -1,71 +1,7 @@
 import SwiftUI
+import UIKit
 
-// --- お財布追加画面 (新規作成用) ---
-struct AccountCreateView: View {
-    @Binding var accounts: [Account]
-    @Environment(\.dismiss) var dismiss
-    @State private var name = ""
-    @State private var initial = ""
-    
-    var body: some View {
-        NavigationView {
-            Form {
-                Section(header: Text("基本情報")) {
-                    TextField("お財布の名前", text: $name)
-                    TextField("現在の金額（初期残高）", text: $initial)
-                        .keyboardType(.numberPad)
-                }
-            }
-            .navigationTitle("新しいお財布")
-            .navigationBarItems(
-                leading: Button("キャンセル") { dismiss() },
-                trailing: Button("追加") {
-                    let val = Int(initial) ?? 0
-                    // 新しいお財布を作成
-                    let newAcc = Account(name: name, balance: val, initialBalance: val, isVisible: true)
-                    accounts.append(newAcc)
-                    dismiss()
-                }.disabled(name.isEmpty) // 名前がない時は押せないように
-            )
-        }
-    }
-}
-
-// --- お財布編集画面 (名前変更・残高調整用) ---
-struct AccountEditView: View {
-    @Binding var account: Account
-    @State private var editBalance: String = ""
-    
-    var body: some View {
-        Form {
-            Section(header: Text("基本設定")) {
-                TextField("名前", text: $account.name)
-                Toggle("ホーム上部に表示", isOn: $account.isVisible)
-            }
-            Section(header: Text("金額の修正"), footer: Text("現在の正しい金額を入力してください。")) {
-                HStack {
-                    TextField("新しい残高を入力", text: $editBalance)
-                        .keyboardType(.numberPad)
-                    Button("更新") {
-                        if let newVal = Int(editBalance) {
-                            // 差分を initialBalance に加算して整合性をとる
-                            let diff = newVal - account.balance
-                            account.initialBalance += diff
-                            account.balance = newVal
-                            editBalance = ""
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-        }
-        .navigationTitle(account.name)
-    }
-}
-
-// (TwitterRow, HighlightedText, PostView, CustomTextEditor, WalletAnalysisView 等は以前のものを維持してください)
-
-// --- タイムラインの1行 (元のTwitter風デザイン) ---
+// --- タイムラインの1行 ---
 struct TwitterRow: View {
     let item: Transaction
     var body: some View {
@@ -76,18 +12,9 @@ struct TwitterRow: View {
                     Text("むつき").font(.subheadline).fontWeight(.bold)
                     Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(.secondary)
                     Spacer()
-                    // 右上のバッジ (source名を表示)
-                    Text(item.source)
-                        .font(.system(size: 9, weight: .bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(4)
+                    Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4)
                 }
-                // 金額の色付けを適用
-                HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
-                    .font(.subheadline)
-                
+                HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline)
                 if !item.tags.isEmpty {
                     HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(.blue) } }
                 }
@@ -96,7 +23,7 @@ struct TwitterRow: View {
     }
 }
 
-// --- 金額ハイライト (支出:赤 / 収入:緑) ---
+// --- 金額ハイライト ---
 struct HighlightedText: View {
     let text: String; let isIncome: Bool
     var body: some View {
@@ -109,110 +36,9 @@ struct HighlightedText: View {
     }
 }
 
-// --- 詳細画面 (編集・削除機能付き) ---
-struct TransactionDetailView: View {
-    let item: Transaction
-    @Binding var transactions: [Transaction]
-    @Binding var accounts: [Account]
-    
-    @Environment(\.dismiss) var dismiss
-    @State private var isShowingEditSheet = false
-    @State private var editLineText = ""
-    @State private var isShowingDeleteConfirm = false
-    
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "person.circle.fill").resizable().frame(width: 56, height: 56).foregroundColor(.gray)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("むつき").font(.headline).fontWeight(.bold)
-                        Text("@Mutsuki_dev").font(.subheadline).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Text(item.source).font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color.gray.opacity(0.1)).cornerRadius(5)
-                }
-                
-                HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3)
-                
-                if !item.tags.isEmpty {
-                    HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(.blue) } }
-                }
-                
-                Text(item.date, style: .date) + Text(" " ) + Text(item.date, style: .time)
-                Divider()
-                HStack(spacing: 60) {
-                    Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "shareplay")
-                }.font(.subheadline).foregroundColor(.secondary).frame(maxWidth: .infinity)
-            }.padding()
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                HStack {
-                    Button(action: { editLineText = item.note; isShowingEditSheet = true }) { Image(systemName: "pencil.line") }
-                    Button(action: { isShowingDeleteConfirm = true }) { Image(systemName: "trash") }.foregroundColor(.red)
-                }
-            }
-        }
-        .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) {
-            Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() }
-        }
-        .sheet(isPresented: $isShowingEditSheet) {
-            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet) { isInc in
-                updateThis(newInc: isInc)
-            }
-        }
-    }
-    
-    func deleteThis() {
-        if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
-            if let accIdx = accounts.firstIndex(where: { $0.name == item.source }) {
-                accounts[accIdx].balance += (item.isIncome ? -item.amount : item.amount)
-            }
-            transactions.remove(at: idx)
-            BackupManager.saveAll(transactions: transactions, accounts: accounts)
-            dismiss()
-        }
-    }
-    
-    func updateThis(newInc: Bool) {
-        if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
-            // 旧データを戻す
-            if let oldAccIdx = accounts.firstIndex(where: { $0.name == item.source }) {
-                accounts[oldAccIdx].balance += (item.isIncome ? -item.amount : item.amount)
-            }
-            
-            let nAmt = parseAmount(from: editLineText)
-            let nSource = parseSourceName(from: editLineText)
-            
-            // 新データを反映
-            if let nAccIdx = accounts.firstIndex(where: { $0.name == nSource }) {
-                accounts[nAccIdx].balance += (newInc ? nAmt : -nAmt)
-            }
-            
-            transactions[idx] = Transaction(id: item.id, amount: nAmt, date: item.date, note: editLineText, source: nSource, isIncome: newInc)
-            BackupManager.saveAll(transactions: transactions, accounts: accounts)
-        }
-    }
-    
-    func parseAmount(from text: String) -> Int {
-        let components = text.components(separatedBy: .whitespacesAndNewlines)
-        let amtText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amtText) ?? 0
-    }
-
-    func parseSourceName(from text: String) -> String {
-        for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
-        return "お財布"
-    }
-}
-
-// --- 投稿画面 (カーソル位置挿入機能付き) ---
+// --- 投稿画面 ---
 struct PostView: View {
-    @Binding var inputText: String
-    @Binding var isPresented: Bool
-    var onPost: (Bool) -> Void
-    
+    @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool) -> Void
     var body: some View {
         NavigationView {
             VStack {
@@ -231,7 +57,6 @@ struct PostView: View {
             })
         }
     }
-    
     func insertAtCursor(_ sym: String) {
         if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
             let sel = tv.selectedRange; let ins = " " + sym; let cur = tv.text ?? ""
@@ -244,23 +69,113 @@ struct PostView: View {
     }
 }
 
-// --- お財布編集画面 (設定内) ---
-struct AccountEditView: View {
-    @Binding var account: Account
+// --- 詳細画面 ---
+struct TransactionDetailView: View {
+    let item: Transaction; @Binding var transactions: [Transaction]
+    @Binding var accounts: [Account]
+    @Environment(\.dismiss) var dismiss; @State private var isShowingEditSheet = false; @State private var editLineText = ""; @State private var isShowingDeleteConfirm = false
+    
     var body: some View {
-        Form {
-            Section(header: Text("お財布の設定")) {
-                TextField("名前", text: $account.name)
-                TextField("現在の金額", value: $account.balance, formatter: NumberFormatter())
-                    .keyboardType(.numberPad)
-                Toggle("ホーム上部に表示", isOn: $account.isVisible)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "person.circle.fill").resizable().frame(width: 56, height: 56).foregroundColor(.gray)
+                    VStack(alignment: .leading, spacing: 4) { Text("むつき").font(.headline).fontWeight(.bold); Text("@Mutsuki_dev").font(.subheadline).foregroundColor(.secondary) }
+                    Spacer(); Text(item.source).font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color.gray.opacity(0.1)).cornerRadius(5)
+                }
+                HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3)
+                if !item.tags.isEmpty { HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(.blue) } } }
+                Text(item.date, style: .date) + Text(" " ) + Text(item.date, style: .time)
+                Divider()
+                HStack(spacing: 60) { Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "shareplay") }.font(.subheadline).foregroundColor(.secondary).frame(maxWidth: .infinity)
+            }.padding()
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack {
+                    Button(action: { editLineText = item.note; isShowingEditSheet = true }) { Image(systemName: "pencil.line") }
+                    Button(action: { isShowingDeleteConfirm = true }) { Image(systemName: "trash") }.foregroundColor(.red)
+                }
             }
         }
-        .navigationTitle("お財布の編集")
+        .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() } }
+        .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet) { isInc in updateThis(newInc: isInc) } }
+    }
+    func deleteThis() {
+        if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
+            transactions.remove(at: idx); BackupManager.saveAll(transactions: transactions, accounts: accounts); dismiss()
+        }
+    }
+    func updateThis(newInc: Bool) {
+        if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
+            let nAmt = parseAmount(from: editLineText)
+            let nSrc = parseSourceName(from: editLineText)
+            transactions[idx] = Transaction(id: item.id, amount: nAmt, date: item.date, note: editLineText, source: nSrc, isIncome: newInc)
+            BackupManager.saveAll(transactions: transactions, accounts: accounts)
+        }
+    }
+    func parseAmount(from text: String) -> Int {
+        let components = text.components(separatedBy: .whitespacesAndNewlines)
+        let amtText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        return Int(amtText) ?? 0
+    }
+    func parseSourceName(from text: String) -> String {
+        for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
+        return "お財布"
     }
 }
 
-// --- お財布分析画面 ---
+// --- お財布追加画面 ---
+struct AccountCreateView: View {
+    @Binding var accounts: [Account]
+    @Environment(\.dismiss) var dismiss
+    @State private var name = ""
+    @State private var initial = ""
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("基本情報")) {
+                    TextField("お財布の名前", text: $name)
+                    TextField("現在の金額（初期残高）", text: $initial).keyboardType(.numberPad)
+                }
+            }
+            .navigationTitle("新しいお財布")
+            .navigationBarItems(leading: Button("キャンセル"){ dismiss() }, trailing: Button("追加") {
+                let val = Int(initial) ?? 0
+                accounts.append(Account(name: name, balance: val, initialBalance: val))
+                dismiss()
+            }.disabled(name.isEmpty))
+        }
+    }
+}
+
+// --- お財布編集画面 ---
+struct AccountEditView: View {
+    @Binding var account: Account
+    @State private var editBalance: String = ""
+    var body: some View {
+        Form {
+            Section(header: Text("基本設定")) {
+                TextField("名前", text: $account.name)
+                Toggle("ホーム上部に表示", isOn: $account.isVisible)
+            }
+            Section(header: Text("金額の修正"), footer: Text("現在の正しい金額を入力してください。過去の投稿を維持したまま残高を合わせます。")) {
+                HStack {
+                    TextField("新しい残高を入力", text: $editBalance).keyboardType(.numberPad)
+                    Button("更新") {
+                        if let newVal = Int(editBalance) {
+                            account.initialBalance += (newVal - account.balance)
+                            account.balance = newVal
+                            editBalance = ""
+                        }
+                    }.buttonStyle(.borderedProminent)
+                }
+            }
+        }.navigationTitle(account.name)
+    }
+}
+
+// --- 分析画面 ---
 struct WalletAnalysisView: View {
     let transactions: [Transaction]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
@@ -269,18 +184,16 @@ struct WalletAnalysisView: View {
         List {
             Section(header: Text("今月のサマリー")) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("合計支出").font(.caption).foregroundColor(.secondary)
-                    Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold())
-                    ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget))
-                        .accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? .red : .blue)
+                    Text("合計支出").font(.caption).foregroundColor(.secondary); Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold())
+                    ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget)).accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? .red : .blue)
                     Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))").font(.caption2).foregroundColor(.secondary)
                 }.padding(.vertical, 10)
             }
-        }.listStyle(.insetGrouped)
+        }.listStyle(.insetGrouped).navigationTitle("分析")
     }
 }
 
-// --- ヘッダー用部品 ---
+// --- 共通コンポーネント ---
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color
     var body: some View {
@@ -291,7 +204,6 @@ struct BalanceView: View {
     }
 }
 
-// --- UIKitとの連携用 (CustomTextEditorなど) ---
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String; var onInsert: (String) -> Void
     func makeUIView(context: Context) -> UITextView {
