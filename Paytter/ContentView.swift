@@ -75,8 +75,10 @@ struct ContentView: View {
                     }
                 }
                 .navigationTitle("お財布")
-                .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts) }
-            }.tabItem { Label("お財布", systemImage: "wallet.pass") }
+                // ContentView.swift 内
+                .sheet(isPresented: $isShowingAccountCreator) { 
+                    AccountCreateView(accounts: $accounts, transactions: $transactions) // $transactionsを追加
+                }
 
             NavigationView {
                 List {
