@@ -143,15 +143,16 @@ struct AccountCreateView: View {
                 
                 if selectedType == .credit {
                     Section(header: Text("クレジットカード設定")) {
+                        // 一行表示でタップするとホイールが出る形式に変更
                         Picker(selection: $payday) {
                             ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
                             Text("月末").tag(32)
-                        } label: { Text("引き落とし日") }.pickerStyle(.wheel)
+                        } label: { Text("引き落とし日") }.pickerStyle(.menu)
                         
                         Picker(selection: $withdrawalAccountId) {
                             Text("指定なし").tag(nil as UUID?)
                             ForEach(bankAccounts) { acc in Text(acc.name).tag(acc.id as UUID?) }
-                        } label: { Text("引き落とし口座") }
+                        } label: { Text("引き落とし口座") }.pickerStyle(.menu)
                     }
                 }
             }
@@ -188,20 +189,21 @@ struct AccountEditView: View {
             
             if account.type == .credit {
                 Section(header: Text("クレジットカード設定")) {
+                    // 一行表示でタップするとホイールが出る形式に変更
                     Picker(selection: Binding(
                         get: { account.payday ?? 1 },
                         set: { account.payday = $0 }
                     )) {
                         ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
                         Text("月末").tag(32)
-                    } label: { Text("引き落とし日") }.pickerStyle(.wheel)
+                    } label: { Text("引き落とし日") }.pickerStyle(.menu)
                     
                     Picker(selection: $account.withdrawalAccountId) {
                         Text("指定なし").tag(nil as UUID?)
                         ForEach(allAccounts.filter { $0.type == .bank }) { acc in
                             Text(acc.name).tag(acc.id as UUID?)
                         }
-                    } label: { Text("引き落とし口座") }
+                    } label: { Text("引き落とし口座") }.pickerStyle(.menu)
                 }
             }
             
