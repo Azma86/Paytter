@@ -16,13 +16,11 @@ struct ContentView: View {
     @State private var indexSetToDelete: IndexSet?
     @State private var isShowingAccountCreator = false
     
-    // バックアップ復元用
     @State private var isShowingRestoreConfirm = false
     @State private var backupDateString = ""
 
     var body: some View {
         TabView {
-            // 【ホーム】
             NavigationView {
                 ZStack(alignment: .bottomTrailing) {
                     VStack(spacing: 0) {
@@ -55,7 +53,6 @@ struct ContentView: View {
                 }.navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
             }.tabItem { Label("ホーム", systemImage: "house") }
 
-            // 【お財布】
             NavigationView {
                 List {
                     Section(header: Text("お財布の管理")) {
@@ -74,7 +71,6 @@ struct ContentView: View {
                 .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts) }
             }.tabItem { Label("お財布", systemImage: "wallet.pass") }
 
-            // 【設定】
             NavigationView {
                 List {
                     Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
@@ -101,7 +97,9 @@ struct ContentView: View {
                     Text("最終保存日時: \(backupDateString)\n現在のデータは上書きされます。復元しますか？")
                 }
                 .alert("リセット", isPresented: $isShowingDeleteAlert) {
-                    Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { resetAll() }
+                    Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll() }
+                } message: {
+                    Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは削除されません。")
                 }
             }.tabItem { Label("設定", systemImage: "gearshape") }
         }
@@ -123,14 +121,21 @@ struct ContentView: View {
             for tx in transactions where tx.source == accounts[i].name { current += (tx.isIncome ? tx.amount : -tx.amount) }
             accounts[i].balance = current
         }
-        // 自動保存
+        // 指示に基づき、通常操作時は自動保存を継続
         BackupManager.saveAll(transactions: transactions, accounts: accounts)
     }
     
     func resetAll() {
-        transactions = []; for i in 0..<accounts.count { accounts[i].balance = 0 }
-        BackupManager.saveAll(transactions: transactions, accounts: accounts)
+        // AppStorageの中身を初期値へ。BackupManager.saveAllはあえて呼ばないことでファイルを保護。
+        transactions = []
+        accounts = [
+            Account(name: "お財布", balance: 0, type: .wallet),
+            Account(name: "口座", balance: 0, type: .bank),
+            Account(name: "ポイント", balance: 0, type: .point)
+        ]
+        monthlyBudget = 50000
     }
+    
     func parseAmount(from text: String) -> Int {
         let components = text.components(separatedBy: .whitespacesAndNewlines)
         let amt = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
