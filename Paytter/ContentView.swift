@@ -25,7 +25,6 @@ struct ContentView: View {
     @State private var isShowingCompletionAlert = false
     @State private var completionMessage = ""
 
-    // 描画バグを防ぐため、反転したリストを計算プロパティで用意
     var displayedTransactions: [Transaction] {
         transactions.reversed()
     }
@@ -46,18 +45,19 @@ struct ContentView: View {
                         }.padding().background(Color(.systemGray6))
                         Divider()
                         List {
-                            // displayedTransactionsを使用し、IDを明示的に指定
                             ForEach(displayedTransactions, id: \.id) { item in
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button(role: .destructive) {
+                                    // 修正：role: .destructive を外して、勝手な行移動（吸い込み）を停止
+                                    Button {
                                         self.transactionToDelete = item
                                         self.isShowingSwipeDeleteAlert = true
                                     } label: {
                                         Label("削除", systemImage: "trash")
                                     }
+                                    .tint(.red) // 役割ではなく、見た目だけを赤くする
                                 }
                             }
                         }
@@ -68,7 +68,6 @@ struct ContentView: View {
                             }
                             Button("削除", role: .destructive) {
                                 if let target = transactionToDelete {
-                                    // 削除時のアニメーションを標準的なものに固定
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                         deleteSpecificTransaction(target)
                                     }
