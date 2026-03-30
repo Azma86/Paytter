@@ -117,20 +117,18 @@ struct TransactionDetailView: View {
     }
 }
 
-// --- お財布追加画面 (クレジットカード設定を追加) ---
+// --- お財布追加画面 (お財布登録投稿機能を追加) ---
 struct AccountCreateView: View {
     @Binding var accounts: [Account]
+    @Binding var transactions: [Transaction]
     @Environment(\.dismiss) var dismiss
     @State private var name = ""
     @State private var initial = ""
     @State private var selectedType: AccountType = .wallet
-    @State private var payday: Int = 1
+    @State private var payday: Int = 1 // 1~31, 32が月末
     @State private var withdrawalAccountId: UUID? = nil
     
-    // エラー対策：Pickerの外でフィルタリング済みのリストを定義
-    var bankAccounts: [Account] {
-        accounts.filter { $0.type == .bank }
-    }
+    var bankAccounts: [Account] { accounts.filter { $0.type == .bank } }
     
     var body: some View {
         NavigationView {
@@ -145,31 +143,27 @@ struct AccountCreateView: View {
                 
                 if selectedType == .credit {
                     Section(header: Text("クレジットカード設定")) {
-                        Stepper("引き落とし日: \(payday)日", value: $payday, in: 1...31)
+                        Picker(selection: $payday) {
+                            ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
+                            Text("月末").tag(32)
+                        } label: { Text("引き落とし日") }.pickerStyle(.wheel)
                         
                         Picker(selection: $withdrawalAccountId) {
                             Text("指定なし").tag(nil as UUID?)
-                            ForEach(bankAccounts) { acc in
-                                Text(acc.name).tag(acc.id as UUID?)
-                            }
-                        } label: {
-                            Text("引き落とし口座")
-                        }
+                            ForEach(bankAccounts) { acc in Text(acc.name).tag(acc.id as UUID?) }
+                        } label: { Text("引き落とし口座") }
                     }
                 }
             }
             .navigationTitle("新しいお財布")
             .navigationBarItems(leading: Button("キャンセル"){ dismiss() }, trailing: Button("追加") {
                 let val = Int(initial) ?? 0
-                let newAcc = Account(
-                    name: name,
-                    balance: val,
-                    type: selectedType,
-                    isVisible: true,
-                    payday: selectedType == .credit ? payday : nil,
-                    withdrawalAccountId: selectedType == .credit ? withdrawalAccountId : nil
-                )
+                let newAcc = Account(name: name, balance: val, type: selectedType, isVisible: true, payday: selectedType == .credit ? payday : nil, withdrawalAccountId: selectedType == .credit ? withdrawalAccountId : nil)
                 accounts.append(newAcc)
+                // バックアップ復元のために初期金額を「お財布登録」として投稿
+                if val != 0 {
+                    transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val)", source: name, isIncome: true))
+                }
                 dismiss()
             }.disabled(name.isEmpty))
         }
@@ -195,19 +189,20 @@ struct AccountEditView: View {
             
             if account.type == .credit {
                 Section(header: Text("クレジットカード設定")) {
-                    Stepper("引き落とし日: \(account.payday ?? 1)日", value: Binding(
+                    Picker(selection: Binding(
                         get: { account.payday ?? 1 },
                         set: { account.payday = $0 }
-                    ), in: 1...31)
+                    )) {
+                        ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
+                        Text("月末").tag(32)
+                    } label: { Text("引き落とし日") }.pickerStyle(.wheel)
                     
                     Picker(selection: $account.withdrawalAccountId) {
                         Text("指定なし").tag(nil as UUID?)
                         ForEach(allAccounts.filter { $0.type == .bank }) { acc in
                             Text(acc.name).tag(acc.id as UUID?)
                         }
-                    } label: {
-                        Text("引き落とし口座")
-                    }
+                    } label: { Text("引き落とし口座") }
                 }
             }
             
