@@ -13,10 +13,9 @@ struct ContentView: View {
     @State private var inputText: String = ""
     @State private var isShowingDeleteAlert = false
     
-    // スワイプ削除用のアラート表示フラグ
+    // スワイプ削除用
     @State private var isShowingSwipeDeleteAlert = false
-    // 削除対象のインデックスを保持
-    @State private var indexSetToDelete: IndexSet?
+    @State private var itemToDelete: Transaction? // IndexSetではなくTransaction本体を保持
     
     @State private var isShowingAccountCreator = false
     @State private var isShowingRestoreConfirm = false
@@ -46,30 +45,30 @@ struct ContentView: View {
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
-                            }
-                            .onDelete { indexSet in
-                                // 標準の削除アニメーションを止めるため、ここでは削除せず
-                                // インデックスを保持してアラートを表示
-                                self.indexSetToDelete = indexSet
-                                self.isShowingSwipeDeleteAlert = true
+                                // 標準のonDeleteではなく、swipeActionsを使用することで勝手な動きを制御
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        // ボタンを押した瞬間にアイテムを保持してアラートを表示
+                                        self.itemToDelete = item
+                                        self.isShowingSwipeDeleteAlert = true
+                                    } label: {
+                                        Label("削除", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                         .listStyle(.plain)
-                        // スワイプ削除用の確認アラート
                         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                             Button("キャンセル", role: .cancel) {
-                                // キャンセル時は何もしない（行は元の位置に戻る）
-                                self.indexSetToDelete = nil
+                                self.itemToDelete = nil
                             }
                             Button("削除", role: .destructive) {
-                                if let offsets = indexSetToDelete {
-                                    // アラートの dismiss アニメーションと同期させるため
-                                    // 明示的にアニメーションを指定してデータを削除
-                                    withAnimation {
-                                        deleteTransaction(at: offsets)
+                                if let target = itemToDelete {
+                                    withAnimation(.easeInOut) {
+                                        deleteSpecificTransaction(target)
                                     }
                                 }
-                                self.indexSetToDelete = nil
+                                self.itemToDelete = nil
                             }
                         }
                     }
@@ -153,11 +152,11 @@ struct ContentView: View {
         transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
     }
     
-    // deleteTransaction 内のアニメーションを整理
-    func deleteTransaction(at offsets: IndexSet) {
-        for index in offsets {
-            let revIndex = transactions.count - 1 - index
-            transactions.remove(at: revIndex)
+    // スワイプ削除用の新しい削除メソッド（IDで特定して削除）
+    func deleteSpecificTransaction(_ target: Transaction) {
+        if let index = transactions.firstIndex(where: { $0.id == target.id }) {
+            transactions.remove(at: index)
+            recalculateBalances()
         }
     }
     
