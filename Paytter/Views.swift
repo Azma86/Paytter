@@ -36,19 +36,52 @@ struct HighlightedText: View {
     }
 }
 
-// --- 投稿画面 ---
+// --- 投稿画面 (履歴サジェスト機能付き) ---
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool) -> Void
+    var transactions: [Transaction] // 履歴参照用
+    var accounts: [Account]       // @候補用
+    
+    @State private var suggestions: [String] = []
+    
     var body: some View {
         NavigationView {
-            VStack {
+            VStack(spacing: 0) {
                 HStack(alignment: .top) {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
                     ZStack(alignment: .topLeading) {
-                        CustomTextEditor(text: $inputText) { sym in insertAtCursor(sym) }.frame(minHeight: 150)
+                        CustomTextEditor(text: $inputText) { sym in insertAtCursor(sym) }
+                            .frame(minHeight: 150)
+                            .onChange(of: inputText) { newValue in
+                                updateSuggestions(for: newValue)
+                            }
                         if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                     }
                 }.padding()
+                
+                // サジェスト候補の表示エリア
+                if !suggestions.isEmpty {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(suggestions, id: \.self) { suggestion in
+                                Button(action: { applySuggestion(suggestion) }) {
+                                    VStack(alignment: .leading) {
+                                        Text(suggestion)
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                            .padding(.vertical, 12)
+                                            .padding(.horizontal, 20)
+                                        Divider()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 200)
+                    .background(Color(.systemBackground))
+                    .transition(.move(edge: .bottom))
+                }
+                
                 Spacer()
             }
             .navigationBarItems(leading: Button("キャンセル") { isPresented = false }, trailing: HStack(spacing: 12) {
@@ -57,6 +90,39 @@ struct PostView: View {
             })
         }
     }
+    
+    // サジェスト候補の更新ロジック
+    func updateSuggestions(for text: String) {
+        let words = text.components(separatedBy: .whitespacesAndNewlines)
+        guard let lastWord = words.last, !lastWord.isEmpty else {
+            suggestions = []
+            return
+        }
+        
+        if lastWord.hasPrefix("#") {
+            // 全投稿からハッシュタグを抽出して重複を排除
+            let allTags = transactions.flatMap { $0.tags }
+            let prefix = lastWord
+            suggestions = Array(Set(allTags.filter { $0.hasPrefix(prefix) && $0 != prefix })).sorted()
+        } else if lastWord.hasPrefix("@") {
+            // お財布一覧から候補を表示
+            let prefix = lastWord.replacingOccurrences(of: "@", with: "")
+            suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(lastWord) && $0 != lastWord }.sorted()
+        } else {
+            suggestions = []
+        }
+    }
+    
+    // 候補を選択した時の処理
+    func applySuggestion(_ suggestion: String) {
+        var words = inputText.components(separatedBy: .whitespacesAndNewlines)
+        if !words.isEmpty {
+            words[words.count - 1] = suggestion
+            inputText = words.joined(separator: " ") + " "
+        }
+        suggestions = []
+    }
+    
     func insertAtCursor(_ sym: String) {
         if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
             let sel = tv.selectedRange; let ins = " " + sym; let cur = tv.text ?? ""
@@ -97,7 +163,9 @@ struct TransactionDetailView: View {
             }
         }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() } }
-        .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet) { isInc in updateThis(newInc: isInc) } }
+        .sheet(isPresented: $isShowingEditSheet) { 
+            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, onPost: { isInc in updateThis(newInc: isInc) }, transactions: transactions, accounts: accounts) 
+        }
     }
     func deleteThis() { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions.remove(at: idx); dismiss() } }
     func updateThis(newInc: Bool) {
@@ -143,7 +211,6 @@ struct AccountCreateView: View {
                 
                 if selectedType == .credit {
                     Section(header: Text("クレジットカード設定")) {
-                        // 一行表示でタップするとホイールが出る形式に変更
                         Picker(selection: $payday) {
                             ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
                             Text("月末").tag(32)
@@ -189,7 +256,6 @@ struct AccountEditView: View {
             
             if account.type == .credit {
                 Section(header: Text("クレジットカード設定")) {
-                    // 一行表示でタップするとホイールが出る形式に変更
                     Picker(selection: Binding(
                         get: { account.payday ?? 1 },
                         set: { account.payday = $0 }
