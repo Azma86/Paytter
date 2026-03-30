@@ -50,36 +50,39 @@ struct ContentView: View {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    // 修正：role: .destructive を外して、勝手な行移動（吸い込み）を停止
                                     Button {
+                                        // 状態だけをセット。この時点ではalertを呼ばず、スワイプ状態を維持させる
                                         self.transactionToDelete = item
                                         self.isShowingSwipeDeleteAlert = true
                                     } label: {
                                         Label("削除", systemImage: "trash")
                                     }
-                                    .tint(.red) // 役割ではなく、見た目だけを赤くする
+                                    .tint(.red)
                                 }
                             }
                         }
                         .listStyle(.plain)
-                        .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
-                            Button("キャンセル", role: .cancel) {
-                                self.transactionToDelete = nil
-                            }
-                            Button("削除", role: .destructive) {
-                                if let target = transactionToDelete {
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                        deleteSpecificTransaction(target)
-                                    }
-                                }
-                                self.transactionToDelete = nil
-                            }
-                        }
                     }
                     Button(action: { inputText = ""; isShowingInputSheet = true }) {
                         Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color.blue).clipShape(Circle())
                     }.padding(20).padding(.bottom, 10)
-                }.navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+                }
+                .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+                // 修正：ListではなくNavigationView全体（ZStack）に対してalertをつけることで、
+                // 削除ボタンが表示されたままのリストの状態を維持する
+                .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
+                    Button("キャンセル", role: .cancel) {
+                        self.transactionToDelete = nil
+                    }
+                    Button("削除", role: .destructive) {
+                        if let target = transactionToDelete {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                deleteSpecificTransaction(target)
+                            }
+                        }
+                        self.transactionToDelete = nil
+                    }
+                }
             }.tabItem { Label("ホーム", systemImage: "house") }
 
             // 【お財布】
