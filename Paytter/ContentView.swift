@@ -16,13 +16,14 @@ struct ContentView: View {
     @State private var indexSetToDelete: IndexSet?
     @State private var isShowingRestoreAlert = false
     @State private var restoreText: String = ""
+    
+    @State private var isShowingAccountCreator = false
 
     var body: some View {
         TabView {
             NavigationView {
                 ZStack(alignment: .bottomTrailing) {
                     VStack(spacing: 0) {
-                        // --- 元の見た目のヘッダー ---
                         HStack(spacing: 15) {
                             ForEach(accounts.filter { $0.isVisible }) { acc in
                                 BalanceView(title: acc.name, amount: acc.balance, color: .primary)
@@ -56,10 +57,7 @@ struct ContentView: View {
                 .navigationBarTitleDisplayMode(.inline)
             }.tabItem { Label("ホーム", systemImage: "house") }
 
-            NavigationView {
-                WalletAnalysisView(transactions: transactions).navigationTitle("お財布")
-            }.tabItem { Label("お財布", systemImage: "wallet.pass") }
-
+            // --- お財布タブ：ここで管理を行う ---
             NavigationView {
                 List {
                     Section(header: Text("お財布の管理")) {
@@ -72,23 +70,55 @@ struct ContentView: View {
                                 }
                             }
                         }
+                        .onDelete(perform: deleteAccount)
+                        
+                        Button(action: { isShowingAccountCreator = true }) {
+                            Label("新しいお財布を追加", systemImage: "plus.circle")
+                        }
                     }
+                    
+                    Section(header: Text("分析")) {
+                        NavigationLink(destination: WalletAnalysisView(transactions: transactions)) {
+                            Label("今月の収支分析", systemImage: "chart.bar.xaxis")
+                        }
+                    }
+                }
+                .navigationTitle("お財布")
+                .sheet(isPresented: $isShowingAccountCreator) {
+                    AccountCreateView(accounts: $accounts)
+                }
+            }.tabItem { Label("お財布", systemImage: "wallet.pass") }
+
+            NavigationView {
+                List {
                     Section(header: Text("予算設定")) {
                         Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000)
                     }
+                    Section(header: Text("バックアップと復元")) {
+                        Button("データをコピーする") {
+                            UIPasteboard.general.string = transactions.rawValue
+                        }
+                        Button("バックアップから復元") {
+                            isShowingRestoreAlert = true
+                        }
+                    }
                     Section(header: Text("データ管理")) {
-                        Button("データを全削除する", role: .destructive) { isShowingDeleteAlert = true }
+                        Button("全データをリセット", role: .destructive) { isShowingDeleteAlert = true }
                     }
                 }
                 .navigationTitle("設定")
-                .alert("全削除", isPresented: $isShowingDeleteAlert) {
+                .alert("復元", isPresented: $isShowingRestoreAlert) {
+                    TextField("バックアップを貼り付け", text: $restoreText)
+                    Button("キャンセル", role: .cancel) { restoreText = "" }
+                    Button("復元") { restoreFromText() }
+                }
+                .alert("リセット", isPresented: $isShowingDeleteAlert) {
                     Button("キャンセル", role: .cancel) { }
-                    Button("削除する", role: .destructive) { 
-                        transactions = []; for i in 0..<accounts.count { accounts[i].balance = 0 }
-                    }
+                    Button("削除", role: .destructive) { resetAll() }
                 }
             }.tabItem { Label("設定", systemImage: "gearshape") }
         }
+        .onAppear { recalculateBalances() } // 起動時に整合性をとる
         .sheet(isPresented: $isShowingInputSheet) {
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet) { isInc in addTransaction(isInc: isInc) }
         }
@@ -97,13 +127,9 @@ struct ContentView: View {
     func addTransaction(isInc: Bool) {
         let amount = parseAmount(from: inputText)
         let sourceName = parseSourceName(from: inputText)
-        
-        if let idx = accounts.firstIndex(where: { sourceName.contains($0.name) }) {
+        if let idx = accounts.firstIndex(where: { $0.name == sourceName }) {
             accounts[idx].balance += (isInc ? amount : -amount)
-        } else if let firstIdx = accounts.firstIndex(where: { $0.name == "お財布" }) {
-            accounts[firstIdx].balance += (isInc ? amount : -amount)
         }
-
         transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
         BackupManager.saveAll(transactions: transactions, accounts: accounts)
     }
@@ -112,10 +138,42 @@ struct ContentView: View {
         for index in offsets {
             let revIndex = transactions.count - 1 - index
             let item = transactions[revIndex]
-            if let idx = accounts.firstIndex(where: { item.source.contains($0.name) }) {
+            if let idx = accounts.firstIndex(where: { $0.name == item.source }) {
                 accounts[idx].balance += (item.isIncome ? -item.amount : item.amount)
             }
             transactions.remove(at: revIndex)
+        }
+        BackupManager.saveAll(transactions: transactions, accounts: accounts)
+    }
+    
+    func deleteAccount(at offsets: IndexSet) {
+        accounts.remove(atOffsets: offsets)
+        BackupManager.saveAll(transactions: transactions, accounts: accounts)
+    }
+
+    func recalculateBalances() {
+        for i in 0..<accounts.count {
+            var current = accounts[i].initialBalance
+            for tx in transactions where tx.source == accounts[i].name {
+                current += (tx.isIncome ? tx.amount : -tx.amount)
+            }
+            accounts[i].balance = current
+        }
+    }
+
+    func restoreFromText() {
+        if let restored = [Transaction](rawValue: restoreText) {
+            transactions = restored
+            recalculateBalances()
+            restoreText = ""
+        }
+    }
+
+    func resetAll() {
+        transactions = []
+        for i in 0..<accounts.count {
+            accounts[i].balance = 0
+            accounts[i].initialBalance = 0
         }
         BackupManager.saveAll(transactions: transactions, accounts: accounts)
     }
@@ -128,6 +186,6 @@ struct ContentView: View {
 
     func parseSourceName(from text: String) -> String {
         for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
-        return "お財布"
+        return accounts.first?.name ?? "お財布"
     }
 }
