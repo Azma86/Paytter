@@ -31,10 +31,16 @@ struct ContentView: View {
                         Divider()
                         
                         List {
+                            // --- ContentView.swift の List 内 ---
                             ForEach(transactions.reversed()) { item in
-                                TwitterRow(item: item)
+                                NavigationLink(destination: TransactionDetailView(
+                                    item: item, 
+                                    transactions: $transactions, 
+                                    accounts: $accounts // ここが Binding になっているので $ が必要です
+                                )) {
+                                    TwitterRow(item: item).listRowInsets(EdgeInsets())
+                                }
                             }
-                            .onDelete(perform: deleteTransaction)
                         }.listStyle(.plain)
                     }
                     
