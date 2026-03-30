@@ -24,7 +24,7 @@ struct Account: Identifiable, Codable {
     var id = UUID()
     var name: String
     var balance: Int
-    var initialBalance: Int = 0 // 初期設定時の金額を保持
+    var initialBalance: Int = 0 // 残高の整合性を保つための初期値
     var isVisible: Bool = true
 }
 
