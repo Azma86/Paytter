@@ -36,14 +36,13 @@ struct HighlightedText: View {
     }
 }
 
-// --- 投稿画面 (文中サジェスト & インテリジェントスペース機能) ---
+// --- 投稿画面 (文中即時サジェスト & インテリジェントスペース機能) ---
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool) -> Void
     var transactions: [Transaction]
     var accounts: [Account]
     
     @State private var suggestions: [String] = []
-    @State private var cursorLocation: Int = 0 // カーソル位置を保持
     
     var body: some View {
         NavigationView {
@@ -53,8 +52,7 @@ struct PostView: View {
                     ZStack(alignment: .topLeading) {
                         CustomTextEditor(text: $inputText) { sym in insertAtCursor(sym) }
                             .frame(minHeight: 150)
-                            .onChange(of: inputText) { newValue in
-                                // テキスト変更時にカーソル位置の単語を特定してサジェスト
+                            .onChange(of: inputText) { _ in
                                 updateSuggestionsForCursor()
                             }
                         if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
@@ -87,7 +85,6 @@ struct PostView: View {
         }
     }
     
-    // カーソル位置に基づいたサジェストの更新
     func updateSuggestionsForCursor() {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let win = sc.windows.first,
@@ -96,25 +93,29 @@ struct PostView: View {
         let cursorLoc = tv.selectedRange.location
         let text = tv.text ?? ""
         
-        // カーソル以前のテキストを取得し、最後の単語を特定
         let prefixText = String(text.prefix(cursorLoc))
-        let words = prefixText.components(separatedBy: .whitespacesAndNewlines)
-        guard let currentWord = words.last, !currentWord.isEmpty else {
-            suggestions = []
-            return
-        }
+        // スペースや改行で区切られた最後の単語を抽出
+        let currentWord = prefixText.components(separatedBy: .whitespacesAndNewlines).last ?? ""
         
-        if currentWord.hasPrefix("#") {
+        if currentWord == "#" {
+            // # 単体の場合、全タグを表示
+            let allTags = transactions.flatMap { $0.tags }
+            suggestions = Array(Set(allTags)).sorted()
+        } else if currentWord.hasPrefix("#") {
+            // # の後に文字がある場合、前方一致で絞り込み
             let allTags = transactions.flatMap { $0.tags }
             suggestions = Array(Set(allTags.filter { $0.hasPrefix(currentWord) && $0 != currentWord })).sorted()
+        } else if currentWord == "@" {
+            // @ 単体の場合、全お財布を表示
+            suggestions = accounts.map { "@" + $0.name }.sorted()
         } else if currentWord.hasPrefix("@") {
+            // @ の後に文字がある場合、前方一致で絞り込み
             suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(currentWord) && $0 != currentWord }.sorted()
         } else {
             suggestions = []
         }
     }
     
-    // 文中での候補適用
     func applySuggestion(_ suggestion: String) {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let win = sc.windows.first,
@@ -124,22 +125,21 @@ struct PostView: View {
         let text = tv.text ?? ""
         let prefixText = String(text.prefix(cursorLoc))
         
-        // 置換対象の単語の範囲を特定
         let words = prefixText.components(separatedBy: .whitespacesAndNewlines)
         if let lastWord = words.last {
             let rangeStart = cursorLoc - lastWord.count
             let startIdx = text.index(text.startIndex, offsetBy: rangeStart)
             let endIdx = text.index(text.startIndex, offsetBy: cursorLoc)
             
+            // 候補置換後に半角スペースを付与
             let newText = text.replacingCharacters(in: startIdx..<endIdx, with: suggestion + " ")
             inputText = newText
             
-            // 挿入後のカーソル位置を調整
             DispatchQueue.main.async {
                 tv.selectedRange = NSRange(location: rangeStart + suggestion.count + 1, length: 0)
+                suggestions = []
             }
         }
-        suggestions = []
     }
     
     func insertAtCursor(_ sym: String) {
