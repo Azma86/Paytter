@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 3. 自作カレンダー画面 (ドット表示 & 四角いデザイン) ---
+// --- 3. 自作カレンダー画面 ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -44,6 +44,10 @@ struct CalendarView: View {
     @State private var currentMonth = Date()
     @State private var isShowingInputSheet = false
     @State private var inputText = ""
+    
+    // 年月選択用
+    @State private var isShowingMonthPicker = false
+    @State private var tempPickerDate = Date()
     
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
@@ -55,14 +59,24 @@ struct CalendarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // ヘッダー
+            // ヘッダー（年月表示と月移動）
             HStack {
-                Button(action: { changeMonth(by: -1) }) { Image(systemName: "chevron.left") }
+                Button(action: { withAnimation { changeMonth(by: -1) } }) { Image(systemName: "chevron.left") }
                 Spacer()
-                Text(monthYearString(from: currentMonth)).font(.headline)
+                Button(action: {
+                    tempPickerDate = currentMonth
+                    isShowingMonthPicker = true
+                }) {
+                    HStack(spacing: 4) {
+                        Text(monthYearString(from: currentMonth))
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Image(systemName: "chevron.down").font(.caption).foregroundColor(.secondary)
+                    }
+                }
                 Spacer()
-                Button(action: { changeMonth(by: 1) }) { Image(systemName: "chevron.right") }
-            }.padding()
+                Button(action: { withAnimation { changeMonth(by: 1) } }) { Image(systemName: "chevron.right") }
+            }.padding(.horizontal).padding(.vertical, 8)
 
             // 曜日ラベル
             HStack {
@@ -72,32 +86,43 @@ struct CalendarView: View {
                 }
             }.padding(.bottom, 5)
 
-            // グリッド
+            // カレンダーグリッド（スワイプ対応）
             let days = generateDaysInMonth(for: currentMonth)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
-                ForEach(days, id: \.self) { date in
-                    if let date = date {
-                        VStack(spacing: 4) {
-                            Text("\(calendar.component(.day, from: date))")
-                                .font(.system(.subheadline, design: .rounded))
-                                .fontWeight(calendar.isDate(date, inSameDayAs: selectedDate) ? .bold : .regular)
-                                .foregroundColor(calendar.isDate(date, inSameDayAs: selectedDate) ? .white : .primary)
-                                .frame(width: 30, height: 30)
-                                .background(calendar.isDate(date, inSameDayAs: selectedDate) ? Color.blue : Color.clear)
-                                .clipShape(Circle())
-                            
-                            HStack(spacing: 4) {
-                                if hasTransaction(on: date, isIncome: true) { Circle().fill(Color.green).frame(width: 4, height: 4) }
-                                if hasTransaction(on: date, isIncome: false) { Circle().fill(Color.red).frame(width: 4, height: 4) }
-                            }.frame(height: 4)
+            TabView(selection: $currentMonth) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
+                    ForEach(days, id: \.self) { date in
+                        if let date = date {
+                            VStack(spacing: 2) {
+                                Text("\(calendar.component(.day, from: date))")
+                                    .font(.system(.subheadline, design: .rounded))
+                                    .fontWeight(calendar.isDate(date, inSameDayAs: selectedDate) ? .bold : .regular)
+                                    .foregroundColor(calendar.isDate(date, inSameDayAs: selectedDate) ? .white : .primary)
+                                    .frame(width: 28, height: 28)
+                                    .background(calendar.isDate(date, inSameDayAs: selectedDate) ? Color.blue : Color.clear)
+                                    .clipShape(Circle())
+                                
+                                HStack(spacing: 3) {
+                                    if hasTransaction(on: date, isIncome: true) { Circle().fill(Color.green).frame(width: 4, height: 4) }
+                                    if hasTransaction(on: date, isIncome: false) { Circle().fill(Color.red).frame(width: 4, height: 4) }
+                                }.frame(height: 4)
+                            }
+                            .frame(height: 44) // 少しサイズを小さく
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedDate = date }
+                        } else {
+                            Color.clear.frame(height: 44)
                         }
-                        .frame(height: 50).frame(maxWidth: .infinity)
-                        .background(calendar.isDate(date, inSameDayAs: selectedDate) ? Color.blue.opacity(0.1) : Color.clear)
-                        .contentShape(Rectangle())
-                        .onTapGesture { selectedDate = date }
-                    } else { Color.clear.frame(height: 50) }
+                    }
                 }
-            }.padding(.bottom, 10)
+                .tag(currentMonth)
+            }
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+            .frame(height: 280) // 全体サイズをコンパクトに
+            .gesture(DragGesture().onEnded { value in
+                if value.translation.width < -50 { withAnimation { changeMonth(by: 1) } }
+                if value.translation.width > 50 { withAnimation { changeMonth(by: -1) } }
+            })
 
             Divider()
 
@@ -116,7 +141,6 @@ struct CalendarView: View {
                         }
                     }
                     
-                    // リストの最後に配置
                     Button(action: { self.inputText = ""; self.isShowingInputSheet = true }) {
                         HStack { Image(systemName: "plus"); Text("投稿を作成") }
                         .font(.subheadline).fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -128,8 +152,28 @@ struct CalendarView: View {
             }
         }
         .navigationTitle("カレンダー")
+        .navigationBarTitleDisplayMode(.inline) // 中央揃え
         .sheet(isPresented: $isShowingInputSheet) {
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts)
+        }
+        .sheet(isPresented: $isShowingMonthPicker) {
+            NavigationView {
+                VStack {
+                    DatePicker("年月を選択", selection: $tempPickerDate, displayedComponents: .date)
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                        .environment(\.locale, Locale(identifier: "ja_JP"))
+                }
+                .navigationTitle("年月を選択")
+                .navigationBarItems(
+                    leading: Button("キャンセル") { isShowingMonthPicker = false },
+                    trailing: Button("移動") {
+                        currentMonth = tempPickerDate
+                        isShowingMonthPicker = false
+                    }
+                )
+            }
+            .presentationDetents([.height(300)])
         }
     }
 
