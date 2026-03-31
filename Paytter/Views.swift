@@ -23,13 +23,12 @@ struct TwitterRow: View {
     }
 }
 
-// --- 2. 金額ハイライト (¥付きのみに限定) ---
+// --- 2. 金額ハイライト ---
 struct HighlightedText: View {
     let text: String; let isIncome: Bool
     var body: some View {
         let words = text.components(separatedBy: " ")
         return words.reduce(Text("")) { (res, word) in
-            // 「¥」が含まれている場合のみハイライトする
             if word.contains("¥") {
                 return res + Text(word + " ").foregroundColor(isIncome ? Color(red: 0.1, green: 0.7, blue: 0.1) : .red).fontWeight(.bold)
             } else { 
@@ -129,7 +128,7 @@ struct CalendarView: View {
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
-                                .buttonStyle(.plain) // 文字が青くなるのを防ぐ
+                                .buttonStyle(.plain)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button { transactionToDelete = item; isShowingDeleteAlert = true } label: { Label("削除", systemImage: "trash") }.tint(.red)
                                 }
@@ -199,29 +198,28 @@ struct CalendarView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         let total = dayTransactions.count
                         if total > 0 {
-                            HStack(spacing: 1.5) {
+                            HStack(spacing: 2) { // ドット間隔も微調整
                                 ForEach(dayTransactions.prefix(5)) { tx in
-                                    Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3, height: 3)
+                                    Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 4.5, height: 4.5) // 点を大きく
                                 }
                             }
                             if total > 5 {
-                                HStack(spacing: 1.5) {
+                                HStack(spacing: 2) {
                                     if total > 8 {
                                         ForEach(dayTransactions.prefix(8).suffix(3)) { tx in
-                                            Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3, height: 3)
+                                            Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 4.5, height: 4.5)
                                         }
-                                        // +n 表示を少し大きく、太く
-                                        Text("+\(total - 8)").font(.system(size: 8, weight: .bold)).foregroundColor(.secondary).offset(y: -1)
+                                        Text("+\(total - 8)").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).offset(y: -1)
                                     } else {
                                         ForEach(dayTransactions.suffix(total - 5)) { tx in
-                                            Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3, height: 3)
+                                            Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 4.5, height: 4.5)
                                         }
                                     }
                                 }
-                            } else { Spacer().frame(height: 3) }
-                        } else { Spacer().frame(height: 7) }
+                            } else { Spacer().frame(height: 4.5) }
+                        } else { Spacer().frame(height: 10) }
                     }
-                    .frame(height: 8)
+                    .frame(height: 10)
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .frame(height: 45)
@@ -286,8 +284,9 @@ struct CalendarView: View {
     }
     func parseAmount(from t: String) -> Int {
         let comps = t.components(separatedBy: .whitespacesAndNewlines)
-        let amt = comps.filter { $0.contains("¥") }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amt) ?? 0
+        // 「¥」が含まれている単語のみを抽出対象にする
+        let amtStr = comps.filter { $0.contains("¥") }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        return Int(amtStr) ?? 0
     }
     func parseSourceName(from t: String) -> String {
         for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }
