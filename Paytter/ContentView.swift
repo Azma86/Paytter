@@ -21,7 +21,7 @@ struct ContentView: View {
     @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
     @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93" // サブ文字色
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
 
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
@@ -51,6 +51,7 @@ struct ContentView: View {
         .onChange(of: transactions) { _ in recalculateBalances() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: themeBarText) { _ in updateAppearance() }
+        .onChange(of: themeTabAccent) { _ in updateAppearance() }
         .onChange(of: themeTabUnselected) { _ in updateAppearance() }
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
@@ -195,6 +196,7 @@ struct ContentView: View {
     func updateAppearance() {
         let bgColor = UIColor(Color(hex: themeBarBG))
         let textColor = UIColor(Color(hex: themeBarText))
+        let accentColor = UIColor(Color(hex: themeTabAccent))
         let unselectedColor = UIColor(Color(hex: themeTabUnselected))
         
         let navBarAppearance = UINavigationBarAppearance()
@@ -208,14 +210,22 @@ struct ContentView: View {
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
         tabBarAppearance.backgroundColor = bgColor
-        // アイコンとテキストの色をUIKitレベルで上書き（グレー戻り防止）
-        tabBarAppearance.stackedLayoutAppearance.normal.iconColor = unselectedColor
-        tabBarAppearance.stackedLayoutAppearance.normal.titleTextAttributes = [.foregroundColor: unselectedColor]
-        tabBarAppearance.stackedLayoutAppearance.selected.iconColor = UIColor(Color(hex: themeTabAccent))
-        tabBarAppearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: themeTabAccent))]
+        
+        // --- 強力な色固定 ---
+        let itemAppearance = UITabBarItemAppearance()
+        itemAppearance.normal.iconColor = unselectedColor
+        itemAppearance.normal.titleTextAttributes = [.foregroundColor: unselectedColor]
+        itemAppearance.selected.iconColor = accentColor
+        itemAppearance.selected.titleTextAttributes = [.foregroundColor: accentColor]
+        
+        tabBarAppearance.stackedLayoutAppearance = itemAppearance
+        tabBarAppearance.inlineLayoutAppearance = itemAppearance
+        tabBarAppearance.compactInlineLayoutAppearance = itemAppearance
         
         UITabBar.appearance().standardAppearance = tabBarAppearance
-        if #available(iOS 15.0, *) { UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance }
+        if #available(iOS 15.0, *) {
+            UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
+        }
     }
 }
 
@@ -274,7 +284,9 @@ struct ThemeSettingView: View {
                         }
                     }.padding(.horizontal, 20).padding(.vertical, 16)
                 }.background(Color(hex: themeBarBG).opacity(0.5))
+                
                 Divider()
+
                 List {
                     Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "背景色", hex: $themeBG, base: baseBG)
@@ -283,10 +295,12 @@ struct ThemeSettingView: View {
                         colorRow(title: "本文文字色", hex: $themeBodyText, base: baseBody)
                         colorRow(title: "サブ文字色", hex: $themeSubText, base: baseSub)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+
                     Section(header: Text("フッターメニュー").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "メニュー選択色", hex: $themeTabAccent, base: baseTab)
                         colorRow(title: "メニュー非選択色", hex: $themeTabUnselected, base: baseUnselected)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
                     Section(header: Text("個別パーツ").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "メインカラー", hex: $themeMain, base: baseMain)
                         colorRow(title: "収入の色", hex: $themeIncome, base: baseInc)
@@ -294,10 +308,12 @@ struct ThemeSettingView: View {
                         colorRow(title: "祝日の色", hex: $themeHoliday, base: baseHol)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }
-                .scrollContentBackground(.hidden).listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .listStyle(.insetGrouped)
             }
         }
-        .navigationTitle("テーマ設定").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("テーマ設定")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
         .toolbarBackground(.visible, for: .navigationBar, .tabBar)
     }
@@ -315,10 +331,15 @@ struct ThemeSettingView: View {
 
     func colorRow(title: String, hex: Binding<String>, base: String) -> some View {
         HStack {
-            ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() })).foregroundColor(Color(hex: themeBodyText))
+            ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() }))
+                .foregroundColor(Color(hex: themeBodyText))
             Spacer()
             if hex.wrappedValue != base {
-                Button(action: { hex.wrappedValue = base }) { Image(systemName: "arrow.counterclockwise.circle.fill").foregroundColor(Color(hex: themeSubText)).font(.title3) }.buttonStyle(.plain)
+                Button(action: { hex.wrappedValue = base }) { 
+                    Image(systemName: "arrow.counterclockwise.circle.fill")
+                        .foregroundColor(Color(hex: themeSubText).opacity(0.8))
+                        .font(.title3) 
+                }.buttonStyle(.plain)
             }
         }
     }
