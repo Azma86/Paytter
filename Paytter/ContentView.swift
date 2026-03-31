@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
@@ -39,7 +40,12 @@ struct ContentView: View {
     @State private var backupDateString = ""
     @State private var isShowingCompletionAlert = false
     @State private var completionMessage = ""
-    @State private var exportURL: URL? // エクスポート用
+    
+    // 外部連携用フラグ
+    @State private var isShowingExporter = false
+    @State private var isShowingImporter = false
+    @State private var pendingImportData: ([Transaction], [Account], String)?
+    @State private var isShowingImportConfirm = false
 
     var body: some View {
         TabView(selection: $selection) {
@@ -142,7 +148,7 @@ struct ContentView: View {
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
-            .alert("お財布を削除しますか？", isPresented: $isShowingAccountDeleteAlert) {
+            .alert("削除", isPresented: $isShowingAccountDeleteAlert) {
                 Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
             } message: { Text("このお財布に関連付けられた投稿の金額計算ができなくなる可能性があります。") }
         } 
@@ -165,7 +171,8 @@ struct ContentView: View {
                         Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
-                        Button("バックアップファイルを外部へ保存") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        Button("バックアップを書き出す (共有)") { isShowingExporter = true }.foregroundColor(Color(hex: themeMain))
+                        Button("外部ファイルから読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { 
                         Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } 
@@ -175,28 +182,60 @@ struct ContentView: View {
             .navigationTitle("設定")
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            // アラート類
             .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
-                Button("キャンセル", role: .cancel) { }
-                Button("上書き保存") { 
-                    BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
-                    completionMessage = "手動バックアップの保存が完了しました。"; isShowingCompletionAlert = true 
-                }
+                Button("キャンセル", role: .cancel) { }; Button("上書き保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "手動バックアップの保存が完了しました。"; isShowingCompletionAlert = true }
             } message: { Text("前回の手動保存日時: \(backupDateString)\n現在のデータでお財布設定と投稿を上書きしますか？") }
             .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) {
-                Button("キャンセル", role: .cancel) { }
-                Button("復元する", role: .destructive) { 
-                    if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { 
-                        transactions = t; accounts = a; recalculateBalances() 
-                        completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"; isShowingCompletionAlert = true
-                    } 
-                }
+                Button("キャンセル", role: .cancel) { }; Button("復元する", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"; isShowingCompletionAlert = true } }
             } message: { Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？") }
-            .alert("リセット", isPresented: $isShowingResetAlert) {
+            .alert("全リセット", isPresented: $isShowingResetAlert) {
                 Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "全てのデータを初期状態にリセットしました。"; isShowingCompletionAlert = true }
             } message: { Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。") }
+            .alert("外部バックアップの読み込み", isPresented: $isShowingImportConfirm) {
+                Button("キャンセル", role: .cancel) { pendingImportData = nil }
+                Button("復元する", role: .destructive) {
+                    if let data = pendingImportData {
+                        transactions = data.0; accounts = data.1; recalculateBalances()
+                        completionMessage = "外部バックアップからの復元が完了しました。"; isShowingCompletionAlert = true
+                    }
+                    pendingImportData = nil
+                }
+            } message: { if let data = pendingImportData { Text("選択されたファイルの保存日時: \(data.2)\n現在のデータを上書きしてもよろしいですか？") } }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK") { } } message: { Text(completionMessage) }
-            .sheet(item: $exportURL) { url in ActivityView(activityItems: [url]) }
+            // エクスポート用共有シート
+            .sheet(isPresented: $isShowingExporter) { 
+                let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json")
+                if FileManager.default.fileExists(atPath: path.path) { ActivityView(activityItems: [path]) }
+                else { Text("手動バックアップが存在しません。先に作成してください。").padding() }
+            }
+            // インポート用ファイル選択画面
+            .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in
+                switch result {
+                case .success(let url):
+                    if url.startAccessingSecurityScopedResource() {
+                        handleImport(from: url)
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                case .failure(let error): print(error.localizedDescription)
+                }
+            }
         } 
+    }
+
+    func handleImport(from url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let txData = json["transactions"] as? String,
+              let accData = json["accounts"] as? String,
+              let dateStr = json["date"] as? String else { return }
+        
+        let decoder = JSONDecoder()
+        if let t = try? decoder.decode([Transaction].self, from: txData.data(using: .utf8)!),
+           let a = try? decoder.decode([Account].self, from: accData.data(using: .utf8)!) {
+            self.pendingImportData = (t, a, dateStr)
+            self.isShowingImportConfirm = true
+        }
     }
 
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
@@ -207,125 +246,23 @@ struct ContentView: View {
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
 
     func updateAppearance() {
-        let bgColor = UIColor(Color(hex: themeBarBG))
-        let textColor = UIColor(Color(hex: themeBarText))
-        let accentColor = UIColor(Color(hex: themeTabAccent))
-        let unselectedColor = UIColor(Color(hex: themeTabUnselected))
-        let navBarAppearance = UINavigationBarAppearance()
-        navBarAppearance.configureWithOpaqueBackground()
-        navBarAppearance.backgroundColor = bgColor
-        navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]
-        navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
-        UINavigationBar.appearance().standardAppearance = navBarAppearance
-        UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
-        let tabBarAppearance = UITabBarAppearance()
-        tabBarAppearance.configureWithOpaqueBackground()
-        tabBarAppearance.backgroundColor = bgColor
+        let bgColor = UIColor(Color(hex: themeBarBG)); let textColor = UIColor(Color(hex: themeBarText))
+        let accentColor = UIColor(Color(hex: themeTabAccent)); let unselectedColor = UIColor(Color(hex: themeTabUnselected))
+        let navBarAppearance = UINavigationBarAppearance(); navBarAppearance.configureWithOpaqueBackground()
+        navBarAppearance.backgroundColor = bgColor; navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]; navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
+        UINavigationBar.appearance().standardAppearance = navBarAppearance; UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
+        let tabBarAppearance = UITabBarAppearance(); tabBarAppearance.configureWithOpaqueBackground(); tabBarAppearance.backgroundColor = bgColor
         let itemAppearance = UITabBarItemAppearance()
-        itemAppearance.normal.iconColor = unselectedColor
-        itemAppearance.normal.titleTextAttributes = [.foregroundColor: unselectedColor]
-        itemAppearance.selected.iconColor = accentColor
-        itemAppearance.selected.titleTextAttributes = [.foregroundColor: accentColor]
-        tabBarAppearance.stackedLayoutAppearance = itemAppearance
-        tabBarAppearance.inlineLayoutAppearance = itemAppearance
-        tabBarAppearance.compactInlineLayoutAppearance = itemAppearance
+        itemAppearance.normal.iconColor = unselectedColor; itemAppearance.normal.titleTextAttributes = [.foregroundColor: unselectedColor]
+        itemAppearance.selected.iconColor = accentColor; itemAppearance.selected.titleTextAttributes = [.foregroundColor: accentColor]
+        tabBarAppearance.stackedLayoutAppearance = itemAppearance; tabBarAppearance.inlineLayoutAppearance = itemAppearance; tabBarAppearance.compactInlineLayoutAppearance = itemAppearance
         UITabBar.appearance().standardAppearance = tabBarAppearance
         if #available(iOS 15.0, *) { UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance }
     }
-
-    func exportBackup() {
-        let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json")
-        if FileManager.default.fileExists(atPath: path.path) { self.exportURL = path }
-    }
 }
 
-// 共有シート用URL対応
-extension URL: Identifiable { public var id: String { self.absoluteString } }
-
-// 共有シート部品
 struct ActivityView: UIViewControllerRepresentable {
     var activityItems: [Any]; var applicationActivities: [UIActivity]? = nil
     func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities) }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
-
-// --- テーマ設定画面・ThemeSettingView は変更なしのため省略せず前回分を維持 ---
-struct ThemeSettingView: View {
-    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
-    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
-    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
-    @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
-    @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
-    @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
-    @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @AppStorage("theme_base_main") var baseMain: String = "#FF007AFF"
-    @AppStorage("theme_base_inc") var baseInc: String = "#FF19B219"
-    @AppStorage("theme_base_exp") var baseExp: String = "#FFFF3B30"
-    @AppStorage("theme_base_hol") var baseHol: String = "#FFFF3B30"
-    @AppStorage("theme_base_bg") var baseBG: String = "#FFFFFFFF"
-    @AppStorage("theme_base_barBG") var baseBarBG: String = "#F8F8F8FF"
-    @AppStorage("theme_base_barText") var baseBarText: String = "#FF000000"
-    @AppStorage("theme_base_tab") var baseTab: String = "#FF007AFF"
-    @AppStorage("theme_base_unselected") var baseUnselected: String = "#FF8E8E93"
-    @AppStorage("theme_base_body") var baseBody: String = "#FF000000"
-    @AppStorage("theme_base_sub") var baseSub: String = "#FF8E8E93"
-    struct Preset { let name: String; let main: String; let inc: String; let exp: String; let hol: String; let bg: String; let barBG: String; let barTxt: String; let tab: String; let unselected: String; let body: String; let sub: String }
-    let presets: [Preset] = [
-        Preset(name: "デフォルト", main: "#FF007AFF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF3B30", bg: "#FFFFFFFF", barBG: "#F8F8F8FF", barTxt: "#FF000000", tab: "#FF007AFF", unselected: "#FF8E8E93", body: "#FF000000", sub: "#FF8E8E93"),
-        Preset(name: "ダーク", main: "#FF0A84FF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF453A", bg: "#FF000000", barBG: "#FF1C1C1E", barTxt: "#FFFFFFFF", tab: "#FF0A84FF", unselected: "#FF8E8E93", body: "#FFFFFFFF", sub: "#FF8E8E93"),
-        Preset(name: "ナチュラル", main: "#FF6B8E23", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#EB4E3D", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barTxt: "#FF4B3621", tab: "#FF6B8E23", unselected: "#FF999988", body: "#FF4B3621", sub: "#FF999988"),
-        Preset(name: "モノクロ", main: "#FF333333", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FF999999", bg: "#FFFFFFFF", barBG: "#FFF2F2F2", barTxt: "#FF000000", tab: "#FF000000", unselected: "#FFCCCCCC", body: "#FF000000", sub: "#FF999999"),
-        Preset(name: "カフェ", main: "#FF8B4513", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#EB4E3D", bg: "#FFFFF8DC", barBG: "#FFDEB887", barTxt: "#FF3E2723", tab: "#FF8B4513", unselected: "#FFA08878", body: "#FF3E2723", sub: "#FFA08878")
-    ]
-    var body: some View {
-        ZStack {
-            Color(hex: themeBG).ignoresSafeArea()
-            VStack(spacing: 0) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 20) {
-                        ForEach(presets, id: \.name) { p in
-                            Button(action: { apply(p) }) {
-                                VStack(spacing: 8) {
-                                    Circle().fill(Color(hex: p.main)).frame(width: 46, height: 46).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
-                                    Text(p.name).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeBarText))
-                                }
-                            }.buttonStyle(.plain)
-                        }
-                    }.padding(.horizontal, 20).padding(.vertical, 16)
-                }.background(Color(hex: themeBarBG).opacity(0.5))
-                Divider()
-                List {
-                    Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "背景色", hex: $themeBG, base: baseBG)
-                        colorRow(title: "メニュー背景色", hex: $themeBarBG, base: baseBarBG)
-                        colorRow(title: "メニュー文字色", hex: $themeBarText, base: baseBarText)
-                        colorRow(title: "本文文字色", hex: $themeBodyText, base: baseBody)
-                        colorRow(title: "サブ文字色", hex: $themeSubText, base: baseSub)
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("フッターメニュー").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "メニュー選択色", hex: $themeTabAccent, base: baseTab)
-                        colorRow(title: "メニュー非選択色", hex: $themeTabUnselected, base: baseUnselected)
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("個別パーツ").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "メインカラー", hex: $themeMain, base: baseMain)
-                        colorRow(title: "収入の色", hex: $themeIncome, base: baseInc)
-                        colorRow(title: "支出の色", hex: $themeExpense, base: baseExp)
-                        colorRow(title: "祝日の色", hex: $themeHoliday, base: baseHol)
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
-            }
-        }.navigationTitle("テーマ設定").navigationBarTitleDisplayMode(.inline).toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
-    }
-    func apply(_ p: Preset) {
-        withAnimation {
-            themeMain = p.main; themeIncome = p.inc; themeExpense = p.exp; themeHoliday = p.hol; themeBG = p.bg; themeBarBG = p.barBG; themeBarText = p.barTxt; themeTabAccent = p.tab; themeTabUnselected = p.unselected; themeBodyText = p.body; themeSubText = p.sub; baseMain = p.main; baseInc = p.inc; baseExp = p.exp; baseHol = p.hol; baseBG = p.bg; baseBarBG = p.barBG; baseBarText = p.barTxt; baseTab = p.tab; baseUnselected = p.unselected; baseBody = p.body; baseSub = p.sub
-        }
-    }
-    func colorRow(title: String, hex: Binding<String>, base: String) -> some View {
-        HStack { ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() })).foregroundColor(Color(hex: themeBodyText)); Spacer(); if hex.wrappedValue != base { Button(action: { hex.wrappedValue = base }) { Image(systemName: "arrow.counterclockwise.circle.fill").foregroundColor(Color(hex: themeSubText).opacity(0.8)).font(.title3) }.buttonStyle(.plain) } }
-    }
 }
