@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 3. 自作カレンダー画面 ---
+// --- 3. 自作カレンダー画面 (スライド・前後月埋め込み対応) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -44,11 +44,13 @@ struct CalendarView: View {
     @State private var currentMonth = Date()
     @State private var isShowingInputSheet = false
     @State private var inputText = ""
-    
-    // 年月選択用
     @State private var isShowingMonthPicker = false
     @State private var tempPickerDate = Date()
     
+    // アニメーション用
+    @State private var slideOffset: CGFloat = 0
+    @State private var opacity: Double = 1.0
+
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
 
@@ -59,70 +61,64 @@ struct CalendarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // ヘッダー（年月表示と月移動）
+            // ヘッダー
             HStack {
-                Button(action: { withAnimation { changeMonth(by: -1) } }) { Image(systemName: "chevron.left") }
+                Button(action: { slideMonth(by: -1) }) { Image(systemName: "chevron.left") }
                 Spacer()
-                Button(action: {
-                    tempPickerDate = currentMonth
-                    isShowingMonthPicker = true
-                }) {
+                Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
                     HStack(spacing: 4) {
-                        Text(monthYearString(from: currentMonth))
-                            .font(.headline)
-                            .foregroundColor(.primary)
+                        Text(monthYearString(from: currentMonth)).font(.headline).foregroundColor(.primary)
                         Image(systemName: "chevron.down").font(.caption).foregroundColor(.secondary)
                     }
                 }
                 Spacer()
-                Button(action: { withAnimation { changeMonth(by: 1) } }) { Image(systemName: "chevron.right") }
+                Button(action: { slideMonth(by: 1) }) { Image(systemName: "chevron.right") }
             }.padding(.horizontal).padding(.vertical, 8)
 
-            // 曜日ラベル
+            // 曜日
             HStack {
                 ForEach(daysOfWeek, id: \.self) { day in
-                    Text(day).font(.caption).fontWeight(.bold).frame(maxWidth: .infinity)
+                    Text(day).font(.system(size: 12, weight: .bold)).frame(maxWidth: .infinity)
                         .foregroundColor(day == "日" ? .red : (day == "土" ? .blue : .primary))
                 }
             }.padding(.bottom, 5)
 
-            // カレンダーグリッド（スワイプ対応）
-            let days = generateDaysInMonth(for: currentMonth)
-            TabView(selection: $currentMonth) {
+            // カレンダーグリッド（スライド・前後月対応）
+            ZStack {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
-                    ForEach(days, id: \.self) { date in
-                        if let date = date {
-                            VStack(spacing: 2) {
-                                Text("\(calendar.component(.day, from: date))")
-                                    .font(.system(.subheadline, design: .rounded))
-                                    .fontWeight(calendar.isDate(date, inSameDayAs: selectedDate) ? .bold : .regular)
-                                    .foregroundColor(calendar.isDate(date, inSameDayAs: selectedDate) ? .white : .primary)
-                                    .frame(width: 28, height: 28)
-                                    .background(calendar.isDate(date, inSameDayAs: selectedDate) ? Color.blue : Color.clear)
-                                    .clipShape(Circle())
-                                
-                                HStack(spacing: 3) {
-                                    if hasTransaction(on: date, isIncome: true) { Circle().fill(Color.green).frame(width: 4, height: 4) }
-                                    if hasTransaction(on: date, isIncome: false) { Circle().fill(Color.red).frame(width: 4, height: 4) }
-                                }.frame(height: 4)
-                            }
-                            .frame(height: 44) // 少しサイズを小さく
-                            .frame(maxWidth: .infinity)
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectedDate = date }
-                        } else {
-                            Color.clear.frame(height: 44)
+                    let allDays = generateFullGrid(for: currentMonth)
+                    ForEach(0..<allDays.count, id: \.self) { index in
+                        let date = allDays[index]
+                        let isCurrentMonth = calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)
+                        
+                        VStack(spacing: 1) {
+                            Text("\(calendar.component(.day, from: date))")
+                                .font(.system(size: 14, design: .rounded))
+                                .fontWeight(calendar.isDate(date, inSameDayAs: selectedDate) ? .bold : .regular)
+                                .foregroundColor(isCurrentMonth ? (calendar.isDate(date, inSameDayAs: selectedDate) ? .white : .primary) : .gray.opacity(0.3))
+                                .frame(width: 26, height: 26)
+                                .background(calendar.isDate(date, inSameDayAs: selectedDate) && isCurrentMonth ? Color.blue : Color.clear)
+                                .clipShape(Circle())
+                            
+                            HStack(spacing: 2) {
+                                if hasTransaction(on: date, isIncome: true) { Circle().fill(Color.green).frame(width: 3, height: 3) }
+                                if hasTransaction(on: date, isIncome: false) { Circle().fill(Color.red).frame(width: 3, height: 3) }
+                            }.frame(height: 3)
                         }
+                        .frame(height: 38) // 縦幅を最小化
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
                     }
                 }
-                .tag(currentMonth)
+                .offset(x: slideOffset)
+                .opacity(opacity)
             }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-            .frame(height: 280) // 全体サイズをコンパクトに
             .gesture(DragGesture().onEnded { value in
-                if value.translation.width < -50 { withAnimation { changeMonth(by: 1) } }
-                if value.translation.width > 50 { withAnimation { changeMonth(by: -1) } }
+                if value.translation.width < -50 { slideMonth(by: 1) }
+                if value.translation.width > 50 { slideMonth(by: -1) }
             })
+            .frame(height: 230) // カレンダー部分の総高さを抑える
 
             Divider()
 
@@ -140,7 +136,6 @@ struct CalendarView: View {
                             }
                         }
                     }
-                    
                     Button(action: { self.inputText = ""; self.isShowingInputSheet = true }) {
                         HStack { Image(systemName: "plus"); Text("投稿を作成") }
                         .font(.subheadline).fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -152,7 +147,7 @@ struct CalendarView: View {
             }
         }
         .navigationTitle("カレンダー")
-        .navigationBarTitleDisplayMode(.inline) // 中央揃え
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isShowingInputSheet) {
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts)
         }
@@ -160,47 +155,77 @@ struct CalendarView: View {
             NavigationView {
                 VStack {
                     DatePicker("年月を選択", selection: $tempPickerDate, displayedComponents: .date)
-                        .datePickerStyle(.wheel)
-                        .labelsHidden()
-                        .environment(\.locale, Locale(identifier: "ja_JP"))
+                        .datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP"))
                 }
                 .navigationTitle("年月を選択")
-                .navigationBarItems(
-                    leading: Button("キャンセル") { isShowingMonthPicker = false },
-                    trailing: Button("移動") {
-                        currentMonth = tempPickerDate
-                        isShowingMonthPicker = false
-                    }
-                )
-            }
-            .presentationDetents([.height(300)])
+                .navigationBarItems(leading: Button("キャンセル") { isShowingMonthPicker = false }, trailing: Button("移動") { currentMonth = tempPickerDate; isShowingMonthPicker = false })
+            }.presentationDetents([.height(300)])
         }
     }
 
-    func hasTransaction(on date: Date, isIncome: Bool) -> Bool { transactions.contains { calendar.isDate($0.date, inSameDayAs: date) && $0.isIncome == isIncome } }
-    func changeMonth(by v: Int) { if let n = calendar.date(byAdding: .month, value: v, to: currentMonth) { currentMonth = n } }
-    func monthYearString(from d: Date) -> String { let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d) }
-    func generateDaysInMonth(for date: Date) -> [Date?] {
-        guard let range = calendar.range(of: .day, in: .month, for: date), let first = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }
-        let firstWeekday = calendar.component(.weekday, from: first)
-        var days: [Date?] = Array(repeating: nil, count: firstWeekday - 1)
-        for day in range { if let d = calendar.date(byAdding: .day, value: day - 1, to: first) { days.append(d) } }
+    // --- ロジック補助 ---
+    func slideMonth(by value: Int) {
+        let direction: CGFloat = value > 0 ? -1 : 1
+        withAnimation(.easeOut(duration: 0.2)) {
+            slideOffset = direction * 100
+            opacity = 0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            if let next = calendar.date(byAdding: .month, value: value, to: currentMonth) {
+                currentMonth = next
+                slideOffset = direction * -100
+                withAnimation(.easeIn(duration: 0.2)) {
+                    slideOffset = 0
+                    opacity = 1.0
+                }
+            }
+        }
+    }
+    
+    func slideToDate(_ date: Date) {
+        let isFuture = date > currentMonth
+        slideMonth(by: isFuture ? 1 : -1)
+        selectedDate = date
+    }
+
+    func hasTransaction(on date: Date, isIncome: Bool) -> Bool {
+        transactions.contains { calendar.isDate($0.date, inSameDayAs: date) && $0.isIncome == isIncome }
+    }
+
+    func monthYearString(from d: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d)
+    }
+
+    // 前後月を含むフルグリッド（42マス分）を生成
+    func generateFullGrid(for date: Date) -> [Date] {
+        guard let firstOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }
+        let firstWeekday = calendar.component(.weekday, from: firstOfMonth)
+        let startDate = calendar.date(byAdding: .day, value: -(firstWeekday - 1), to: firstOfMonth)!
+        
+        var days: [Date] = []
+        for i in 0..<42 {
+            if let d = calendar.date(byAdding: .day, value: i, to: startDate) { days.append(d) }
+        }
         return days
     }
+
     func combinedDate() -> Date {
         let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate)
         let tc = calendar.dateComponents([.hour, .minute], from: now)
         c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate
     }
+
     func addTransaction(isInc: Bool, date: Date) {
         let amt = parseAmount(from: inputText); let src = parseSourceName(from: inputText)
         transactions.append(Transaction(amount: amt, date: date, note: inputText, source: src, isIncome: isInc))
     }
+
     func parseAmount(from t: String) -> Int {
         let comps = t.components(separatedBy: .whitespacesAndNewlines)
         let amt = comps.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
         return Int(amt) ?? 0
     }
+
     func parseSourceName(from t: String) -> String {
         for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }
         return accounts.first?.name ?? "お財布"
