@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 3. 自作カレンダー画面 (滑らかなリニアスライド対応) ---
+// --- 3. 自作カレンダー画面 (写真スライド風の自然な挙動) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -47,9 +47,6 @@ struct CalendarView: View {
     @State private var isShowingMonthPicker = false
     @State private var tempPickerDate = Date()
     
-    // スライド用
-    @State private var dragOffset: CGFloat = 0
-
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
 
@@ -62,7 +59,7 @@ struct CalendarView: View {
         VStack(spacing: 0) {
             // ヘッダー
             HStack {
-                Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left") }
+                Button(action: { withAnimation { moveMonth(by: -1) } }) { Image(systemName: "chevron.left") }
                 Spacer()
                 Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
                     HStack(spacing: 4) {
@@ -71,7 +68,7 @@ struct CalendarView: View {
                     }
                 }
                 Spacer()
-                Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right") }
+                Button(action: { withAnimation { moveMonth(by: 1) } }) { Image(systemName: "chevron.right") }
             }.padding(.horizontal).padding(.vertical, 8)
 
             // 曜日
@@ -82,33 +79,14 @@ struct CalendarView: View {
                 }
             }.padding(.bottom, 5)
 
-            // カレンダーグリッド（滑らかなリニアスライド）
-            GeometryReader { geometry in
-                HStack(spacing: 0) {
-                    // 前の月
-                    monthGrid(for: calendar.date(byAdding: .month, value: -1, to: currentMonth)!, width: geometry.size.width)
-                    // 今の月
-                    monthGrid(for: currentMonth, width: geometry.size.width)
-                    // 次の月
-                    monthGrid(for: calendar.date(byAdding: .month, value: 1, to: currentMonth)!, width: geometry.size.width)
-                }
-                .offset(x: -geometry.size.width + dragOffset)
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in dragOffset = value.translation.width }
-                        .onEnded { value in
-                            let threshold = geometry.size.width * 0.3
-                            if value.translation.width < -threshold {
-                                moveMonth(by: 1)
-                            } else if value.translation.width > threshold {
-                                moveMonth(by: -1)
-                            } else {
-                                // キャンセル時の動きをリニアに
-                                withAnimation(.easeOut(duration: 0.2)) { dragOffset = 0 }
-                            }
-                        }
-                )
+            // カレンダーグリッド（写真スライド風）
+            TabView(selection: $currentMonth) {
+                // 前・中・後の3ヶ月分を動的に保持することで無限スライド感を出す
+                monthGrid(for: calendar.date(byAdding: .month, value: -1, to: currentMonth)!).tag(calendar.date(byAdding: .month, value: -1, to: currentMonth)!)
+                monthGrid(for: currentMonth).tag(currentMonth)
+                monthGrid(for: calendar.date(byAdding: .month, value: 1, to: currentMonth)!).tag(calendar.date(byAdding: .month, value: 1, to: currentMonth)!)
             }
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
             .frame(height: 240)
 
             Divider()
@@ -155,7 +133,7 @@ struct CalendarView: View {
     }
 
     @ViewBuilder
-    func monthGrid(for month: Date, width: CGFloat) -> some View {
+    func monthGrid(for month: Date) -> some View {
         let allDays = generateFullGrid(for: month)
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
             ForEach(0..<allDays.count, id: \.self) { index in
@@ -184,28 +162,17 @@ struct CalendarView: View {
                 .frame(height: 40)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
+                .onTapGesture { if isCurrentMonth { selectedDate = date } else { withAnimation { currentMonth = month }; selectedDate = date } }
             }
         }
-        .frame(width: width)
     }
 
     func moveMonth(by v: Int) {
-        // バネ感のない滑らかなeaseInOutアニメーションに変更
-        withAnimation(.easeInOut(duration: 0.25)) {
-            if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) {
-                currentMonth = next
-            }
-            dragOffset = 0
+        if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) {
+            currentMonth = next
         }
     }
     
-    func slideToDate(_ date: Date) {
-        let isFuture = date > currentMonth
-        moveMonth(by: isFuture ? 1 : -1)
-        selectedDate = date
-    }
-
     func monthYearString(from d: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d)
     }
@@ -246,42 +213,32 @@ struct PostView: View {
     var initialDate: Date = Date()
     var onPost: (Bool, Date) -> Void
     var transactions: [Transaction]; var accounts: [Account]
-    
     @State private var postDate = Date()
     @State private var isShowingDatePicker = false
     @State private var isPickingTime = false
     @State private var suggestions: [String] = []
-    
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
                 HStack(alignment: .top) {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
                     ZStack(alignment: .topLeading) {
-                        CustomTextEditor(text: $inputText) { sym in 
-                            insertAtCursor(sym)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() }
-                        }
-                        .frame(minHeight: 150)
-                        .onChange(of: inputText) { _ in updateSuggestionsForCursor() }
+                        CustomTextEditor(text: $inputText) { sym in insertAtCursor(sym); DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() } }
+                        .frame(minHeight: 150).onChange(of: inputText) { _ in updateSuggestionsForCursor() }
                         if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                     }
                 }.padding()
-                
                 if !suggestions.isEmpty {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(suggestions, id: \.self) { suggestion in
                                 Button(action: { applySuggestion(suggestion) }) {
-                                    VStack(alignment: .leading) {
-                                        Text(suggestion).font(.body).foregroundColor(.primary).padding(.vertical, 12).padding(.horizontal, 20); Divider()
-                                    }
+                                    VStack(alignment: .leading) { Text(suggestion).font(.body).foregroundColor(.primary).padding(.vertical, 12).padding(.horizontal, 20); Divider() }
                                 }
                             }
                         }
                     }.frame(maxHeight: 150).background(Color(.systemBackground)).transition(.move(edge: .bottom))
                 }
-                
                 HStack {
                     Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
                         HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
@@ -302,10 +259,8 @@ struct PostView: View {
                     .navigationBarItems(leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") { withAnimation { isPickingTime.toggle() } }, trailing: Button("完了") { isShowingDatePicker = false })
                 }.presentationDetents([.height(350)])
             }
-        }
-        .onAppear { self.postDate = initialDate }
+        }.onAppear { self.postDate = initialDate }
     }
-    
     func formatDate(_ date: Date) -> String {
         let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = "yyyy年MM月dd日 HH:mm"; return f.string(from: date)
     }
@@ -367,9 +322,7 @@ struct TransactionDetailView: View {
             }
         }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() } }
-        .sheet(isPresented: $isShowingEditSheet) { 
-            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, initialDate: item.date, onPost: { isInc, nDate in updateThis(newInc: isInc, newDate: nDate) }, transactions: transactions, accounts: accounts) 
-        }
+        .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, initialDate: item.date, onPost: { isInc, nDate in updateThis(newInc: isInc, newDate: nDate) }, transactions: transactions, accounts: accounts) }
     }
     func deleteThis() { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions.remove(at: idx); dismiss() } }
     func updateThis(newInc: Bool, newDate: Date) {
@@ -451,6 +404,7 @@ struct AccountEditView: View {
     }
 }
 
+// --- 7. 分析 ---
 struct WalletAnalysisView: View {
     let transactions: [Transaction]; @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
@@ -459,6 +413,7 @@ struct WalletAnalysisView: View {
     }
 }
 
+// --- 8. 残高表示 ---
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false
@@ -476,6 +431,7 @@ struct BalanceView: View {
     }
 }
 
+// --- 9. エディタ部品 ---
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String; var onInsert: (String) -> Void
     func makeUIView(context: Context) -> UITextView {
