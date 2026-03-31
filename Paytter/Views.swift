@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 3. 自作カレンダー画面 (エラー修正 & 滑らかなスライド対応) ---
+// --- 3. 自作カレンダー画面 (ドット折り返し & 祝日対応) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -46,8 +46,6 @@ struct CalendarView: View {
     @State private var inputText = ""
     @State private var isShowingMonthPicker = false
     @State private var tempPickerDate = Date()
-    
-    // カスタムスライド用
     @State private var dragOffset: CGFloat = 0
 
     let calendar = Calendar.current
@@ -60,7 +58,6 @@ struct CalendarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // ヘッダー
             HStack {
                 Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left") }
                 Spacer()
@@ -74,7 +71,6 @@ struct CalendarView: View {
                 Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right") }
             }.padding(.horizontal).padding(.vertical, 8)
 
-            // 曜日
             HStack {
                 ForEach(daysOfWeek, id: \.self) { day in
                     Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
@@ -82,7 +78,6 @@ struct CalendarView: View {
                 }
             }.padding(.bottom, 5)
 
-            // カレンダーグリッド
             GeometryReader { geometry in
                 let width = geometry.size.width
                 HStack(spacing: 0) {
@@ -94,37 +89,28 @@ struct CalendarView: View {
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture()
-                        .onChanged { value in
-                            dragOffset = value.translation.width
-                        }
+                        .onChanged { dragOffset = $0.translation.width }
                         .onEnded { value in
                             let threshold = width * 0.3
-                            // 予測変換ではなく、実際のドラッグ距離でシンプルに判定
                             if value.translation.width < -threshold {
-                                withAnimation(.easeInOut(duration: 0.45)) {
-                                    dragOffset = -width
-                                }
+                                withAnimation(.easeInOut(duration: 0.45)) { dragOffset = -width }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
                                     currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)!
                                     dragOffset = 0
                                 }
                             } else if value.translation.width > threshold {
-                                withAnimation(.easeInOut(duration: 0.45)) {
-                                    dragOffset = width
-                                }
+                                withAnimation(.easeInOut(duration: 0.45)) { dragOffset = width }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
                                     currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth)!
                                     dragOffset = 0
                                 }
                             } else {
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    dragOffset = 0
-                                }
+                                withAnimation(.easeInOut(duration: 0.3)) { dragOffset = 0 }
                             }
                         }
                 )
             }
-            .frame(height: 240)
+            .frame(height: 280) // ドットが増えたため高さを少し調整
 
             Divider()
 
@@ -165,9 +151,7 @@ struct CalendarView: View {
                 }
                 .navigationTitle("年月を選択")
                 .navigationBarItems(leading: Button("キャンセル") { isShowingMonthPicker = false }, trailing: Button("移動") {
-                    withAnimation(.easeInOut(duration: 0.4)) {
-                        currentMonth = tempPickerDate
-                    }
+                    withAnimation(.easeInOut(duration: 0.4)) { currentMonth = tempPickerDate }
                     isShowingMonthPicker = false
                 })
             }.presentationDetents([.height(300)])
@@ -182,26 +166,50 @@ struct CalendarView: View {
                 let date = allDays[index]
                 let isCurrentMonth = calendar.isDate(date, equalTo: month, toGranularity: .month)
                 let dayTransactions = transactions.filter { calendar.isDate($0.date, inSameDayAs: date) }
+                let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
+                let isHoliday = checkIsHoliday(date)
                 
                 VStack(spacing: 2) {
                     Text("\(calendar.component(.day, from: date))")
                         .font(.system(size: 13, design: .rounded))
-                        .fontWeight(calendar.isDate(date, inSameDayAs: selectedDate) ? .bold : .regular)
-                        .foregroundColor(isCurrentMonth ? (calendar.isDate(date, inSameDayAs: selectedDate) ? .white : .primary) : .gray.opacity(0.25))
+                        .fontWeight(isSelected ? .bold : .regular)
+                        .foregroundColor(isCurrentMonth ? (isSelected ? .white : (isHoliday ? .red : .primary)) : .gray.opacity(0.25))
                         .frame(width: 24, height: 24)
-                        .background(calendar.isDate(date, inSameDayAs: selectedDate) && isCurrentMonth ? Color.blue : Color.clear)
+                        .background(isSelected && isCurrentMonth ? Color.blue : Color.clear)
                         .clipShape(Circle())
                     
-                    HStack(spacing: 2) {
-                        ForEach(dayTransactions.prefix(4)) { tx in
-                            Circle()
-                                .fill(tx.isIncome ? Color.green : Color.red)
-                                .frame(width: 3.5, height: 3.5)
+                    // ドット表示ロジック
+                    VStack(spacing: 1) {
+                        let maxDotsPerRow = 3
+                        let totalDots = dayTransactions.count
+                        
+                        if totalDots > 0 {
+                            HStack(spacing: 2) {
+                                ForEach(dayTransactions.prefix(maxDotsPerRow)) { tx in
+                                    Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3.5, height: 3.5)
+                                }
+                            }
+                            if totalDots > maxDotsPerRow {
+                                HStack(spacing: 2) {
+                                    if totalDots > maxDotsPerRow * 2 {
+                                        // 2行目も溢れる場合
+                                        Text("+\(totalDots - maxDotsPerRow)").font(.system(size: 6, weight: .bold)).foregroundColor(.secondary).frame(height: 4)
+                                    } else {
+                                        ForEach(dayTransactions.prefix(totalDots).suffix(totalDots - maxDotsPerRow)) { tx in
+                                            Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3.5, height: 3.5)
+                                        }
+                                    }
+                                }
+                            } else {
+                                Spacer().frame(height: 4) // 2行目がない場合の高さ確保
+                            }
+                        } else {
+                            Spacer().frame(height: 9)
                         }
                     }
-                    .frame(height: 4)
+                    .frame(height: 10)
                 }
-                .frame(height: 40)
+                .frame(height: 45)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
                 .onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
@@ -210,12 +218,43 @@ struct CalendarView: View {
         .frame(width: width)
     }
 
+    // 祝日判定 (日本の主要な祝日のみの簡易版)
+    func checkIsHoliday(_ date: Date) -> Bool {
+        let comps = calendar.dateComponents([.year, .month, .day, .weekday], from: date)
+        guard let month = comps.month, let day = comps.day, let year = comps.year, let weekday = comps.weekday else { return false }
+        
+        // 固定祝日
+        if month == 1 && day == 1 { return true } // 元日
+        if month == 2 && day == 11 { return true } // 建国記念の日
+        if month == 2 && day == 23 { return true } // 天皇誕生日
+        if month == 4 && day == 29 { return true } // 昭和の日
+        if month == 5 && day == 3 { return true } // 憲法記念日
+        if month == 5 && day == 4 { return true } // みどりの日
+        if month == 5 && day == 5 { return true } // こどもの日
+        if month == 8 && day == 11 { return true } // 山の日
+        if month == 11 && day == 3 { return true } // 文化の日
+        if month == 11 && day == 23 { return true } // 勤労感謝の日
+        
+        // ハッピーマンデー (第2・第3月曜日)
+        let weekOfMonth = (day - 1) / 7 + 1
+        if weekday == 2 { // 月曜日
+            if month == 1 && weekOfMonth == 2 { return true } // 成人の日
+            if month == 7 && weekOfMonth == 3 { return true } // 海の日
+            if month == 9 && weekOfMonth == 3 { return true } // 敬老の日
+            if month == 10 && weekOfMonth == 2 { return true } // スポーツの日
+        }
+        
+        // 春分・秋分 (簡易計算)
+        if month == 3 && day == (year % 4 == 0 || year % 4 == 1 ? 20 : 21) { return true }
+        if month == 9 && day == (year % 4 == 0 ? 22 : 23) { return true }
+        
+        return false
+    }
+
     func moveMonth(by v: Int) {
         let direction: CGFloat = v > 0 ? -1 : 1
         let width = UIScreen.main.bounds.width
-        withAnimation(.easeInOut(duration: 0.45)) {
-            dragOffset = direction * width
-        }
+        withAnimation(.easeInOut(duration: 0.45)) { dragOffset = direction * width }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
             if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) {
                 currentMonth = next
