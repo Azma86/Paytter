@@ -11,6 +11,7 @@ struct ContentView: View {
     
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
+    @State private var isShowingDeleteAlert = false // 復元：全データリセット用
     @State private var isShowingSwipeDeleteAlert = false
     @State private var transactionToDelete: Transaction?
     @State private var isShowingAccountCreator = false
@@ -25,76 +26,9 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            NavigationView {
-                ZStack(alignment: .bottomTrailing) {
-                    VStack(spacing: 0) {
-                        HStack(spacing: 15) {
-                            ForEach(accounts.filter { $0.isVisible }) { acc in
-                                BalanceView(title: acc.name, amount: acc.balance, color: .primary, diff: acc.diffAmount)
-                            }
-                        }.padding().background(Color(.systemGray6))
-                        Divider()
-                        List {
-                            ForEach(displayedTransactions, id: \.id) { item in
-                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
-                                    TwitterRow(item: item).listRowInsets(EdgeInsets())
-                                }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Label("削除", systemImage: "trash") }.tint(.red)
-                                }
-                            }
-                        }.listStyle(.plain)
-                    }
-                    Button(action: { inputText = ""; isShowingInputSheet = true }) {
-                        Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color.blue).clipShape(Circle())
-                    }.padding(20).padding(.bottom, 10)
-                }.navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
-                .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
-                    Button("キャンセル", role: .cancel) { transactionToDelete = nil }
-                    Button("削除", role: .destructive) { if let t = transactionToDelete { withAnimation { deleteSpecificTransaction(t) } }; transactionToDelete = nil }
-                } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
-            }.tabItem { Label("ホーム", systemImage: "house") }
-
-            NavigationView {
-                List {
-                    Section(header: Text("お財布の管理")) {
-                        ForEach($accounts) { $acc in
-                            NavigationLink(destination: AccountEditView(account: $acc, transactions: $transactions, allAccounts: accounts)) {
-                                HStack { Image(systemName: acc.type.icon).foregroundColor(.secondary); Text(acc.name); Spacer(); Text("¥\(acc.balance)").foregroundColor(.secondary) }
-                            }
-                        }.onDelete(perform: deleteAccount)
-                        Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }
-                    }
-                    Section(header: Text("分析")) {
-                        NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis") }
-                    }
-                }
-                .navigationTitle("お財布")
-                .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
-            }.tabItem { Label("お財布", systemImage: "wallet.pass") }
-
-            NavigationView {
-                List {
-                    Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
-                    Section(header: Text("バックアップ管理")) {
-                        Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }
-                        Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }
-                        Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }
-                    }
-                    Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingDeleteAlert = true } }
-                }
-                .navigationTitle("設定")
-                .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
-                    Button("キャンセル", role: .cancel) { }; Button("上書き保存", role: .none) { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }
-                }
-                .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) {
-                    Button("キャンセル", role: .cancel) { }; Button("復元する", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances() } }
-                }
-                .alert("リセット", isPresented: $isShowingDeleteAlert) {
-                    Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "リセット完了"; isShowingCompletionAlert = true }
-                }
-                .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK") { } } message: { Text(completionMessage) }
-            }.tabItem { Label("設定", systemImage: "gearshape") }
+            homeTab
+            walletTab
+            settingTab
         }
         .onAppear { recalculateBalances() }
         .onChange(of: transactions) { _ in recalculateBalances() }
@@ -103,6 +37,88 @@ struct ContentView: View {
         }
     }
 
+    // --- タブ：ホーム ---
+    private var homeTab: some View {
+        NavigationView {
+            ZStack(alignment: .bottomTrailing) {
+                VStack(spacing: 0) {
+                    HStack(spacing: 15) {
+                        ForEach(accounts.filter { $0.isVisible }) { acc in
+                            BalanceView(title: acc.name, amount: acc.balance, color: .primary, diff: acc.diffAmount)
+                        }
+                    }.padding().background(Color(.systemGray6))
+                    Divider()
+                    List {
+                        ForEach(displayedTransactions, id: \.id) { item in
+                            NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
+                                TwitterRow(item: item).listRowInsets(EdgeInsets())
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Label("削除", systemImage: "trash") }.tint(.red)
+                            }
+                        }
+                    }.listStyle(.plain)
+                }
+                Button(action: { inputText = ""; isShowingInputSheet = true }) {
+                    Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color.blue).clipShape(Circle())
+                }.padding(20).padding(.bottom, 10)
+            }
+            .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+            .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
+                Button("キャンセル", role: .cancel) { transactionToDelete = nil }
+                Button("削除", role: .destructive) { if let t = transactionToDelete { withAnimation { deleteSpecificTransaction(t) } }; transactionToDelete = nil }
+            } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
+        }.tabItem { Label("ホーム", systemImage: "house") }
+    }
+
+    // --- タブ：お財布 ---
+    private var walletTab: some View {
+        NavigationView {
+            List {
+                Section(header: Text("お財布の管理")) {
+                    ForEach($accounts) { $acc in
+                        NavigationLink(destination: AccountEditView(account: $acc, transactions: $transactions, allAccounts: accounts)) {
+                            HStack { Image(systemName: acc.type.icon).foregroundColor(.secondary); Text(acc.name); Spacer(); Text("¥\(acc.balance)").foregroundColor(.secondary) }
+                        }
+                    }.onDelete(perform: deleteAccount)
+                    Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }
+                }
+                Section(header: Text("分析")) {
+                    NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis") }
+                }
+            }
+            .navigationTitle("お財布")
+            .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+        }.tabItem { Label("お財布", systemImage: "wallet.pass") }
+    }
+
+    // --- タブ：設定 ---
+    private var settingTab: some View {
+        NavigationView {
+            List {
+                Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
+                Section(header: Text("バックアップ管理")) {
+                    Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }
+                    Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }
+                    Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }
+                }
+                Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingDeleteAlert = true } }
+            }
+            .navigationTitle("設定")
+            .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
+                Button("キャンセル", role: .cancel) { }; Button("上書き保存", role: .none) { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }
+            }
+            .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) {
+                Button("キャンセル", role: .cancel) { }; Button("復元する", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances() } }
+            }
+            .alert("リセット", isPresented: $isShowingDeleteAlert) {
+                Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "リセット完了"; isShowingCompletionAlert = true }
+            }
+            .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK") { } } message: { Text(completionMessage) }
+        }.tabItem { Label("設定", systemImage: "gearshape") }
+    }
+
+    // --- ロジック ---
     func addTransaction(isInc: Bool) {
         let amount = parseAmount(from: inputText); let sourceName = parseSourceName(from: inputText)
         transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
@@ -124,7 +140,7 @@ struct ContentView: View {
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
     func parseAmount(from text: String) -> Int {
         let components = text.components(separatedBy: .whitespacesAndNewlines)
-        let amt = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        let amt = components.filter { $0.contains("¥") || Int($0.replacingOccurrences(of: "¥", with: "")) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
         return Int(amt) ?? 0
     }
     func parseSourceName(from text: String) -> String {
