@@ -28,17 +28,10 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            homeTab
-                .tabItem { Label("ホーム", systemImage: "house") }
-            
-            calendarTab
-                .tabItem { Label("カレンダー", systemImage: "calendar") }
-            
-            walletTab
-                .tabItem { Label("お財布", systemImage: "wallet.pass") }
-            
-            settingTab
-                .tabItem { Label("設定", systemImage: "gearshape") }
+            homeTab.tabItem { Label("ホーム", systemImage: "house") }
+            calendarTab.tabItem { Label("カレンダー", systemImage: "calendar") }
+            walletTab.tabItem { Label("お財布", systemImage: "wallet.pass") }
+            settingTab.tabItem { Label("設定", systemImage: "gearshape") }
         }
         .onAppear { recalculateBalances() }
         .onChange(of: transactions) { _ in recalculateBalances() }
@@ -153,17 +146,15 @@ struct ContentView: View {
             var current = 0
             for tx in transactions where tx.source == accounts[i].name { current += (tx.isIncome ? tx.amount : -tx.amount) }
             let diff = current - accounts[i].balance
-            accounts[i].diffAmount = diff
-            accounts[i].balance = current
+            accounts[i].diffAmount = diff; accounts[i].balance = current
         }
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false)
     }
-    
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
     func parseAmount(from text: String) -> Int {
-        let components = text.components(separatedBy: .whitespacesAndNewlines)
-        let amt = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amt) ?? 0
+        let comps = text.components(separatedBy: .whitespacesAndNewlines)
+        let amtStr = comps.filter { $0.contains("¥") }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        return Int(amtStr) ?? 0
     }
     func parseSourceName(from text: String) -> String {
         for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
