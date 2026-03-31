@@ -36,14 +36,59 @@ struct HighlightedText: View {
     }
 }
 
-// --- 投稿画面 (Twitter風日時切り替え機能付き) ---
+// --- カレンダー表示用画面 ---
+struct CalendarView: View {
+    @Binding var transactions: [Transaction]
+    @Binding var accounts: [Account]
+    @State private var selectedDate = Date()
+    
+    // 選択された日付の投稿を抽出
+    var filteredTransactions: [Transaction] {
+        transactions.filter { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
+            .sorted(by: { $0.date > $1.date })
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // 上半分：カレンダー
+            DatePicker("日付を選択", selection: $selectedDate, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .padding(.horizontal)
+                .frame(maxHeight: 400)
+            
+            Divider()
+            
+            // 下半分：選択日の投稿リスト
+            if filteredTransactions.isEmpty {
+                VStack(spacing: 12) {
+                    Spacer()
+                    Image(systemName: "calendar.badge.plus").font(.largeTitle).foregroundColor(.secondary)
+                    Text("この日の投稿はありません").foregroundColor(.secondary)
+                    Spacer()
+                }
+            } else {
+                List {
+                    ForEach(filteredTransactions) { item in
+                        NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
+                            TwitterRow(item: item).listRowInsets(EdgeInsets())
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .navigationTitle("カレンダー")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// --- 投稿画面 ---
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool, Date) -> Void
     var transactions: [Transaction]; var accounts: [Account]
-    
     @State private var postDate = Date()
     @State private var isShowingDatePicker = false
-    @State private var isPickingTime = false // 日付か時刻かの切り替え
+    @State private var isPickingTime = false
     @State private var suggestions: [String] = []
     
     var body: some View {
@@ -61,7 +106,6 @@ struct PostView: View {
                         if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                     }
                 }.padding()
-                
                 if !suggestions.isEmpty {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
@@ -75,21 +119,13 @@ struct PostView: View {
                         }
                     }.frame(maxHeight: 150).background(Color(.systemBackground)).transition(.move(edge: .bottom))
                 }
-                
                 HStack {
-                    Button(action: { 
-                        isPickingTime = false
-                        isShowingDatePicker = true 
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "calendar.badge.clock")
-                            Text(formatDate(postDate))
-                        }
+                    Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
+                        HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
                         .font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue.opacity(0.1)).foregroundColor(.blue).cornerRadius(12)
                     }
                     Spacer()
                 }.padding(.horizontal)
-                
                 Spacer()
             }
             .navigationBarItems(leading: Button("キャンセル") { isPresented = false }, trailing: HStack(spacing: 12) {
@@ -98,33 +134,17 @@ struct PostView: View {
             })
             .sheet(isPresented: $isShowingDatePicker) {
                 NavigationView {
-                    VStack {
-                        DatePicker(
-                            "日時を選択",
-                            selection: $postDate,
-                            displayedComponents: isPickingTime ? .hourAndMinute : .date
-                        )
-                        .datePickerStyle(.wheel)
-                        .labelsHidden()
-                        .environment(\.locale, Locale(identifier: "ja_JP"))
-                    }
+                    VStack { DatePicker("日時を選択", selection: $postDate, displayedComponents: isPickingTime ? .hourAndMinute : .date).datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP")) }
                     .navigationTitle(isPickingTime ? "時刻の指定" : "日付の指定")
-                    .navigationBarItems(
-                        leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") {
-                            withAnimation { isPickingTime.toggle() }
-                        },
-                        trailing: Button("完了") { isShowingDatePicker = false }
-                    )
+                    .navigationBarItems(leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") { withAnimation { isPickingTime.toggle() } }, trailing: Button("完了") { isShowingDatePicker = false })
                 }.presentationDetents([.height(350)])
             }
         }
     }
-    
     func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "ja_JP"); formatter.dateFormat = "yyyy年MM月dd日 HH:mm"
         return formatter.string(from: date)
     }
-
     func updateSuggestionsForCursor() {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
         let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""
@@ -135,7 +155,6 @@ struct PostView: View {
         else if currentWord.hasPrefix("@") { suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(currentWord) && $0 != currentWord }.sorted() }
         else { suggestions = [] }
     }
-    
     func applySuggestion(_ suggestion: String) {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
         let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""
@@ -146,14 +165,12 @@ struct PostView: View {
             DispatchQueue.main.async { tv.selectedRange = NSRange(location: rangeStart + suggestion.count + 1, length: 0); suggestions = [] }
         }
     }
-    
     func insertAtCursor(_ sym: String) {
         if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
             let sel = tv.selectedRange; let cur = tv.text ?? ""
             let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
             let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
-            tv.becomeFirstResponder()
-            tv.insertText(prefix + sym)
+            tv.becomeFirstResponder(); tv.insertText(prefix + sym)
         }
     }
 }
@@ -186,9 +203,7 @@ struct TransactionDetailView: View {
             }
         }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() } }
-        .sheet(isPresented: $isShowingEditSheet) { 
-            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, onPost: { isInc, nDate in updateThis(newInc: isInc, newDate: nDate) }, transactions: transactions, accounts: accounts) 
-        }
+        .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, onPost: { isInc, nDate in updateThis(newInc: isInc, newDate: nDate) }, transactions: transactions, accounts: accounts) }
     }
     func deleteThis() { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions.remove(at: idx); dismiss() } }
     func updateThis(newInc: Bool, newDate: Date) {
