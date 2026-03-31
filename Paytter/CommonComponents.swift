@@ -42,7 +42,6 @@ struct BalanceView: View {
                 Text(diff > 0 ? "+\(diff)" : "\(diff)")
                     .font(.system(size: 8, weight: .bold, design: .rounded))
                     .foregroundColor(diff > 0 ? .green : .red)
-                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
