@@ -1,29 +1,9 @@
 import Foundation
-
-struct Transaction: Identifiable, Codable, Equatable {
-    var id = UUID()
-    var amount: Int
-    var date: Date
-    var note: String
-    var source: String
-    var isIncome: Bool
-    
-    var cleanNote: String {
-        let components = note.components(separatedBy: .whitespacesAndNewlines)
-        return components
-            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") } // タグとメンションのみ除外
-            .joined(separator: " ")
-    }
-    
-    var tags: [String] {
-        let components = note.components(separatedBy: .whitespacesAndNewlines)
-        return components.filter { $0.hasPrefix("#") }
-    }
-}
+import SwiftUI
 
 enum AccountType: String, Codable, CaseIterable {
     case wallet = "お財布"
-    case bank = "口座"
+    case bank = "銀行口座"
     case credit = "クレジットカード"
     case point = "ポイント"
     
@@ -37,28 +17,48 @@ enum AccountType: String, Codable, CaseIterable {
     }
 }
 
-struct Account: Identifiable, Codable, Equatable {
+struct Account: Identifiable, Codable {
     var id = UUID()
     var name: String
     var balance: Int
-    var type: AccountType = .wallet
+    var type: AccountType
     var isVisible: Bool = true
-    var payday: Int? = 1
+    var payday: Int? = nil
     var withdrawalAccountId: UUID? = nil
     var diffAmount: Int = 0
 }
 
+struct Transaction: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var amount: Int
+    var date: Date
+    var note: String
+    var source: String
+    var isIncome: Bool
+    
+    var tags: [String] {
+        note.components(separatedBy: .whitespacesAndNewlines).filter { $0.hasPrefix("#") }
+    }
+    
+    // 【修正】改行を保持したまま、タグやアカウント名をクリーニングする
+    var cleanNote: String {
+        let lines = note.components(separatedBy: .newlines)
+        let cleanedLines = lines.map { line in
+            line.components(separatedBy: .whitespaces)
+                .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }
+                .joined(separator: " ")
+        }
+        return cleanedLines.joined(separator: "\n")
+    }
+}
+
 extension Array: RawRepresentable where Element: Codable {
     public init?(rawValue: String) {
-        guard let data = rawValue.data(using: .utf8),
-              let result = try? JSONDecoder().decode([Element].self, from: data)
-        else { return nil }
+        guard let data = rawValue.data(using: .utf8), let result = try? JSONDecoder().decode([Element].self, from: data) else { return nil }
         self = result
     }
     public var rawValue: String {
-        guard let data = try? JSONEncoder().encode(self),
-              let result = String(data: data, encoding: .utf8)
-        else { return "[]" }
+        guard let data = try? JSONEncoder().encode(self), let result = String(data: data, encoding: .utf8) else { return "[]" }
         return result
     }
 }
