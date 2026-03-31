@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 3. 自作カレンダー画面 (写真スライド風の自然な挙動) ---
+// --- 3. 自作カレンダー画面 (粘り気のある滑らかなスライド対応) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -47,6 +47,9 @@ struct CalendarView: View {
     @State private var isShowingMonthPicker = false
     @State private var tempPickerDate = Date()
     
+    // カスタムスライド用
+    @State private var dragOffset: CGFloat = 0
+
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
 
@@ -59,7 +62,7 @@ struct CalendarView: View {
         VStack(spacing: 0) {
             // ヘッダー
             HStack {
-                Button(action: { withAnimation { moveMonth(by: -1) } }) { Image(systemName: "chevron.left") }
+                Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left") }
                 Spacer()
                 Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
                     HStack(spacing: 4) {
@@ -68,7 +71,7 @@ struct CalendarView: View {
                     }
                 }
                 Spacer()
-                Button(action: { withAnimation { moveMonth(by: 1) } }) { Image(systemName: "chevron.right") }
+                Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right") }
             }.padding(.horizontal).padding(.vertical, 8)
 
             // 曜日
@@ -79,14 +82,50 @@ struct CalendarView: View {
                 }
             }.padding(.bottom, 5)
 
-            // カレンダーグリッド（写真スライド風）
-            TabView(selection: $currentMonth) {
-                // 前・中・後の3ヶ月分を動的に保持することで無限スライド感を出す
-                monthGrid(for: calendar.date(byAdding: .month, value: -1, to: currentMonth)!).tag(calendar.date(byAdding: .month, value: -1, to: currentMonth)!)
-                monthGrid(for: currentMonth).tag(currentMonth)
-                monthGrid(for: calendar.date(byAdding: .month, value: 1, to: currentMonth)!).tag(calendar.date(byAdding: .month, value: 1, to: currentMonth)!)
+            // カレンダーグリッド（粘り気のあるゆっくりしたスライド）
+            GeometryReader { geometry in
+                let width = geometry.size.width
+                HStack(spacing: 0) {
+                    monthGrid(for: calendar.date(byAdding: .month, value: -1, to: currentMonth)!, width: width)
+                    monthGrid(for: currentMonth, width: width)
+                    monthGrid(for: calendar.date(byAdding: .month, value: 1, to: currentMonth)!, width: width)
+                }
+                .offset(x: -width + dragOffset)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            dragOffset = value.translation.width
+                        }
+                        .onEnded { value in
+                            let velocity = value.predictedTranslation.width
+                            let threshold = width * 0.3
+                            
+                            // ゆっくり、かつ滑らかに吸い込まれるようなeaseInOutアニメーション
+                            if value.translation.width < -threshold || velocity < -threshold {
+                                withAnimation(.easeInOut(duration: 0.45)) {
+                                    dragOffset = -width
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                                    currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)!
+                                    dragOffset = 0
+                                }
+                            } else if value.translation.width > threshold || velocity > threshold {
+                                withAnimation(.easeInOut(duration: 0.45)) {
+                                    dragOffset = width
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                                    currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth)!
+                                    dragOffset = 0
+                                }
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    dragOffset = 0
+                                }
+                            }
+                        }
+                )
             }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
             .frame(height: 240)
 
             Divider()
@@ -127,13 +166,18 @@ struct CalendarView: View {
                         .datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP"))
                 }
                 .navigationTitle("年月を選択")
-                .navigationBarItems(leading: Button("キャンセル") { isShowingMonthPicker = false }, trailing: Button("移動") { currentMonth = tempPickerDate; isShowingMonthPicker = false })
+                .navigationBarItems(leading: Button("キャンセル") { isShowingMonthPicker = false }, trailing: Button("移動") {
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        currentMonth = tempPickerDate
+                    }
+                    isShowingMonthPicker = false
+                })
             }.presentationDetents([.height(300)])
         }
     }
 
     @ViewBuilder
-    func monthGrid(for month: Date) -> some View {
+    func monthGrid(for month: Date, width: CGFloat) -> some View {
         let allDays = generateFullGrid(for: month)
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
             ForEach(0..<allDays.count, id: \.self) { index in
@@ -162,17 +206,32 @@ struct CalendarView: View {
                 .frame(height: 40)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .onTapGesture { if isCurrentMonth { selectedDate = date } else { withAnimation { currentMonth = month }; selectedDate = date } }
+                .onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
             }
         }
+        .frame(width: width)
     }
 
     func moveMonth(by v: Int) {
-        if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) {
-            currentMonth = next
+        let direction: CGFloat = v > 0 ? -1 : 1
+        let width = UIScreen.main.bounds.width
+        withAnimation(.easeInOut(duration: 0.45)) {
+            dragOffset = direction * width
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) {
+                currentMonth = next
+                dragOffset = 0
+            }
         }
     }
     
+    func slideToDate(_ date: Date) {
+        let isFuture = date > currentMonth
+        moveMonth(by: isFuture ? 1 : -1)
+        selectedDate = date
+    }
+
     func monthYearString(from d: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d)
     }
