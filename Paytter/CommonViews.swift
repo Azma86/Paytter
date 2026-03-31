@@ -1,5 +1,7 @@
 import SwiftUI
+import UIKit
 
+// --- タイムラインの1行 ---
 struct TwitterRow: View {
     let item: Transaction
     @AppStorage("app_theme") var theme = AppTheme()
@@ -23,6 +25,7 @@ struct TwitterRow: View {
     }
 }
 
+// --- 金額ハイライト ---
 struct HighlightedText: View {
     let text: String; let isIncome: Bool
     @AppStorage("app_theme") var theme = AppTheme()
@@ -50,6 +53,7 @@ struct HighlightedText: View {
     }
 }
 
+// --- エディタ部品 ---
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String; var onInsert: (String) -> Void
     func makeUIView(context: Context) -> UITextView {
@@ -67,4 +71,13 @@ struct CustomTextEditor: UIViewRepresentable {
         @objc func insertHash() { parent.onInsert("#") }; @objc func insertYen() { parent.onInsert("¥") }; @objc func insertAt() { parent.onInsert("@") }
         @objc func dismissKeyboard() { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
     }
+}
+
+// これが無いと PostView でエラーになります
+extension UIView { 
+    func findTextView() -> UITextView? { 
+        if let tv = self as? UITextView { return tv }
+        for sv in subviews { if let tv = sv.findTextView() { return tv } }
+        return nil 
+    } 
 }
