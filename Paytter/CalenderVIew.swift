@@ -17,7 +17,7 @@ struct CalendarView: View {
     @State private var currentMonth = Date()
     @State private var isShowingInputSheet = false
     @State private var inputText = ""
-    @State private var isShowingMonthPicker = false // 年月ドラムロール用
+    @State private var isShowingMonthPicker = false 
     @State private var tempPickerDate = Date()
     @State private var dragOffset: CGFloat = 0
     @State private var isShowingDeleteAlert = false
@@ -38,11 +38,7 @@ struct CalendarView: View {
                     HStack {
                         Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left").foregroundColor(Color(hex: themeMain)) }
                         Spacer()
-                        // 【復元】ここをタップで年月ドラムロールを表示
-                        Button(action: { 
-                            tempPickerDate = currentMonth
-                            isShowingMonthPicker = true 
-                        }) {
+                        Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
                             HStack(spacing: 4) {
                                 Text(monthYearString(from: currentMonth)).font(.headline).foregroundColor(Color(hex: themeBarText))
                                 Image(systemName: "chevron.down").font(.caption).foregroundColor(Color(hex: themeBarText).opacity(0.6))
@@ -109,12 +105,14 @@ struct CalendarView: View {
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) {
             Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) { withAnimation(.easeOut(duration: 0.2)) { transactions.remove(at: idx) } } }
         } message: { if let t = transactionToDelete { Text(t.cleanNote).foregroundColor(Color(hex: themeBodyText)) } }
-        // 【復元】年月選択ドラムロールのシート
         .sheet(isPresented: $isShowingMonthPicker) {
             NavigationView {
                 VStack {
-                    DatePicker("年月を選択", selection: $tempPickerDate, displayedComponents: .date)
-                        .datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP"))
+                    // 【修正】日を消して「年月」だけ選択できるように変更
+                    DatePicker("年月を選択", selection: $tempPickerDate, displayedComponents: [.date])
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                        .environment(\.locale, Locale(identifier: "ja_JP"))
                 }
                 .navigationTitle("年月を選択")
                 .navigationBarItems(leading: Button("キャンセル") { isShowingMonthPicker = false }, trailing: Button("移動") {
