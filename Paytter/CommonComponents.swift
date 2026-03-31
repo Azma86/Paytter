@@ -24,13 +24,12 @@ extension Color {
     }
 }
 
-// --- 2. 残高表示のコンポーネント ---
+// --- 2. 残高表示 ---
 struct BalanceView: View {
     let title: String
     let amount: Int
     let color: Color
     let diff: Int
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.system(size: 10, weight: .bold)).foregroundColor(color.opacity(0.6))
@@ -39,16 +38,13 @@ struct BalanceView: View {
                 Text("\(amount)").font(.system(size: 16, weight: .black, design: .rounded)).foregroundColor(color)
             }
             if diff != 0 {
-                Text(diff > 0 ? "+\(diff)" : "\(diff)")
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                    .foregroundColor(diff > 0 ? .green : .red)
+                Text(diff > 0 ? "+\(diff)" : "\(diff)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? .green : .red)
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-// --- 3. Twitter風の行（投稿内容） ---
+// --- 3. Twitter風の投稿行 ---
 struct TwitterRow: View {
     let item: Transaction
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
@@ -56,12 +52,9 @@ struct TwitterRow: View {
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Circle().fill(Color(hex: themeMain)).frame(width: 44, height: 44)
-                .overlay(Text("M").foregroundColor(.white).fontWeight(.bold))
-            
+            Circle().fill(Color(hex: themeMain)).frame(width: 44, height: 44).overlay(Text("M").foregroundColor(.white).fontWeight(.bold))
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("むつき").font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
@@ -69,26 +62,18 @@ struct TwitterRow: View {
                     Spacer()
                     Text(timeString(from: item.date)).font(.caption).foregroundColor(Color(hex: themeSubText))
                 }
-                
                 Text(item.note).font(.body).foregroundColor(Color(hex: themeBodyText)).padding(.vertical, 2)
-                
                 HStack(spacing: 16) {
-                    Label("\(item.amount)", systemImage: item.isIncome ? "arrow.up.right.circle" : "arrow.down.left.circle")
-                        .foregroundColor(item.isIncome ? Color(hex: themeIncome) : Color(hex: themeExpense))
+                    Label("\(item.amount)", systemImage: item.isIncome ? "arrow.up.right.circle" : "arrow.down.left.circle").foregroundColor(item.isIncome ? Color(hex: themeIncome) : Color(hex: themeExpense))
                     Label(item.source, systemImage: "wallet.pass")
-                }
-                .font(.caption).foregroundColor(Color(hex: themeSubText)).padding(.top, 2)
+                }.font(.caption).foregroundColor(Color(hex: themeSubText)).padding(.top, 2)
             }
-        }
-        .padding()
+        }.padding()
     }
-    
-    func timeString(from date: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "H:mm"; return f.string(from: date)
-    }
+    func timeString(from date: Date) -> String { let f = DateFormatter(); f.dateFormat = "H:mm"; return f.string(from: date) }
 }
 
-// --- 4. 投稿用シート ---
+// --- 4. 投稿画面 ---
 struct PostView: View {
     @Binding var inputText: String
     @Binding var isPresented: Bool
@@ -96,14 +81,11 @@ struct PostView: View {
     let onPost: (Bool, Date) -> Void
     var transactions: [Transaction]
     var accounts: [Account]
-    
     @State private var postDate: Date = Date()
-    
     var body: some View {
         NavigationView {
             VStack {
-                TextField("今何してる？ (¥1000 @口座 #食費)", text: $inputText, axis: .vertical)
-                    .textFieldStyle(.plain).padding().font(.body)
+                TextField("今何してる？ (¥1000 @口座 #食費)", text: $inputText, axis: .vertical).textFieldStyle(.plain).padding().font(.body)
                 DatePicker("日時", selection: $postDate).padding()
                 Spacer()
             }
