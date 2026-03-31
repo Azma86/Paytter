@@ -25,17 +25,38 @@ struct PostView: View {
                     HStack(alignment: .top) {
                         Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
                         ZStack(alignment: .topLeading) {
-                            CustomTextEditor(text: $inputText) { sym in insertAtCursor(sym); DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() } }
-                            .frame(minHeight: 150).onChange(of: inputText) { _ in updateSuggestionsForCursor() }
+                            CustomTextEditor(text: $inputText) { sym in 
+                                insertAtCursor(sym)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() }
+                            }
+                            .frame(minHeight: 150).foregroundColor(Color(hex: themeBarText)).onChange(of: inputText) { _ in updateSuggestionsForCursor() }
                             if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                         }
                     }.padding()
-                    if !suggestions.isEmpty { ScrollView(.vertical) { VStack(alignment: .leading, spacing: 0) { ForEach(suggestions, id: \.self) { s in Button(action: { applySuggestion(s) }) { VStack(alignment: .leading) { Text(s).font(.body).foregroundColor(Color(hex: themeBarText)).padding(.vertical, 12).padding(.horizontal, 20); Divider() } } } } }.frame(maxHeight: 150).background(Color(hex: themeBG).opacity(0.9)) }
-                    HStack { Button(action: { isPickingTime = false; isShowingDatePicker = true }) { HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }.font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(Color(hex: themeMain).opacity(0.1)).foregroundColor(Color(hex: themeMain)).cornerRadius(12) }; Spacer() }.padding(.horizontal)
+                    
+                    if !suggestions.isEmpty {
+                        ScrollView(.vertical, showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(suggestions, id: \.self) { suggestion in
+                                    Button(action: { applySuggestion(suggestion) }) {
+                                        VStack(alignment: .leading) { Text(suggestion).font(.body).foregroundColor(Color(hex: themeBarText)).padding(.vertical, 12).padding(.horizontal, 20); Divider() }
+                                    }
+                                }
+                            }
+                        }.frame(maxHeight: 150).background(Color(hex: themeBG).opacity(0.9))
+                    }
+                    
+                    HStack {
+                        Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
+                            HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
+                            .font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(Color(hex: themeMain).opacity(0.1)).foregroundColor(Color(hex: themeMain)).cornerRadius(12)
+                        }
+                        Spacer()
+                    }.padding(.horizontal)
                     Spacer()
                 }
             }
-            .navigationBarItems(leading: Button("キャンセル") { isPresented = false }, trailing: HStack(spacing: 12) {
+            .navigationBarItems(leading: Button("キャンセル") { isPresented = false }.foregroundColor(Color(hex: themeBarText)), trailing: HStack(spacing: 12) {
                 Button(action: { onPost(false, postDate); isPresented = false }) {
                     Text("支出").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34, alignment: .center).background(Color(hex: themeExpense).opacity(0.8)).foregroundColor(.white).cornerRadius(17)
                 }
@@ -43,7 +64,13 @@ struct PostView: View {
                     Text("収入").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34, alignment: .center).background(Color(hex: themeIncome)).foregroundColor(.white).cornerRadius(17)
                 }
             })
-            .sheet(isPresented: $isShowingDatePicker) { NavigationView { VStack { DatePicker("日時を選択", selection: $postDate, displayedComponents: isPickingTime ? .hourAndMinute : .date).datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP")) }.navigationTitle(isPickingTime ? "時刻の指定" : "日付の指定").navigationBarItems(leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") { withAnimation { isPickingTime.toggle() } }, trailing: Button("完了") { isShowingDatePicker = false }) }.presentationDetents([.height(350)]) }
+            .sheet(isPresented: $isShowingDatePicker) {
+                NavigationView {
+                    VStack { DatePicker("日時を選択", selection: $postDate, displayedComponents: isPickingTime ? .hourAndMinute : .date).datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP")) }
+                    .navigationTitle(isPickingTime ? "時刻の指定" : "日付の指定")
+                    .navigationBarItems(leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") { withAnimation { isPickingTime.toggle() } }, trailing: Button("完了") { isShowingDatePicker = false })
+                }.presentationDetents([.height(350)])
+            }
         }.onAppear { self.postDate = initialDate }
     }
     func formatDate(_ date: Date) -> String { let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = "yyyy年MM月dd日 HH:mm"; return f.string(from: date) }
