@@ -20,7 +20,6 @@ struct ContentView: View {
     @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
     @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
-    @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
 
@@ -41,37 +40,25 @@ struct ContentView: View {
     @State private var isShowingCompletionAlert = false
     @State private var completionMessage = ""
     
-    @State private var isShowingExporter = false
     @State private var isShowingImporter = false
     @State private var pendingImportData: ([Transaction], [Account], String)?
     @State private var isShowingImportConfirm = false
 
     var body: some View {
         TabView(selection: $selection) {
-            // ホーム、カレンダー、お財布は色変更時に即座に作り直されるようにIDを付与
-            homeTab.tag(0).tabItem { tabLabel("ホーム", icon: "house", index: 0) }
-                .id("home-\(themeTabUnselected)-\(themeTabAccent)")
-            calendarTab.tag(1).tabItem { tabLabel("カレンダー", icon: "calendar", index: 1) }
-                .id("cal-\(themeTabUnselected)-\(themeTabAccent)")
-            walletTab.tag(2).tabItem { tabLabel("お財布", icon: "wallet.pass", index: 2) }
-                .id("wallet-\(themeTabUnselected)-\(themeTabAccent)")
-            // 設定画面は、色変更で画面が閉じないようIDを固定（あるいは付与しない）
-            settingTab.tag(3).tabItem { tabLabel("設定", icon: "gearshape", index: 3) }
+            homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }
+            calendarTab.tag(1).tabItem { Label("カレンダー", systemImage: "calendar") }
+            walletTab.tag(2).tabItem { Label("お財布", systemImage: "wallet.pass") }
+            settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
         }
         .accentColor(Color(hex: themeTabAccent))
         .onAppear { recalculateBalances(); updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: themeBarText) { _ in updateAppearance() }
-        .onChange(of: themeTabAccent) { _ in updateAppearance() }
-        .onChange(of: themeTabUnselected) { _ in updateAppearance() }
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
-    }
-
-    func tabLabel(_ title: String, icon: String, index: Int) -> some View {
-        VStack { Image(systemName: icon).environment(\.symbolVariants, selection == index ? .fill : .none); Text(title) }
     }
 
     private var homeTab: some View {
@@ -216,9 +203,14 @@ struct ContentView: View {
     }
 
     func handleImport(from url: URL) {
-        guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txData = json["transactions"] as? String, let accData = json["accounts"] as? String, let dateStr = json["date"] as? String else { return }
-        let decoder = JSONDecoder()
-        if let t = try? decoder.decode([Transaction].self, from: txData.data(using: .utf8)!), let a = try? decoder.decode([Account].self, from: accData.data(using: .utf8)!) {
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let txStr = json["transactions"] as? String,
+              let accStr = json["accounts"] as? String,
+              let dateStr = json["date"] as? String else { return }
+        let dec = JSONDecoder()
+        if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!),
+           let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) {
             self.pendingImportData = (t, a, dateStr); self.isShowingImportConfirm = true
         }
     }
@@ -228,24 +220,37 @@ struct ContentView: View {
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
-    func exportBackup() { let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json"); if FileManager.default.fileExists(atPath: path.path) {
+
+    func exportBackup() {
+        let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json")
+        // ファイルが存在しない場合は一旦作成
+        if !FileManager.default.fileExists(atPath: path.path) {
+            BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
+        }
         let av = UIActivityViewController(activityItems: [path], applicationActivities: nil)
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = windowScene.windows.first?.rootViewController { rootVC.present(av, animated: true) }
-    } }
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = windowScene.windows.first?.rootViewController {
+            rootVC.present(av, animated: true)
+        }
+    }
+
     func updateAppearance() {
-        let bgColor = UIColor(Color(hex: themeBarBG)); let textColor = UIColor(Color(hex: themeBarText)); let accentColor = UIColor(Color(hex: themeTabAccent)); let unselectedColor = UIColor(Color(hex: themeTabUnselected))
-        let navBarAppearance = UINavigationBarAppearance(); navBarAppearance.configureWithOpaqueBackground(); navBarAppearance.backgroundColor = bgColor; navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]; navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
-        UINavigationBar.appearance().standardAppearance = navBarAppearance; UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
-        let tabBarAppearance = UITabBarAppearance(); tabBarAppearance.configureWithOpaqueBackground(); tabBarAppearance.backgroundColor = bgColor
-        let itemAppearance = UITabBarItemAppearance()
-        itemAppearance.normal.iconColor = unselectedColor; itemAppearance.normal.titleTextAttributes = [.foregroundColor: unselectedColor]
-        itemAppearance.selected.iconColor = accentColor; itemAppearance.selected.titleTextAttributes = [.foregroundColor: accentColor]
-        tabBarAppearance.stackedLayoutAppearance = itemAppearance; tabBarAppearance.inlineLayoutAppearance = itemAppearance; tabBarAppearance.compactInlineLayoutAppearance = itemAppearance
+        let bgColor = UIColor(Color(hex: themeBarBG))
+        let textColor = UIColor(Color(hex: themeBarText))
+        let navBarAppearance = UINavigationBarAppearance()
+        navBarAppearance.configureWithOpaqueBackground()
+        navBarAppearance.backgroundColor = bgColor
+        navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]
+        navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
+        UINavigationBar.appearance().standardAppearance = navBarAppearance
+        UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
+        let tabBarAppearance = UITabBarAppearance()
+        tabBarAppearance.configureWithOpaqueBackground()
+        tabBarAppearance.backgroundColor = bgColor
         UITabBar.appearance().standardAppearance = tabBarAppearance
     }
 }
 
-// --- テーマ設定画面 (プリセットを別荘化して軽量化) ---
+// --- テーマ設定画面 ---
 struct ThemeSettingView: View {
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
@@ -255,7 +260,6 @@ struct ThemeSettingView: View {
     @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
     @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
-    @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
@@ -267,7 +271,6 @@ struct ThemeSettingView: View {
     @AppStorage("theme_base_barBG") var baseBarBG: String = "#F8F8F8FF"
     @AppStorage("theme_base_barText") var baseBarText: String = "#FF000000"
     @AppStorage("theme_base_tab") var baseTab: String = "#FF007AFF"
-    @AppStorage("theme_base_unselected") var baseUnselected: String = "#FF8E8E93"
     @AppStorage("theme_base_body") var baseBody: String = "#FF000000"
     @AppStorage("theme_base_sub") var baseSub: String = "#FF8E8E93"
 
@@ -277,11 +280,11 @@ struct ThemeSettingView: View {
             VStack(spacing: 0) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 20) {
-                        presetBtn("デフォルト", "#FF007AFF", "#FF19B219", "#FFFF3B30", "#FFFF3B30", "#FFFFFFFF", "#F8F8F8FF", "#FF000000", "#FF007AFF", "#FF8E8E93", "#FF000000", "#FF8E8E93")
-                        presetBtn("ダーク", "#FF0A84FF", "#FF19B219", "#FFFF3B30", "#FFFF453A", "#FF000000", "#FF1C1C1E", "#FFFFFFFF", "#FF0A84FF", "#FF8E8E93", "#FFFFFFFF", "#FF8E8E93")
-                        presetBtn("ナチュラル", "#FF6B8E23", "#FF19B219", "#FFFF3B30", "#EB4E3D", "#FFF5F5DC", "#FFE4E4D0", "#FF4B3621", "#FF6B8E23", "#FF999988", "#FF4B3621", "#FF999988")
-                        presetBtn("モノクロ", "#FF333333", "#FF19B219", "#FFFF3B30", "#FF999999", "#FFFFFFFF", "#FFF2F2F2", "#FF000000", "#FF000000", "#FFCCCCCC", "#FF000000", "#FF999999")
-                        presetBtn("カフェ", "#FF8B4513", "#FF19B219", "#FFFF3B30", "#EB4E3D", "#FFFFF8DC", "#FFDEB887", "#FF3E2723", "#FF8B4513", "#FFA08878", "#FF3E2723", "#FFA08878")
+                        presetBtn("デフォルト", "#FF007AFF", "#FF19B219", "#FFFF3B30", "#FFFF3B30", "#FFFFFFFF", "#F8F8F8FF", "#FF000000", "#FF007AFF", "#FF000000", "#FF8E8E93")
+                        presetBtn("ダーク", "#FF0A84FF", "#FF19B219", "#FFFF3B30", "#FFFF453A", "#FF000000", "#FF1C1C1E", "#FFFFFFFF", "#FF0A84FF", "#FFFFFFFF", "#FF8E8E93")
+                        presetBtn("ナチュラル", "#FF6B8E23", "#FF19B219", "#FFFF3B30", "#EB4E3D", "#FFF5F5DC", "#FFE4E4D0", "#FF4B3621", "#FF6B8E23", "#FF4B3621", "#FF999988")
+                        presetBtn("モノクロ", "#FF333333", "#FF19B219", "#FFFF3B30", "#FF999999", "#FFFFFFFF", "#FFF2F2F2", "#FF000000", "#FF000000", "#FF000000", "#FF999999")
+                        presetBtn("カフェ", "#FF8B4513", "#FF19B219", "#FFFF3B30", "#EB4E3D", "#FFFFF8DC", "#FFDEB887", "#FF3E2723", "#FF8B4513", "#FF3E2723", "#FFA08878")
                     }.padding(.horizontal, 20).padding(.vertical, 16)
                 }.background(Color(hex: themeBarBG).opacity(0.5))
                 Divider()
@@ -295,7 +298,6 @@ struct ThemeSettingView: View {
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("フッターメニュー").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "メニュー選択色", hex: $themeTabAccent, base: baseTab)
-                        colorRow(title: "メニュー非選択色", hex: $themeTabUnselected, base: baseUnselected)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("個別パーツ").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "メインカラー", hex: $themeMain, base: baseMain)
@@ -310,19 +312,18 @@ struct ThemeSettingView: View {
         .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
     }
     
-    func presetBtn(_ name: String, _ main: String, _ inc: String, _ exp: String, _ hol: String, _ bg: String, _ barBG: String, _ barTxt: String, _ tab: String, _ uns: String, _ body: String, _ sub: String) -> some View {
-        Button(action: { apply(main, inc, exp, hol, bg, barBG, barTxt, tab, uns, body, sub) }) {
+    func presetBtn(_ name: String, _ main: String, _ inc: String, _ exp: String, _ hol: String, _ bg: String, _ barBG: String, _ barTxt: String, _ tab: String, _ body: String, _ sub: String) -> some View {
+        Button(action: { apply(main, inc, exp, hol, bg, barBG, barTxt, tab, body, sub) }) {
             VStack(spacing: 8) {
                 Circle().fill(Color(hex: main)).frame(width: 46, height: 46).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
                 Text(name).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeBarText))
             }
         }.buttonStyle(.plain)
     }
-    
-    func apply(_ main: String, _ inc: String, _ exp: String, _ hol: String, _ bg: String, _ barBG: String, _ barTxt: String, _ tab: String, _ uns: String, _ body: String, _ sub: String) {
+    func apply(_ main: String, _ inc: String, _ exp: String, _ hol: String, _ bg: String, _ barBG: String, _ barTxt: String, _ tab: String, _ body: String, _ sub: String) {
         withAnimation {
-            themeMain = main; themeIncome = inc; themeExpense = exp; themeHoliday = hol; themeBG = bg; themeBarBG = barBG; themeBarText = barTxt; themeTabAccent = tab; themeTabUnselected = uns; themeBodyText = body; themeSubText = sub
-            baseMain = main; baseInc = inc; baseExp = exp; baseHol = hol; baseBG = bg; baseBarBG = barBG; baseBarText = barTxt; baseTab = tab; baseUnselected = uns; baseBody = body; baseSub = sub
+            themeMain = main; themeIncome = inc; themeExpense = exp; themeHoliday = hol; themeBG = bg; themeBarBG = barBG; themeBarText = barTxt; themeTabAccent = tab; themeBodyText = body; themeSubText = sub
+            baseMain = main; baseInc = inc; baseExp = exp; baseHol = hol; baseBG = bg; baseBarBG = barBG; baseBarText = barTxt; baseTab = tab; baseBody = body; baseSub = sub
         }
     }
     func colorRow(title: String, hex: Binding<String>, base: String) -> some View {
