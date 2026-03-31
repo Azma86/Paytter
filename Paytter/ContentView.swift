@@ -16,11 +16,11 @@ struct ContentView: View {
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
-    @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF" // メニュー背景色
-    @AppStorage("theme_barText") var themeBarText: String = "#FF000000" // メニュー文字色
-    @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF" // メニュー選択色
-    @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93" // メニュー非選択色
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000" // 本文文字色
+    @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
+    @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
+    @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
+    @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
 
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
@@ -40,10 +40,10 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            homeTab.tabItem { Label("ホーム", systemImage: "house") }
-            calendarTab.tabItem { Label("カレンダー", systemImage: "calendar") }
-            walletTab.tabItem { Label("お財布", systemImage: "wallet.pass") }
-            settingTab.tabItem { Label("設定", systemImage: "gearshape") }
+            homeTab.tabItem { tabLabel("ホーム", systemImage: "house") }
+            calendarTab.tabItem { tabLabel("カレンダー", systemImage: "calendar") }
+            walletTab.tabItem { tabLabel("お財布", systemImage: "wallet.pass") }
+            settingTab.tabItem { tabLabel("設定", systemImage: "gearshape") }
         }
         .accentColor(Color(hex: themeTabAccent))
         .onAppear { recalculateBalances(); updateAppearance() }
@@ -54,6 +54,11 @@ struct ContentView: View {
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
+    }
+
+    // タブのラベル（非選択色を安定させるため）
+    func tabLabel(_ title: String, systemImage: String) -> some View {
+        VStack { Image(systemImage: systemImage); Text(title) }
     }
 
     private var homeTab: some View {
@@ -133,9 +138,7 @@ struct ContentView: View {
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
-            .alert("お財布を削除しますか？", isPresented: $isShowingAccountDeleteAlert) {
-                Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
-            } message: { Text("このお財布に関連付けられた投稿の金額計算ができなくなる可能性があります。") }
+            .alert("削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } } } 
         } 
     }
 
@@ -230,6 +233,18 @@ struct ThemeSettingView: View {
     @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
     @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    
+    // 現在適用中のプリセット基準値を保持
+    @AppStorage("theme_base_main") var baseMain: String = "#FF007AFF"
+    @AppStorage("theme_base_inc") var baseInc: String = "#FF19B219"
+    @AppStorage("theme_base_exp") var baseExp: String = "#FFFF3B30"
+    @AppStorage("theme_base_hol") var baseHol: String = "#FFFF3B30"
+    @AppStorage("theme_base_bg") var baseBG: String = "#FFFFFFFF"
+    @AppStorage("theme_base_barBG") var baseBarBG: String = "#F8F8F8FF"
+    @AppStorage("theme_base_barText") var baseBarText: String = "#FF000000"
+    @AppStorage("theme_base_tab") var baseTab: String = "#FF007AFF"
+    @AppStorage("theme_base_unselected") var baseUnselected: String = "#FF8E8E93"
+    @AppStorage("theme_base_body") var baseBody: String = "#FF000000"
 
     struct Preset {
         let name: String; let main: String; let inc: String; let exp: String; let hol: String; let bg: String; let barBG: String; let barTxt: String; let tab: String; let unselected: String; let body: String
@@ -237,10 +252,10 @@ struct ThemeSettingView: View {
 
     let presets: [Preset] = [
         Preset(name: "デフォルト", main: "#FF007AFF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF3B30", bg: "#FFFFFFFF", barBG: "#F8F8F8FF", barTxt: "#FF000000", tab: "#FF007AFF", unselected: "#FF8E8E93", body: "#FF000000"),
-        Preset(name: "ダーク", main: "#FF0A84FF", inc: "#FF30D158", exp: "#FFFF453A", hol: "#FFFF453A", bg: "#FF000000", barBG: "#FF1C1C1E", barTxt: "#FFFFFFFF", tab: "#FF0A84FF", unselected: "#FF8E8E93", body: "#FFFFFFFF"),
-        Preset(name: "ナチュラル", main: "#FF6B8E23", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFCD5C5C", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barTxt: "#FF4B3621", tab: "#FF6B8E23", unselected: "#FF999988", body: "#FF4B3621"),
+        Preset(name: "ダーク", main: "#FF0A84FF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF453A", bg: "#FF000000", barBG: "#FF1C1C1E", barTxt: "#FFFFFFFF", tab: "#FF0A84FF", unselected: "#FF8E8E93", body: "#FFFFFFFF"),
+        Preset(name: "ナチュラル", main: "#FF6B8E23", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#EB4E3D", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barTxt: "#FF4B3621", tab: "#FF6B8E23", unselected: "#FF999988", body: "#FF4B3621"),
         Preset(name: "モノクロ", main: "#FF333333", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FF999999", bg: "#FFFFFFFF", barBG: "#FFF2F2F2", barTxt: "#FF000000", tab: "#FF000000", unselected: "#FFCCCCCC", body: "#FF000000"),
-        Preset(name: "カフェ", main: "#FF8B4513", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFA52A2A", bg: "#FFFFF8DC", barBG: "#FFDEB887", barTxt: "#FF3E2723", tab: "#FF8B4513", unselected: "#FFA08878", body: "#FF3E2723")
+        Preset(name: "カフェ", main: "#FF8B4513", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#EB4E3D", bg: "#FFFFF8DC", barBG: "#FFDEB887", barTxt: "#FF3E2723", tab: "#FF8B4513", unselected: "#FFA08878", body: "#FF3E2723")
     ]
 
     var body: some View {
@@ -265,22 +280,22 @@ struct ThemeSettingView: View {
 
                 List {
                     Section(header: Text("全体設定").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) {
-                        colorRow(title: "背景色", hex: $themeBG, defaultHex: "#FFFFFFFF")
-                        colorRow(title: "メニュー背景色", hex: $themeBarBG, defaultHex: "#F8F8F8FF")
-                        colorRow(title: "メニュー文字色", hex: $themeBarText, defaultHex: "#FF000000")
-                        colorRow(title: "本文文字色", hex: $themeBodyText, defaultHex: "#FF000000")
+                        colorRow(title: "背景色", hex: $themeBG, base: baseBG)
+                        colorRow(title: "メニュー背景色", hex: $themeBarBG, base: baseBarBG)
+                        colorRow(title: "メニュー文字色", hex: $themeBarText, base: baseBarText)
+                        colorRow(title: "本文文字色", hex: $themeBodyText, base: baseBody)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
 
                     Section(header: Text("フッターメニュー").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) {
-                        colorRow(title: "メニュー選択色", hex: $themeTabAccent, defaultHex: "#FF007AFF")
-                        colorRow(title: "メニュー非選択色", hex: $themeTabUnselected, defaultHex: "#FF8E8E93")
+                        colorRow(title: "メニュー選択色", hex: $themeTabAccent, base: baseTab)
+                        colorRow(title: "メニュー非選択色", hex: $themeTabUnselected, base: baseUnselected)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("個別パーツ").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) {
-                        colorRow(title: "メインカラー", hex: $themeMain, defaultHex: "#FF007AFF")
-                        colorRow(title: "収入の色", hex: $themeIncome, defaultHex: "#FF19B219")
-                        colorRow(title: "支出の色", hex: $themeExpense, defaultHex: "#FFFF3B30")
-                        colorRow(title: "祝日の色", hex: $themeHoliday, defaultHex: "#FFFF3B30")
+                        colorRow(title: "メインカラー", hex: $themeMain, base: baseMain)
+                        colorRow(title: "収入の色", hex: $themeIncome, base: baseInc)
+                        colorRow(title: "支出の色", hex: $themeExpense, base: baseExp)
+                        colorRow(title: "祝日の色", hex: $themeHoliday, base: baseHol)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }
                 .scrollContentBackground(.hidden)
@@ -298,16 +313,21 @@ struct ThemeSettingView: View {
             themeMain = p.main; themeIncome = p.inc; themeExpense = p.exp; themeHoliday = p.hol
             themeBG = p.bg; themeBarBG = p.barBG; themeBarText = p.barTxt; themeTabAccent = p.tab
             themeTabUnselected = p.unselected; themeBodyText = p.body
+            // 基準値を更新
+            baseMain = p.main; baseInc = p.inc; baseExp = p.exp; baseHol = p.hol
+            baseBG = p.bg; baseBarBG = p.barBG; baseBarText = p.barTxt; baseTab = p.tab
+            baseUnselected = p.unselected; baseBody = p.body
         }
     }
 
-    func colorRow(title: String, hex: Binding<String>, defaultHex: String) -> some View {
+    func colorRow(title: String, hex: Binding<String>, base: String) -> some View {
         HStack {
             ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() }))
                 .foregroundColor(Color(hex: themeBodyText))
             Spacer()
-            if hex.wrappedValue != defaultHex {
-                Button(action: { hex.wrappedValue = defaultHex }) { 
+            // プリセットの基準値と異なる場合のみ「戻す」ボタンを表示
+            if hex.wrappedValue != base {
+                Button(action: { hex.wrappedValue = base }) { 
                     Image(systemName: "arrow.counterclockwise.circle.fill")
                         .foregroundColor(Color(hex: themeBodyText).opacity(0.5))
                         .font(.title3) 
