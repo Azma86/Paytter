@@ -21,6 +21,7 @@ struct ContentView: View {
     @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
     @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93" // サブ文字色
 
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
@@ -94,7 +95,7 @@ struct ContentView: View {
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                 Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete { withAnimation(.easeOut(duration: 0.2)) { deleteSpecificTransaction(t) } } }
-            } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
+            } message: { if let t = transactionToDelete { Text(t.cleanNote).foregroundColor(Color(hex: themeBodyText)) } }
         }
     }
     
@@ -111,7 +112,7 @@ struct ContentView: View {
             ZStack {
                 Color(hex: themeBG).ignoresSafeArea()
                 List { 
-                    Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) { 
+                    Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) { 
                         ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in 
                             NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { 
                                 HStack { 
@@ -126,7 +127,7 @@ struct ContentView: View {
                         }
                         Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("分析").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) { 
+                    Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { 
                         NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { 
                             Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText))
                         } 
@@ -148,20 +149,20 @@ struct ContentView: View {
             ZStack { 
                 Color(hex: themeBG).ignoresSafeArea()
                 List { 
-                    Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) { 
+                    Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { 
                         NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("予算設定").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) { 
+                    Section(header: Text("予算設定").foregroundColor(Color(hex: themeSubText))) { 
                         Stepper(value: $monthlyBudget, in: 1000...500000, step: 1000) {
                             Text("今月の予算: ¥\(monthlyBudget)").foregroundColor(Color(hex: themeBodyText))
                         }
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) { 
+                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { 
                         Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("データ管理").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) { 
+                    Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { 
                         Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5)) 
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
@@ -171,19 +172,11 @@ struct ContentView: View {
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
                 Button("キャンセル", role: .cancel) { }
-                Button("上書き保存") { 
-                    BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
-                    completionMessage = "手動バックアップの保存が完了しました。"; isShowingCompletionAlert = true 
-                }
+                Button("上書き保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "手動バックアップの保存が完了しました。"; isShowingCompletionAlert = true }
             } message: { Text("前回の手動保存日時: \(backupDateString)\n現在のデータでお財布設定と投稿を上書きしますか？") }
             .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) {
                 Button("キャンセル", role: .cancel) { }
-                Button("復元する", role: .destructive) { 
-                    if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { 
-                        transactions = t; accounts = a; recalculateBalances() 
-                        completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"; isShowingCompletionAlert = true
-                    } 
-                }
+                Button("復元する", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"; isShowingCompletionAlert = true } }
             } message: { Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？") }
             .alert("リセット", isPresented: $isShowingResetAlert) {
                 Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "全てのデータを初期状態にリセットしました。"; isShowingCompletionAlert = true }
@@ -215,8 +208,12 @@ struct ContentView: View {
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
         tabBarAppearance.backgroundColor = bgColor
+        // アイコンとテキストの色をUIKitレベルで上書き（グレー戻り防止）
         tabBarAppearance.stackedLayoutAppearance.normal.iconColor = unselectedColor
         tabBarAppearance.stackedLayoutAppearance.normal.titleTextAttributes = [.foregroundColor: unselectedColor]
+        tabBarAppearance.stackedLayoutAppearance.selected.iconColor = UIColor(Color(hex: themeTabAccent))
+        tabBarAppearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: themeTabAccent))]
+        
         UITabBar.appearance().standardAppearance = tabBarAppearance
         if #available(iOS 15.0, *) { UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance }
     }
@@ -234,7 +231,8 @@ struct ThemeSettingView: View {
     @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
     @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+
     @AppStorage("theme_base_main") var baseMain: String = "#FF007AFF"
     @AppStorage("theme_base_inc") var baseInc: String = "#FF19B219"
     @AppStorage("theme_base_exp") var baseExp: String = "#FFFF3B30"
@@ -245,17 +243,18 @@ struct ThemeSettingView: View {
     @AppStorage("theme_base_tab") var baseTab: String = "#FF007AFF"
     @AppStorage("theme_base_unselected") var baseUnselected: String = "#FF8E8E93"
     @AppStorage("theme_base_body") var baseBody: String = "#FF000000"
+    @AppStorage("theme_base_sub") var baseSub: String = "#FF8E8E93"
 
     struct Preset {
-        let name: String; let main: String; let inc: String; let exp: String; let hol: String; let bg: String; let barBG: String; let barTxt: String; let tab: String; let unselected: String; let body: String
+        let name: String; let main: String; let inc: String; let exp: String; let hol: String; let bg: String; let barBG: String; let barTxt: String; let tab: String; let unselected: String; let body: String; let sub: String
     }
 
     let presets: [Preset] = [
-        Preset(name: "デフォルト", main: "#FF007AFF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF3B30", bg: "#FFFFFFFF", barBG: "#F8F8F8FF", barTxt: "#FF000000", tab: "#FF007AFF", unselected: "#FF8E8E93", body: "#FF000000"),
-        Preset(name: "ダーク", main: "#FF0A84FF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF453A", bg: "#FF000000", barBG: "#FF1C1C1E", barTxt: "#FFFFFFFF", tab: "#FF0A84FF", unselected: "#FF8E8E93", body: "#FFFFFFFF"),
-        Preset(name: "ナチュラル", main: "#FF6B8E23", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#EB4E3D", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barTxt: "#FF4B3621", tab: "#FF6B8E23", unselected: "#FF999988", body: "#FF4B3621"),
-        Preset(name: "モノクロ", main: "#FF333333", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FF999999", bg: "#FFFFFFFF", barBG: "#FFF2F2F2", barTxt: "#FF000000", tab: "#FF000000", unselected: "#FFCCCCCC", body: "#FF000000"),
-        Preset(name: "カフェ", main: "#FF8B4513", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#EB4E3D", bg: "#FFFFF8DC", barBG: "#FFDEB887", barTxt: "#FF3E2723", tab: "#FF8B4513", unselected: "#FFA08878", body: "#FF3E2723")
+        Preset(name: "デフォルト", main: "#FF007AFF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF3B30", bg: "#FFFFFFFF", barBG: "#F8F8F8FF", barTxt: "#FF000000", tab: "#FF007AFF", unselected: "#FF8E8E93", body: "#FF000000", sub: "#FF8E8E93"),
+        Preset(name: "ダーク", main: "#FF0A84FF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF453A", bg: "#FF000000", barBG: "#FF1C1C1E", barTxt: "#FFFFFFFF", tab: "#FF0A84FF", unselected: "#FF8E8E93", body: "#FFFFFFFF", sub: "#FF8E8E93"),
+        Preset(name: "ナチュラル", main: "#FF6B8E23", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#EB4E3D", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barTxt: "#FF4B3621", tab: "#FF6B8E23", unselected: "#FF999988", body: "#FF4B3621", sub: "#FF999988"),
+        Preset(name: "モノクロ", main: "#FF333333", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FF999999", bg: "#FFFFFFFF", barBG: "#FFF2F2F2", barTxt: "#FF000000", tab: "#FF000000", unselected: "#FFCCCCCC", body: "#FF000000", sub: "#FF999999"),
+        Preset(name: "カフェ", main: "#FF8B4513", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#EB4E3D", bg: "#FFFFF8DC", barBG: "#FFDEB887", barTxt: "#FF3E2723", tab: "#FF8B4513", unselected: "#FFA08878", body: "#FF3E2723", sub: "#FFA08878")
     ]
 
     var body: some View {
@@ -275,35 +274,30 @@ struct ThemeSettingView: View {
                         }
                     }.padding(.horizontal, 20).padding(.vertical, 16)
                 }.background(Color(hex: themeBarBG).opacity(0.5))
-                
                 Divider()
-
                 List {
-                    Section(header: Text("全体設定").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) {
+                    Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "背景色", hex: $themeBG, base: baseBG)
                         colorRow(title: "メニュー背景色", hex: $themeBarBG, base: baseBarBG)
                         colorRow(title: "メニュー文字色", hex: $themeBarText, base: baseBarText)
                         colorRow(title: "本文文字色", hex: $themeBodyText, base: baseBody)
+                        colorRow(title: "サブ文字色", hex: $themeSubText, base: baseSub)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-
-                    Section(header: Text("フッターメニュー").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) {
+                    Section(header: Text("フッターメニュー").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "メニュー選択色", hex: $themeTabAccent, base: baseTab)
                         colorRow(title: "メニュー非選択色", hex: $themeTabUnselected, base: baseUnselected)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    
-                    Section(header: Text("個別パーツ").foregroundColor(Color(hex: themeBodyText).opacity(0.7))) {
+                    Section(header: Text("個別パーツ").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "メインカラー", hex: $themeMain, base: baseMain)
                         colorRow(title: "収入の色", hex: $themeIncome, base: baseInc)
                         colorRow(title: "支出の色", hex: $themeExpense, base: baseExp)
                         colorRow(title: "祝日の色", hex: $themeHoliday, base: baseHol)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }
-                .scrollContentBackground(.hidden)
-                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden).listStyle(.insetGrouped)
             }
         }
-        .navigationTitle("テーマ設定")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("テーマ設定").navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
         .toolbarBackground(.visible, for: .navigationBar, .tabBar)
     }
@@ -312,24 +306,19 @@ struct ThemeSettingView: View {
         withAnimation {
             themeMain = p.main; themeIncome = p.inc; themeExpense = p.exp; themeHoliday = p.hol
             themeBG = p.bg; themeBarBG = p.barBG; themeBarText = p.barTxt; themeTabAccent = p.tab
-            themeTabUnselected = p.unselected; themeBodyText = p.body
+            themeTabUnselected = p.unselected; themeBodyText = p.body; themeSubText = p.sub
             baseMain = p.main; baseInc = p.inc; baseExp = p.exp; baseHol = p.hol
             baseBG = p.bg; baseBarBG = p.barBG; baseBarText = p.barTxt; baseTab = p.tab
-            baseUnselected = p.unselected; baseBody = p.body
+            baseUnselected = p.unselected; baseBody = p.body; baseSub = p.sub
         }
     }
 
     func colorRow(title: String, hex: Binding<String>, base: String) -> some View {
         HStack {
-            ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() }))
-                .foregroundColor(Color(hex: themeBodyText))
+            ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() })).foregroundColor(Color(hex: themeBodyText))
             Spacer()
             if hex.wrappedValue != base {
-                Button(action: { hex.wrappedValue = base }) { 
-                    Image(systemName: "arrow.counterclockwise.circle.fill")
-                        .foregroundColor(Color(hex: themeBodyText).opacity(0.5))
-                        .font(.title3) 
-                }.buttonStyle(.plain)
+                Button(action: { hex.wrappedValue = base }) { Image(systemName: "arrow.counterclockwise.circle.fill").foregroundColor(Color(hex: themeSubText)).font(.title3) }.buttonStyle(.plain)
             }
         }
     }
