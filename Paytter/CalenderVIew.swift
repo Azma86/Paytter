@@ -34,25 +34,29 @@ struct CalendarView: View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             VStack(spacing: 0) {
-                HStack {
-                    Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left").foregroundColor(Color(hex: themeMain)) }
-                    Spacer()
-                    Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
-                        HStack(spacing: 4) {
-                            Text(monthYearString(from: currentMonth)).font(.headline).foregroundColor(Color(hex: themeBarText))
-                            Image(systemName: "chevron.down").font(.caption).foregroundColor(Color(hex: themeBarText).opacity(0.6))
+                // --- ヘッダー（年月表示）と曜日を統合した背景 ---
+                VStack(spacing: 0) {
+                    HStack {
+                        Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left").foregroundColor(Color(hex: themeMain)) }
+                        Spacer()
+                        Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
+                            HStack(spacing: 4) {
+                                Text(monthYearString(from: currentMonth)).font(.headline).foregroundColor(Color(hex: themeBarText))
+                                Image(systemName: "chevron.down").font(.caption).foregroundColor(Color(hex: themeBarText).opacity(0.6))
+                            }
                         }
-                    }
-                    Spacer()
-                    Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right").foregroundColor(Color(hex: themeMain)) }
-                }.padding(.horizontal).padding(.vertical, 8)
+                        Spacer()
+                        Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right").foregroundColor(Color(hex: themeMain)) }
+                    }.padding(.horizontal).padding(.vertical, 8)
 
-                HStack {
-                    ForEach(daysOfWeek, id: \.self) { day in
-                        Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
-                            .foregroundColor(day == "日" ? Color(hex: themeHoliday) : (day == "土" ? .blue : Color(hex: themeBodyText).opacity(0.8)))
-                    }
-                }.padding(.bottom, 5).background(Color(hex: themeBarBG).opacity(0.3))
+                    HStack {
+                        ForEach(daysOfWeek, id: \.self) { day in
+                            Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
+                                .foregroundColor(day == "日" ? Color(hex: themeHoliday) : (day == "土" ? .blue : Color(hex: themeBodyText).opacity(0.8)))
+                        }
+                    }.padding(.bottom, 8)
+                }
+                .background(Color(hex: themeBarBG).opacity(0.4)) // 年月部分にも背景を反映
 
                 GeometryReader { geometry in
                     let width = geometry.size.width
@@ -76,7 +80,9 @@ struct CalendarView: View {
                         }
                     )
                 }.frame(height: 280)
+                
                 Divider()
+                
                 List {
                     if filteredTransactions.isEmpty { HStack { Spacer(); Text("投稿はありません").font(.caption).foregroundColor(Color(hex: themeSubText)).padding(.top, 40); Spacer() }.listRowSeparator(.hidden).listRowBackground(Color.clear) }
                     else {
