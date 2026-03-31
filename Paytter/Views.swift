@@ -106,22 +106,23 @@ struct PostView: View {
             let sel = tv.selectedRange; let cur = tv.text ?? ""
             let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
             
-            // スペースが必要か判定
-            let needsSpace = !(lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil)
-            let prefix = needsSpace ? " " : ""
+            // 半角スペースの挿入条件
+            let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
             let ins = prefix + sym
             
-            // 挿入を実行
-            tv.becomeFirstResponder()
-            tv.insertText(ins)
-            
-            // 強制的にキーボードのリロードを行う
-            if sym == "¥" {
-                tv.keyboardType = .numbersAndPunctuation
-            } else {
-                tv.keyboardType = .default
+            // テキスト挿入
+            if let ran = Range(sel, in: cur) {
+                inputText = cur.replacingCharacters(in: ran, with: ins)
+                
+                // メインスレッドでフォーカスとキーボードタイプを確定
+                DispatchQueue.main.async {
+                    tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0)
+                    
+                    // キーボードタイプの切り替え（¥ボタンのみ数値・記号へ）
+                    tv.keyboardType = (sym == "¥") ? .numbersAndPunctuation : .default
+                    tv.reloadInputViews()
+                }
             }
-            tv.reloadInputViews()
         }
     }
 }
