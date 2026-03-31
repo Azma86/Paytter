@@ -17,7 +17,7 @@ struct CalendarView: View {
     @State private var currentMonth = Date()
     @State private var isShowingInputSheet = false
     @State private var inputText = ""
-    @State private var isShowingMonthPicker = false
+    @State private var isShowingMonthPicker = false // 年月ドラムロール用
     @State private var tempPickerDate = Date()
     @State private var dragOffset: CGFloat = 0
     @State private var isShowingDeleteAlert = false
@@ -34,12 +34,15 @@ struct CalendarView: View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             VStack(spacing: 0) {
-                // --- ヘッダー（年月表示）と曜日を統合した背景 ---
                 VStack(spacing: 0) {
                     HStack {
                         Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left").foregroundColor(Color(hex: themeMain)) }
                         Spacer()
-                        Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
+                        // 【復元】ここをタップで年月ドラムロールを表示
+                        Button(action: { 
+                            tempPickerDate = currentMonth
+                            isShowingMonthPicker = true 
+                        }) {
                             HStack(spacing: 4) {
                                 Text(monthYearString(from: currentMonth)).font(.headline).foregroundColor(Color(hex: themeBarText))
                                 Image(systemName: "chevron.down").font(.caption).foregroundColor(Color(hex: themeBarText).opacity(0.6))
@@ -56,7 +59,7 @@ struct CalendarView: View {
                         }
                     }.padding(.bottom, 8)
                 }
-                .background(Color(hex: themeBarBG).opacity(0.4)) // 年月部分にも背景を反映
+                .background(Color(hex: themeBarBG).opacity(0.4))
 
                 GeometryReader { geometry in
                     let width = geometry.size.width
@@ -106,6 +109,20 @@ struct CalendarView: View {
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) {
             Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) { withAnimation(.easeOut(duration: 0.2)) { transactions.remove(at: idx) } } }
         } message: { if let t = transactionToDelete { Text(t.cleanNote).foregroundColor(Color(hex: themeBodyText)) } }
+        // 【復元】年月選択ドラムロールのシート
+        .sheet(isPresented: $isShowingMonthPicker) {
+            NavigationView {
+                VStack {
+                    DatePicker("年月を選択", selection: $tempPickerDate, displayedComponents: .date)
+                        .datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP"))
+                }
+                .navigationTitle("年月を選択")
+                .navigationBarItems(leading: Button("キャンセル") { isShowingMonthPicker = false }, trailing: Button("移動") {
+                    withAnimation(.easeInOut(duration: 0.4)) { currentMonth = tempPickerDate }
+                    isShowingMonthPicker = false
+                })
+            }.presentationDetents([.height(300)])
+        }
         .sheet(isPresented: $isShowingInputSheet) { PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) }
     }
     @ViewBuilder func monthGrid(for month: Date, width: CGFloat) -> some View { let allDays = generateFullGrid(for: month); LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) { ForEach(0..<allDays.count, id: \.self) { index in let date = allDays[index]; let isCurrentMonth = calendar.isDate(date, equalTo: month, toGranularity: .month); let dayTransactions = transactions.filter { calendar.isDate($0.date, inSameDayAs: date) }; let isSelected = calendar.isDate(date, inSameDayAs: selectedDate); let isHoliday = checkIsHoliday(date); VStack(spacing: 2) { Text("\(calendar.component(.day, from: date))").font(.system(size: 13, design: .rounded)).fontWeight(isSelected ? .bold : .regular).foregroundColor(isCurrentMonth ? (isSelected ? .white : (isHoliday ? Color(hex: themeHoliday) : Color(hex: themeBodyText))) : Color(hex: themeSubText).opacity(0.5)).frame(width: 24, height: 24).background(isSelected && isCurrentMonth ? Color(hex: themeMain) : Color.clear).clipShape(Circle()); VStack(alignment: .leading, spacing: 1) { let total = dayTransactions.count; if total > 0 { HStack(spacing: 2) { ForEach(dayTransactions.prefix(5)) { tx in Circle().fill(tx.isIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).frame(width: 4.5, height: 4.5) } }; if total > 5 { HStack(spacing: 2) { if total > 8 { ForEach(dayTransactions.prefix(8).suffix(3)) { tx in Circle().fill(tx.isIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).frame(width: 4.5, height: 4.5) }; Text("+\(total - 8)").font(.system(size: 9, weight: .bold)).foregroundColor(Color(hex: themeSubText)).offset(y: -1) } else { ForEach(dayTransactions.suffix(total - 5)) { tx in Circle().fill(tx.isIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).frame(width: 4.5, height: 4.5) } } } } else { Spacer().frame(height: 4.5) } } else { Spacer().frame(height: 10) } }.frame(height: 10).frame(maxWidth: .infinity, alignment: .center) }.frame(height: 45).frame(maxWidth: .infinity).contentShape(Rectangle()).onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } } } }.frame(width: width) }
