@@ -11,7 +11,6 @@ struct ContentView: View {
     ]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     
-    // --- テーマ設定データ ---
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -161,8 +160,8 @@ struct ContentView: View {
                         Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
-                        Button("バックアップを書き出す (共有)") { exportBackup() }.foregroundColor(Color(hex: themeMain))
-                        Button("外部ファイルから読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
+                        Button("バックアップを共有") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        Button("外部から読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { 
                         Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } 
@@ -179,7 +178,7 @@ struct ContentView: View {
                 Button("キャンセル", role: .cancel) { }
                 Button("復元する", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"; isShowingCompletionAlert = true } }
             } message: { Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？") }
-            .alert("全リセット", isPresented: $isShowingResetAlert) {
+            .alert("リセット", isPresented: $isShowingResetAlert) {
                 Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "全てのデータを初期状態にリセットしました。"; isShowingCompletionAlert = true }
             } message: { Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。") }
             .alert("外部バックアップの読み込み", isPresented: $isShowingImportConfirm) {
@@ -223,29 +222,18 @@ struct ContentView: View {
 
     func exportBackup() {
         let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json")
-        // ファイルが存在しない場合は一旦作成
-        if !FileManager.default.fileExists(atPath: path.path) {
-            BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
-        }
+        if !FileManager.default.fileExists(atPath: path.path) { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true) }
         let av = UIActivityViewController(activityItems: [path], applicationActivities: nil)
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = windowScene.windows.first?.rootViewController {
-            rootVC.present(av, animated: true)
-        }
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = windowScene.windows.first?.rootViewController { rootVC.present(av, animated: true) }
     }
 
     func updateAppearance() {
-        let bgColor = UIColor(Color(hex: themeBarBG))
-        let textColor = UIColor(Color(hex: themeBarText))
-        let navBarAppearance = UINavigationBarAppearance()
-        navBarAppearance.configureWithOpaqueBackground()
-        navBarAppearance.backgroundColor = bgColor
-        navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]
-        navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
-        UINavigationBar.appearance().standardAppearance = navBarAppearance
-        UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
-        let tabBarAppearance = UITabBarAppearance()
-        tabBarAppearance.configureWithOpaqueBackground()
-        tabBarAppearance.backgroundColor = bgColor
+        let bgColor = UIColor(Color(hex: themeBarBG)); let textColor = UIColor(Color(hex: themeBarText))
+        let accentColor = UIColor(Color(hex: themeTabAccent))
+        let navBarAppearance = UINavigationBarAppearance(); navBarAppearance.configureWithOpaqueBackground()
+        navBarAppearance.backgroundColor = bgColor; navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]; navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
+        UINavigationBar.appearance().standardAppearance = navBarAppearance; UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
+        let tabBarAppearance = UITabBarAppearance(); tabBarAppearance.configureWithOpaqueBackground(); tabBarAppearance.backgroundColor = bgColor
         UITabBar.appearance().standardAppearance = tabBarAppearance
     }
 }
@@ -311,12 +299,11 @@ struct ThemeSettingView: View {
         .navigationTitle("テーマ設定").navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
     }
-    
     func presetBtn(_ name: String, _ main: String, _ inc: String, _ exp: String, _ hol: String, _ bg: String, _ barBG: String, _ barTxt: String, _ tab: String, _ body: String, _ sub: String) -> some View {
         Button(action: { apply(main, inc, exp, hol, bg, barBG, barTxt, tab, body, sub) }) {
             VStack(spacing: 8) {
                 Circle().fill(Color(hex: main)).frame(width: 46, height: 46).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
-                Text(name).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeBarText))
+                Text(name).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeSubText)) // 【修正】サブ文字色を反映
             }
         }.buttonStyle(.plain)
     }
