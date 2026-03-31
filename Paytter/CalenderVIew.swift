@@ -93,6 +93,9 @@ struct CalendarView: View {
             }
         }
         .navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline)
+        // バーの色を強制反映
+        .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+        .toolbarBackground(.visible, for: .navigationBar, .tabBar)
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) {
             Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) { withAnimation(.easeOut(duration: 0.2)) { transactions.remove(at: idx) } } }
         } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
