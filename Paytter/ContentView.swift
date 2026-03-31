@@ -77,7 +77,12 @@ struct ContentView: View {
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                 Button("キャンセル", role: .cancel) { transactionToDelete = nil }
-                Button("削除", role: .destructive) { if let t = transactionToDelete { withAnimation { deleteSpecificTransaction(t) } }; transactionToDelete = nil }
+                Button("削除", role: .destructive) { 
+                    if let t = transactionToDelete { 
+                        withAnimation { deleteSpecificTransaction(t) } 
+                    }
+                    transactionToDelete = nil 
+                }
             } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
         }
     }
@@ -144,7 +149,59 @@ struct ContentView: View {
     }
 
     func addTransaction(isInc: Bool, date: Date) {
-        let amount = parseAmount(from: inputText); let sourceName = parseSourceName(from: inputText)
+        let amount = parseAmount(from: inputText)
+        let sourceName = parseSourceName(from: inputText)
         transactions.append(Transaction(amount: amount, date: date, note: inputText, source: sourceName, isIncome: isInc))
     }
-    func deleteSpecificTransaction(_ target: Transaction) { if let index = transactions.firstIndex(
+    
+    func deleteSpecificTransaction(_ target: Transaction) { 
+        if let index = transactions.firstIndex(where: { $0.id == target.id }) { 
+            transactions.remove(at: index) 
+        } 
+    }
+    
+    func deleteAccount(at offsets: IndexSet) { 
+        accounts.remove(atOffsets: offsets)
+        recalculateBalances() 
+    }
+    
+    func recalculateBalances() {
+        for i in 0..<accounts.count {
+            var current = 0
+            for tx in transactions where tx.source == accounts[i].name { 
+                current += (tx.isIncome ? tx.amount : -tx.amount) 
+            }
+            let diff = current - accounts[i].balance
+            accounts[i].diffAmount = diff
+            accounts[i].balance = current
+        }
+        BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false)
+    }
+    
+    func resetAll() { 
+        transactions = []
+        accounts = [
+            Account(name: "お財布", balance: 0, type: .wallet),
+            Account(name: "口座", balance: 0, type: .bank),
+            Account(name: "ポイント", balance: 0, type: .point)
+        ]
+        monthlyBudget = 50000 
+    }
+    
+    func parseAmount(from text: String) -> Int {
+        let comps = text.components(separatedBy: .whitespacesAndNewlines)
+        let yenValues = comps.filter { $0.contains("¥") }
+        let total = yenValues.reduce(0) { sum, word in
+            let cleaned = word.replacingOccurrences(of: "¥", with: "")
+            return sum + (Int(cleaned) ?? 0)
+        }
+        return total
+    }
+    
+    func parseSourceName(from text: String) -> String {
+        for acc in accounts { 
+            if text.contains("@\(acc.name)") { return acc.name } 
+        }
+        return accounts.first?.name ?? "お財布"
+    }
+}
