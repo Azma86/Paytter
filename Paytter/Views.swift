@@ -98,29 +98,26 @@ struct PostView: View {
             DispatchQueue.main.async { tv.selectedRange = NSRange(location: rangeStart + suggestion.count + 1, length: 0); suggestions = [] }
         }
     }
+    
     func insertAtCursor(_ sym: String) {
         if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
             let sel = tv.selectedRange; let cur = tv.text ?? ""
             let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
             let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
-            let ins = prefix + sym
-            if let ran = Range(sel, in: cur) { 
-                inputText = cur.replacingCharacters(in: ran, with: ins)
-                
-                // 挿入後の処理を確実に1回目で反映させるため、メインスレッドで即座に実行
-                DispatchQueue.main.async { 
-                    tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0)
-                    
-                    if sym == "¥" {
-                        // keyboardTypeを一時的に切り替えることで1回目から反映させる
-                        tv.keyboardType = .numbersAndPunctuation
-                        tv.reloadInputViews()
-                    } else {
-                        // # や @ の場合はデフォルトに戻す
-                        tv.keyboardType = .default
-                        tv.reloadInputViews()
-                    }
-                }
+            
+            // 1回目から確実に反映させるため、TextView に直接 insertText を送る
+            tv.becomeFirstResponder()
+            if prefix != "" { tv.insertText(prefix) }
+            tv.insertText(sym)
+            
+            // ¥ が入力された場合、数字・記号キーボードに切り替える（1回目で確実に発動）
+            if sym == "¥" {
+                tv.keyboardType = .numbersAndPunctuation
+                tv.reloadInputViews()
+            } else {
+                // デフォルト（元のキーボード設定）に戻す
+                tv.keyboardType = .default
+                tv.reloadInputViews()
             }
         }
     }
