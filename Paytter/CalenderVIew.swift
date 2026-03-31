@@ -88,7 +88,6 @@ struct CalendarView: View {
                 } else {
                     ForEach(filteredTransactions) { item in
                         ZStack {
-                            // 透明リンクでガタつき防止
                             NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                 EmptyView()
                             }.opacity(0)
@@ -123,7 +122,10 @@ struct CalendarView: View {
             Button("キャンセル", role: .cancel) { transactionToDelete = nil }
             Button("削除", role: .destructive) { 
                 if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) {
-                    withAnimation { transactions.remove(at: idx) }
+                    // 削除決定時のみアニメーションを実行
+                    withAnimation(.easeOut) {
+                        transactions.remove(at: idx)
+                    }
                 }
                 transactionToDelete = nil
             }
