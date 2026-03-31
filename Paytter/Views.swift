@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 3. 自作カレンダー画面 (ドット折り返し & 祝日対応) ---
+// --- 3. 自作カレンダー画面 (ドット表示改良 & 削除機能追加) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -47,6 +47,10 @@ struct CalendarView: View {
     @State private var isShowingMonthPicker = false
     @State private var tempPickerDate = Date()
     @State private var dragOffset: CGFloat = 0
+    
+    // 削除用
+    @State private var isShowingDeleteAlert = false
+    @State private var transactionToDelete: Transaction?
 
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
@@ -110,7 +114,7 @@ struct CalendarView: View {
                         }
                 )
             }
-            .frame(height: 280) // ドットが増えたため高さを少し調整
+            .frame(height: 280)
 
             Divider()
 
@@ -123,6 +127,9 @@ struct CalendarView: View {
                             ForEach(filteredTransactions) { item in
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button { transactionToDelete = item; isShowingDeleteAlert = true } label: { Label("削除", systemImage: "trash") }.tint(.red)
                                 }
                                 Divider()
                             }
@@ -140,6 +147,15 @@ struct CalendarView: View {
         }
         .navigationTitle("カレンダー")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) {
+            Button("キャンセル", role: .cancel) { transactionToDelete = nil }
+            Button("削除", role: .destructive) { 
+                if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) {
+                    transactions.remove(at: idx)
+                }
+                transactionToDelete = nil
+            }
+        } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
         .sheet(isPresented: $isShowingInputSheet) {
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts)
         }
@@ -178,36 +194,36 @@ struct CalendarView: View {
                         .background(isSelected && isCurrentMonth ? Color.blue : Color.clear)
                         .clipShape(Circle())
                     
-                    // ドット表示ロジック
-                    VStack(spacing: 1) {
-                        let maxDotsPerRow = 3
-                        let totalDots = dayTransactions.count
-                        
-                        if totalDots > 0 {
-                            HStack(spacing: 2) {
-                                ForEach(dayTransactions.prefix(maxDotsPerRow)) { tx in
+                    VStack(alignment: .leading, spacing: 1) {
+                        let total = dayTransactions.count
+                        if total > 0 {
+                            // 1行目 (最大5個)
+                            HStack(spacing: 1.5) {
+                                ForEach(dayTransactions.prefix(5)) { tx in
                                     Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3.5, height: 3.5)
                                 }
+                                if total < 5 { Spacer() }
                             }
-                            if totalDots > maxDotsPerRow {
-                                HStack(spacing: 2) {
-                                    if totalDots > maxDotsPerRow * 2 {
-                                        // 2行目も溢れる場合
-                                        Text("+\(totalDots - maxDotsPerRow)").font(.system(size: 6, weight: .bold)).foregroundColor(.secondary).frame(height: 4)
-                                    } else {
-                                        ForEach(dayTransactions.prefix(totalDots).suffix(totalDots - maxDotsPerRow)) { tx in
+                            // 2行目 (最大5個、溢れたら右側に +n)
+                            if total > 5 {
+                                HStack(spacing: 1.5) {
+                                    if total <= 10 {
+                                        ForEach(dayTransactions.prefix(total).suffix(total - 5)) { tx in
                                             Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3.5, height: 3.5)
                                         }
+                                        Spacer()
+                                    } else {
+                                        // 8個以上(2行目3個目以降)を +n で置き換え
+                                        ForEach(dayTransactions.prefix(8).suffix(3)) { tx in
+                                            Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3.5, height: 3.5)
+                                        }
+                                        Text("+\(total - 8)").font(.system(size: 6, weight: .bold)).foregroundColor(.secondary).frame(width: 8, alignment: .trailing)
                                     }
                                 }
-                            } else {
-                                Spacer().frame(height: 4) // 2行目がない場合の高さ確保
-                            }
-                        } else {
-                            Spacer().frame(height: 9)
-                        }
+                            } else { Spacer().frame(height: 4) }
+                        } else { Spacer().frame(height: 9) }
                     }
-                    .frame(height: 10)
+                    .frame(width: 25, height: 10)
                 }
                 .frame(height: 45)
                 .frame(maxWidth: .infinity)
@@ -218,85 +234,67 @@ struct CalendarView: View {
         .frame(width: width)
     }
 
-    // 祝日判定 (日本の主要な祝日のみの簡易版)
     func checkIsHoliday(_ date: Date) -> Bool {
         let comps = calendar.dateComponents([.year, .month, .day, .weekday], from: date)
         guard let month = comps.month, let day = comps.day, let year = comps.year, let weekday = comps.weekday else { return false }
-        
-        // 固定祝日
-        if month == 1 && day == 1 { return true } // 元日
-        if month == 2 && day == 11 { return true } // 建国記念の日
-        if month == 2 && day == 23 { return true } // 天皇誕生日
-        if month == 4 && day == 29 { return true } // 昭和の日
-        if month == 5 && day == 3 { return true } // 憲法記念日
-        if month == 5 && day == 4 { return true } // みどりの日
-        if month == 5 && day == 5 { return true } // こどもの日
-        if month == 8 && day == 11 { return true } // 山の日
-        if month == 11 && day == 3 { return true } // 文化の日
-        if month == 11 && day == 23 { return true } // 勤労感謝の日
-        
-        // ハッピーマンデー (第2・第3月曜日)
+        if month == 1 && day == 1 { return true }
+        if month == 2 && day == 11 { return true }
+        if month == 2 && day == 23 { return true }
+        if month == 4 && day == 29 { return true }
+        if month == 5 && day == 3 { return true }
+        if month == 5 && day == 4 { return true }
+        if month == 5 && day == 5 { return true }
+        if month == 8 && day == 11 { return true }
+        if month == 11 && day == 3 { return true }
+        if month == 11 && day == 23 { return true }
         let weekOfMonth = (day - 1) / 7 + 1
-        if weekday == 2 { // 月曜日
-            if month == 1 && weekOfMonth == 2 { return true } // 成人の日
-            if month == 7 && weekOfMonth == 3 { return true } // 海の日
-            if month == 9 && weekOfMonth == 3 { return true } // 敬老の日
-            if month == 10 && weekOfMonth == 2 { return true } // スポーツの日
+        if weekday == 2 {
+            if month == 1 && weekOfMonth == 2 { return true }
+            if month == 7 && weekOfMonth == 3 { return true }
+            if month == 9 && weekOfMonth == 3 { return true }
+            if month == 10 && weekOfMonth == 2 { return true }
         }
-        
-        // 春分・秋分 (簡易計算)
         if month == 3 && day == (year % 4 == 0 || year % 4 == 1 ? 20 : 21) { return true }
         if month == 9 && day == (year % 4 == 0 ? 22 : 23) { return true }
-        
         return false
     }
 
     func moveMonth(by v: Int) {
-        let direction: CGFloat = v > 0 ? -1 : 1
         let width = UIScreen.main.bounds.width
-        withAnimation(.easeInOut(duration: 0.45)) { dragOffset = direction * width }
+        withAnimation(.easeInOut(duration: 0.45)) { dragOffset = (v > 0 ? -1 : 1) * width }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-            if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) {
-                currentMonth = next
-                dragOffset = 0
-            }
+            if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) { currentMonth = next }
+            dragOffset = 0
         }
     }
     
-    func slideToDate(_ date: Date) {
-        let isFuture = date > currentMonth
-        moveMonth(by: isFuture ? 1 : -1)
-        selectedDate = date
+    func slideToDate(_ date: Date) { slideMonthWithSelection(date: date) }
+    func slideMonthWithSelection(date: Date) {
+        let v = date > currentMonth ? 1 : -1
+        moveMonth(by: v); selectedDate = date
     }
 
-    func monthYearString(from d: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d)
-    }
-
+    func monthYearString(from d: Date) -> String { let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d) }
     func generateFullGrid(for date: Date) -> [Date] {
         guard let first = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }
         let firstWeekday = calendar.component(.weekday, from: first)
         let startDate = calendar.date(byAdding: .day, value: -(firstWeekday - 1), to: first)!
         return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: startDate) }
     }
-
     func combinedDate() -> Date {
         let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate)
         let tc = calendar.dateComponents([.hour, .minute], from: now)
         c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate
     }
-
     func addTransaction(isInc: Bool, date: Date) {
         let amt = parseAmount(from: inputText); let src = parseSourceName(from: inputText)
         transactions.append(Transaction(amount: amt, date: date, note: inputText, source: src, isIncome: isInc))
     }
-
     func parseAmount(from t: String) -> Int {
         let comps = t.components(separatedBy: .whitespacesAndNewlines)
-        let amt = comps.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        let amt = comps.filter { $0.contains("¥") || Int($0.replacingOccurrences(of: "¥", with: "")) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
         return Int(amt) ?? 0
     }
-
     func parseSourceName(from t: String) -> String {
         for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }
         return accounts.first?.name ?? "お財布"
