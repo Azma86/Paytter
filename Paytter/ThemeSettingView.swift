@@ -62,7 +62,7 @@ struct ThemeSettingView: View {
         Button(action: { 
             withAnimation {
                 themeMain = m; themeBG = bg; themeBarBG = bb; themeBarText = bt; themeBodyText = body; themeSubText = sub; isDarkMode = dark 
-                notify() // 即時通知
+                notify() 
             }
         }) {
             VStack(spacing: 8) {
@@ -75,11 +75,10 @@ struct ThemeSettingView: View {
     func colorRow(title: String, hex: Binding<String>) -> some View {
         ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { 
             hex.wrappedValue = $0.toHex()
-            notify() // 即時通知
+            notify() 
         })).foregroundColor(Color(hex: themeBodyText))
     }
 
-    // ContentViewに更新を知らせる
     func notify() {
         NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil)
     }
