@@ -31,7 +31,6 @@ struct ContentView: View {
             homeTab
                 .tabItem { Label("ホーム", systemImage: "house") }
             
-            // 【カレンダー】新規追加
             calendarTab
                 .tabItem { Label("カレンダー", systemImage: "calendar") }
             
@@ -44,11 +43,10 @@ struct ContentView: View {
         .onAppear { recalculateBalances() }
         .onChange(of: transactions) { _ in recalculateBalances() }
         .sheet(isPresented: $isShowingInputSheet) { 
-            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
+            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
     }
 
-    // --- タブ：ホーム ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -82,14 +80,12 @@ struct ContentView: View {
         }
     }
     
-    // --- タブ：カレンダー ---
     private var calendarTab: some View {
         NavigationView {
             CalendarView(transactions: $transactions, accounts: $accounts)
         }
     }
 
-    // --- タブ：お財布 ---
     private var walletTab: some View {
         NavigationView {
             List {
@@ -110,7 +106,6 @@ struct ContentView: View {
         }
     }
 
-    // --- タブ：設定 ---
     private var settingTab: some View {
         NavigationView {
             List {
