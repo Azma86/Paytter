@@ -10,11 +10,7 @@ struct ContentView: View {
     ]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     
-    // テーマカラーを個別に保持（フリーズ対策）
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
-    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
     
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
@@ -24,7 +20,6 @@ struct ContentView: View {
     @State private var isShowingAccountDeleteAlert = false
     @State private var accountToDeleteIndex: IndexSet?
     
-    // 設定画面アラート用
     @State private var isShowingResetAlert = false
     @State private var isShowingRestoreConfirm = false
     @State private var isShowingSaveConfirm = false
@@ -111,11 +106,10 @@ struct ContentView: View {
     private var settingTab: some View {
         NavigationView {
             List {
-                Section(header: Text("テーマ設定")) {
-                    ColorPicker("メインカラー", selection: Binding(get: { Color(hex: themeMain) }, set: { themeMain = $0.toHex() }))
-                    ColorPicker("収入の色", selection: Binding(get: { Color(hex: themeIncome) }, set: { themeIncome = $0.toHex() }))
-                    ColorPicker("支出の色", selection: Binding(get: { Color(hex: themeExpense) }, set: { themeExpense = $0.toHex() }))
-                    ColorPicker("祝日の色", selection: Binding(get: { Color(hex: themeHoliday) }, set: { themeHoliday = $0.toHex() }))
+                Section(header: Text("カスタマイズ")) {
+                    NavigationLink(destination: ThemeSettingView()) {
+                        Label("テーマ設定", systemImage: "paintpalette")
+                    }
                 }
                 Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
                 Section(header: Text("バックアップ管理")) {
@@ -152,4 +146,39 @@ struct ContentView: View {
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
+}
+
+// --- テーマ設定画面 ---
+struct ThemeSettingView: View {
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    
+    var body: some View {
+        List {
+            Section(header: Text("カラー設定")) {
+                colorRow(title: "メインカラー", hex: $themeMain, defaultHex: "#FF007AFF")
+                colorRow(title: "収入の色", hex: $themeIncome, defaultHex: "#FF19B219")
+                colorRow(title: "支出の色", hex: $themeExpense, defaultHex: "#FFFF3B30")
+                colorRow(title: "祝日の色", hex: $themeHoliday, defaultHex: "#FFFF3B30")
+            }
+        }
+        .navigationTitle("テーマ設定")
+    }
+    
+    func colorRow(title: String, hex: Binding<String>, defaultHex: String) -> some View {
+        HStack {
+            ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() }))
+            Spacer()
+            if hex.wrappedValue != defaultHex {
+                Button(action: { hex.wrappedValue = defaultHex }) {
+                    Image(systemName: "arrow.counterclockwise.circle.fill")
+                        .foregroundColor(.gray)
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
 }
