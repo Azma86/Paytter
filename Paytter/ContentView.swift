@@ -44,6 +44,9 @@ struct ContentView: View {
     @State private var pendingImportData: ([Transaction], [Account], String)?
     @State private var isShowingImportConfirm = false
 
+    // 通知センターのリスナー
+    let appearancePublisher = NotificationCenter.default.publisher(for: NSNotification.Name("UpdateAppearance"))
+
     var body: some View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
@@ -58,6 +61,8 @@ struct ContentView: View {
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { recalculateBalances(); updateAppearance() }
+        // 通知を受け取った瞬間に色を更新する
+        .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: themeBarText) { _ in updateAppearance() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
@@ -148,7 +153,7 @@ struct ContentView: View {
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { 
-                        Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("手動保存から復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("バックアップを共有 (外部に書き出す)") { exportBackup() }.foregroundColor(Color(hex: themeMain))
@@ -194,28 +199,15 @@ struct ContentView: View {
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
     
-    // 【データ本体（Data）を渡す方式に再構築】
     func exportBackup() {
         let encoder = JSONEncoder(); encoder.outputFormatting = .prettyPrinted
-        let dict: [String: Any] = [
-            "transactions": String(data: (try? encoder.encode(transactions)) ?? Data(), encoding: .utf8) ?? "",
-            "accounts": String(data: (try? encoder.encode(accounts)) ?? Data(), encoding: .utf8) ?? "",
-            "date": BackupManager.getBackupDate(isManual: true)
-        ]
-        
+        let dict: [String: Any] = ["transactions": String(data: (try? encoder.encode(transactions)) ?? Data(), encoding: .utf8) ?? "", "accounts": String(data: (try? encoder.encode(accounts)) ?? Data(), encoding: .utf8) ?? "", "date": BackupManager.getBackupDate(isManual: true)]
         guard let finalData = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) else { return }
-        
-        // 共有用の一時パス（ファイル形式として渡すために必要）
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("TwitterKakeibo_Backup.json")
         try? finalData.write(to: tempURL)
-        
-        // 共有シートを起動
         let av = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
-        
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = scene.windows.first?.rootViewController {
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController {
             av.popoverPresentationController?.sourceView = rootVC.view
-            av.popoverPresentationController?.sourceRect = CGRect(x: UIScreen.main.bounds.midX, y: UIScreen.main.bounds.midY, width: 0, height: 0)
             rootVC.present(av, animated: true)
         }
     }
@@ -223,19 +215,29 @@ struct ContentView: View {
     func updateAppearance() {
         let bgColor = UIColor(Color(hex: themeBarBG))
         let textColor = UIColor(Color(hex: themeBarText))
+        
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = bgColor
         appearance.titleTextAttributes = [.foregroundColor: textColor]
         appearance.largeTitleTextAttributes = [.foregroundColor: textColor]
+        
         UINavigationBar.appearance().standardAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
-        let tabBarAppearance = UITabBarAppearance()
-        tabBarAppearance.configureWithOpaqueBackground()
-        tabBarAppearance.backgroundColor = bgColor
-        UITabBar.appearance().standardAppearance = tabBarAppearance
+        UINavigationBar.appearance().compactAppearance = appearance
+        
+        let tabAppearance = UITabBarAppearance()
+        tabAppearance.configureWithOpaqueBackground()
+        tabAppearance.backgroundColor = bgColor
+        UITabBar.appearance().standardAppearance = tabAppearance
+        UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+
+        // 全画面のビューを強制的に再描画させる（これが瞬時反映の鍵です）
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            windowScene.windows.forEach { $0.setNeedsLayout(); $0.layoutIfNeeded() }
+            windowScene.windows.forEach { window in
+                window.rootViewController?.view.setNeedsLayout()
+                window.rootViewController?.view.layoutIfNeeded()
+            }
         }
     }
 }
