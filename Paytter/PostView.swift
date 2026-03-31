@@ -9,6 +9,7 @@ struct PostView: View {
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     
     @State private var postDate = Date()
     @State private var isShowingDatePicker = false
@@ -17,55 +18,57 @@ struct PostView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                HStack(alignment: .top) {
-                    Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
-                    ZStack(alignment: .topLeading) {
-                        CustomTextEditor(text: $inputText) { sym in 
-                            insertAtCursor(sym)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() }
-                        }
-                        .frame(minHeight: 150).onChange(of: inputText) { _ in updateSuggestionsForCursor() }
-                        if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
-                    }
-                }.padding()
+            ZStack {
+                Color(hex: themeBG).ignoresSafeArea() // 背景色
                 
-                if !suggestions.isEmpty {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(suggestions, id: \.self) { suggestion in
-                                Button(action: { applySuggestion(suggestion) }) {
-                                    VStack(alignment: .leading) { Text(suggestion).font(.body).foregroundColor(.primary).padding(.vertical, 12).padding(.horizontal, 20); Divider() }
+                VStack(spacing: 0) {
+                    HStack(alignment: .top) {
+                        Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
+                        ZStack(alignment: .topLeading) {
+                            CustomTextEditor(text: $inputText) { sym in 
+                                insertAtCursor(sym)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() }
+                            }
+                            .frame(minHeight: 150).onChange(of: inputText) { _ in updateSuggestionsForCursor() }
+                            if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
+                        }
+                    }.padding()
+                    
+                    if !suggestions.isEmpty {
+                        ScrollView(.vertical, showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(suggestions, id: \.self) { suggestion in
+                                    Button(action: { applySuggestion(suggestion) }) {
+                                        VStack(alignment: .leading) { Text(suggestion).font(.body).foregroundColor(.primary).padding(.vertical, 12).padding(.horizontal, 20); Divider() }
+                                    }
                                 }
                             }
-                        }
-                    }.frame(maxHeight: 150).background(Color(.systemBackground))
-                }
-                
-                HStack {
-                    Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
-                        HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
-                        .font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(Color(hex: themeMain).opacity(0.1)).foregroundColor(Color(hex: themeMain)).cornerRadius(12)
+                        }.frame(maxHeight: 150).background(Color(.systemBackground).opacity(0.9))
                     }
+                    
+                    HStack {
+                        Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
+                            HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
+                            .font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(Color(hex: themeMain).opacity(0.1)).foregroundColor(Color(hex: themeMain)).cornerRadius(12)
+                        }
+                        Spacer()
+                    }.padding(.horizontal)
                     Spacer()
-                }.padding(.horizontal)
-                Spacer()
+                }
             }
             .navigationBarItems(leading: Button("キャンセル") { isPresented = false }, trailing: HStack(spacing: 12) {
-                // 文字位置を修正した支出ボタン
                 Button(action: { onPost(false, postDate); isPresented = false }) {
                     Text("支出")
                         .font(.subheadline).fontWeight(.bold)
-                        .frame(width: 60, height: 34, alignment: .center) // サイズ固定で中央寄せ
+                        .frame(width: 60, height: 34, alignment: .center)
                         .background(Color(hex: themeExpense).opacity(0.8))
                         .foregroundColor(.white)
                         .cornerRadius(17)
                 }
-                // 文字位置を修正した収入ボタン
                 Button(action: { onPost(true, postDate); isPresented = false }) {
                     Text("収入")
                         .font(.subheadline).fontWeight(.bold)
-                        .frame(width: 60, height: 34, alignment: .center) // サイズ固定で中央寄せ
+                        .frame(width: 60, height: 34, alignment: .center)
                         .background(Color(hex: themeIncome))
                         .foregroundColor(.white)
                         .cornerRadius(17)
