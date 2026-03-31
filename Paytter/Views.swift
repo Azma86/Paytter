@@ -107,12 +107,12 @@ struct PostView: View {
             if let ran = Range(sel, in: cur) { inputText = cur.replacingCharacters(in: ran, with: ins)
                 DispatchQueue.main.async { 
                     tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0) 
-                    // ¥ボタンが押された場合のみ、キーボードを数値用に切り替える
+                    // ¥ボタンが押された場合のみ、キーボードを「数字と記号」レイヤーに切り替える
                     if sym == "¥" {
-                        tv.keyboardType = .decimalPad
+                        tv.keyboardType = .numbersAndPunctuation
                         tv.reloadInputViews()
                     } else {
-                        // 他のボタン（#や@）では通常キーボードに戻す
+                        // 他のボタン（#や@）では通常の日本語/英語キーボードに戻す
                         tv.keyboardType = .default
                         tv.reloadInputViews()
                     }
