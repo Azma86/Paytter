@@ -10,7 +10,7 @@ struct Transaction: Identifiable, Codable {
     
     var cleanNote: String {
         note.components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }
+            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") && !($0.contains("¥") || Int($0) != nil) }
             .joined(separator: " ")
     }
     
@@ -42,9 +42,11 @@ struct Account: Identifiable, Codable {
     var balance: Int
     var type: AccountType = .wallet
     var isVisible: Bool = true
-    // クレジットカード用に追加
     var payday: Int? = 1
     var withdrawalAccountId: UUID? = nil
+    
+    // エフェクト表示用（保存不要なため、Codableからは除外するか無視されるようにします）
+    var diffAmount: Int = 0
 }
 
 extension Array: RawRepresentable where Element: Codable {
