@@ -151,11 +151,19 @@ struct ContentView: View {
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false)
     }
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
+    
+    // 【修正】¥付きの数値をすべて合計するロジック
     func parseAmount(from text: String) -> Int {
         let comps = text.components(separatedBy: .whitespacesAndNewlines)
-        let amtStr = comps.filter { $0.contains("¥") }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amtStr) ?? 0
+        let yenValues = comps.filter { $0.contains("¥") }
+        
+        let total = yenValues.reduce(0) { sum, word in
+            let cleaned = word.replacingOccurrences(of: "¥", with: "")
+            return sum + (Int(cleaned) ?? 0)
+        }
+        return total
     }
+    
     func parseSourceName(from text: String) -> String {
         for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
         return accounts.first?.name ?? "お財布"
