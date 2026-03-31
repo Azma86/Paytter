@@ -99,35 +99,120 @@ struct ContentView: View {
         }
     }
     
-    private var calendarTab: some View { NavigationView { CalendarView(transactions: $transactions, accounts: $accounts) } }
-    private var walletTab: some View { NavigationView { ZStack { Color(hex: themeBG).ignoresSafeArea(); List { Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) { ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) } }; Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5)) }.scrollContentBackground(.hidden).listStyle(.insetGrouped) }.navigationTitle("お財布").toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }.alert("削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } } } } }
-    private var settingTab: some View { NavigationView { ZStack { Color(hex: themeBG).ignoresSafeArea(); List { Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(header: Text("予算設定").foregroundColor(Color(hex: themeSubText))) { Stepper(value: $monthlyBudget, in: 1000...500000, step: 1000) { Text("今月の予算: ¥\(monthlyBudget)").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText)); Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText)); Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText)); Button("バックアップを共有") { exportBackup() }.foregroundColor(Color(hex: themeMain)); Button("外部から読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } }.listRowBackground(Color(hex: themeBG).opacity(0.5)) }.scrollContentBackground(.hidden).listStyle(.insetGrouped) }.navigationTitle("設定").toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).alert("上書き保存", isPresented: $isShowingSaveConfirm) { Button("キャンセル", role: .cancel){}; Button("保存"){ BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true } } message: { Text("前回の保存: \(backupDateString)") }.alert("復元", isPresented: $isShowingRestoreConfirm) { Button("キャンセル", role: .cancel){}; Button("復元", role: .destructive){ if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元完了"; isShowingCompletionAlert = true } } } message: { Text("\(isRestoringManual ? "手動":"自動")保存日時: \(backupDateString)") }.alert("外部読込", isPresented: $isShowingImportConfirm) { Button("キャンセル", role: .cancel){ pendingImportData = nil }; Button("復元", role: .destructive){ if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "外部復元完了"; isShowingCompletionAlert = true }; pendingImportData = nil } } message: { if let d = pendingImportData { Text("保存日時: \(d.2)\nデータを上書きしますか？") } }.fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in switch result { case .success(let url): if url.startAccessingSecurityScopedResource() { handleImport(from: url); url.stopAccessingSecurityScopedResource() }; case .failure(let e): print(e.localizedDescription) } } }
+    private var calendarTab: some View { 
+        NavigationView { 
+            CalendarView(transactions: $transactions, accounts: $accounts)
+                .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+                .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+        } 
+    }
 
-    func handleImport(from url: URL) { guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dateStr = json["date"] as? String else { return }; let dec = JSONDecoder(); if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!), let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) { self.pendingImportData = (t, a, dateStr); self.isShowingImportConfirm = true } }
+    private var walletTab: some View { 
+        NavigationView { 
+            ZStack {
+                Color(hex: themeBG).ignoresSafeArea()
+                List { 
+                    Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) { 
+                        ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in 
+                            NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { 
+                                HStack { 
+                                    Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                    Text(acc.name).foregroundColor(Color(hex: themeBodyText))
+                                    Spacer()
+                                    Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                } 
+                            }.swipeActions(edge: .trailing, allowsFullSwipe: false) { 
+                                Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) 
+                            } 
+                        }
+                        Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { 
+                        NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { 
+                            Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText))
+                        } 
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5)) 
+                }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
+            }
+            .navigationTitle("お財布")
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .alert("削除", isPresented: $isShowingAccountDeleteAlert) {
+                Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
+            } 
+        } 
+    }
+
+    private var settingTab: some View { 
+        NavigationView { 
+            ZStack { 
+                Color(hex: themeBG).ignoresSafeArea()
+                List { 
+                    Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { 
+                        NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } 
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("予算設定").foregroundColor(Color(hex: themeSubText))) { 
+                        Stepper(value: $monthlyBudget, in: 1000...500000, step: 1000) {
+                            Text("今月の予算: ¥\(monthlyBudget)").foregroundColor(Color(hex: themeBodyText))
+                        }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { 
+                        Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("バックアップを共有") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        Button("外部から読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { 
+                        Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } 
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5)) 
+                }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
+            }
+            .navigationTitle("設定")
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .alert("保存", isPresented: $isShowingSaveConfirm) { Button("保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }; Button("キャンセル", role: .cancel){} } message: { Text("前回: \(backupDateString)") }
+            .alert("復元", isPresented: $isShowingRestoreConfirm) { Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元完了"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){} } message: { Text("\(isRestoringManual ? "手動":"自動")保存日: \(backupDateString)") }
+            .alert("外部読込", isPresented: $isShowingImportConfirm) { Button("復元", role: .destructive) { if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){ pendingImportData = nil } } message: { if let d = pendingImportData { Text("保存日時: \(d.2)\nデータを上書きしますか？") } }
+            .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK"){} } message: { Text(completionMessage) }
+            .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in
+                switch result {
+                case .success(let url): if url.startAccessingSecurityScopedResource() { handleImport(from: url); url.stopAccessingSecurityScopedResource() }
+                case .failure(let error): print(error.localizedDescription)
+                }
+            }
+        } 
+    }
+
+    func handleImport(from url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let txStr = json["transactions"] as? String,
+              let accStr = json["accounts"] as? String,
+              let dateStr = json["date"] as? String else { return }
+        let dec = JSONDecoder()
+        if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!),
+           let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) {
+            self.pendingImportData = (t, a, dateStr); self.isShowingImportConfirm = true
+        }
+    }
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     func deleteSpecificTransaction(_ target: Transaction) { if let index = transactions.firstIndex(where: { $0.id == target.id }) { transactions.remove(at: index) } }
     func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
+    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
 
-    // 【修正版】エクスポート機能
     func exportBackup() {
         let fileName = "manual_transactions.json"
         let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
-        
-        // 1. 最新のデータを確実に書き出し
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
-        
-        // 2. 共有用の一時ディレクトリ（Cachesフォルダ等）へコピーしてiOSのアクセス許可を通す
         let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         try? FileManager.default.removeItem(at: tempPath)
         try? FileManager.default.copyItem(at: path, to: tempPath)
-
         let av = UIActivityViewController(activityItems: [tempPath], applicationActivities: nil)
-        
-        // iPad等のクラッシュ防止用
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = scene.windows.first?.rootViewController {
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController {
             av.popoverPresentationController?.sourceView = rootVC.view
             rootVC.present(av, animated: true)
         }
@@ -141,6 +226,13 @@ struct ContentView: View {
         let tabBarAppearance = UITabBarAppearance(); tabBarAppearance.configureWithOpaqueBackground(); tabBarAppearance.backgroundColor = bgColor
         UITabBar.appearance().standardAppearance = tabBarAppearance
     }
+}
+
+// --- 共有シート部品 ---
+struct ActivityView: UIViewControllerRepresentable {
+    var activityItems: [Any]; var applicationActivities: [UIActivity]? = nil
+    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities) }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // --- テーマ設定画面 ---
@@ -205,11 +297,11 @@ struct ThemeSettingView: View {
         .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
     }
     
-    func presetBtn(_ name: String, _ main: String, _ inc: String, _ exp: String, _ hol: String, _ bg: String, _ barBG: String, _ barTxt: String, _ tab: String, _ body: String, _ sub: String) -> some View {
-        Button(action: { apply(main, inc, exp, hol, bg, barBG, barTxt, tab, body, sub) }) {
+    func presetBtn(_ n: String, _ m: String, _ i: String, _ e: String, _ h: String, _ b: String, _ bb: String, _ bt: String, _ t: String, _ bd: String, _ s: String) -> some View {
+        Button(action: { apply(m, i, e, h, b, bb, bt, t, bd, s) }) {
             VStack(spacing: 8) {
-                Circle().fill(Color(hex: main)).frame(width: 46, height: 46).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
-                Text(name).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeSubText)) // マゼンタ丸の対応
+                Circle().fill(Color(hex: m)).frame(width: 46, height: 46).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
+                Text(n).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeSubText))
             }
         }.buttonStyle(.plain)
     }
