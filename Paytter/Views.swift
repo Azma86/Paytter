@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 3. 自作カレンダー画面 (スライド・前後月埋め込み対応) ---
+// --- 3. 自作カレンダー画面 (滑らかなスライド & 複数ドット対応) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -47,9 +47,8 @@ struct CalendarView: View {
     @State private var isShowingMonthPicker = false
     @State private var tempPickerDate = Date()
     
-    // アニメーション用
-    @State private var slideOffset: CGFloat = 0
-    @State private var opacity: Double = 1.0
+    // スライド用
+    @State private var dragOffset: CGFloat = 0
 
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
@@ -63,7 +62,7 @@ struct CalendarView: View {
         VStack(spacing: 0) {
             // ヘッダー
             HStack {
-                Button(action: { slideMonth(by: -1) }) { Image(systemName: "chevron.left") }
+                Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left") }
                 Spacer()
                 Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
                     HStack(spacing: 4) {
@@ -72,53 +71,44 @@ struct CalendarView: View {
                     }
                 }
                 Spacer()
-                Button(action: { slideMonth(by: 1) }) { Image(systemName: "chevron.right") }
+                Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right") }
             }.padding(.horizontal).padding(.vertical, 8)
 
             // 曜日
             HStack {
                 ForEach(daysOfWeek, id: \.self) { day in
-                    Text(day).font(.system(size: 12, weight: .bold)).frame(maxWidth: .infinity)
+                    Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
                         .foregroundColor(day == "日" ? .red : (day == "土" ? .blue : .primary))
                 }
             }.padding(.bottom, 5)
 
-            // カレンダーグリッド（スライド・前後月対応）
-            ZStack {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
-                    let allDays = generateFullGrid(for: currentMonth)
-                    ForEach(0..<allDays.count, id: \.self) { index in
-                        let date = allDays[index]
-                        let isCurrentMonth = calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)
-                        
-                        VStack(spacing: 1) {
-                            Text("\(calendar.component(.day, from: date))")
-                                .font(.system(size: 14, design: .rounded))
-                                .fontWeight(calendar.isDate(date, inSameDayAs: selectedDate) ? .bold : .regular)
-                                .foregroundColor(isCurrentMonth ? (calendar.isDate(date, inSameDayAs: selectedDate) ? .white : .primary) : .gray.opacity(0.3))
-                                .frame(width: 26, height: 26)
-                                .background(calendar.isDate(date, inSameDayAs: selectedDate) && isCurrentMonth ? Color.blue : Color.clear)
-                                .clipShape(Circle())
-                            
-                            HStack(spacing: 2) {
-                                if hasTransaction(on: date, isIncome: true) { Circle().fill(Color.green).frame(width: 3, height: 3) }
-                                if hasTransaction(on: date, isIncome: false) { Circle().fill(Color.red).frame(width: 3, height: 3) }
-                            }.frame(height: 3)
-                        }
-                        .frame(height: 38) // 縦幅を最小化
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
-                    }
+            // カレンダーグリッド（物理スライド対応）
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    // 前の月
+                    monthGrid(for: calendar.date(byAdding: .month, value: -1, to: currentMonth)!, width: geometry.size.width)
+                    // 今の月
+                    monthGrid(for: currentMonth, width: geometry.size.width)
+                    // 次の月
+                    monthGrid(for: calendar.date(byAdding: .month, value: 1, to: currentMonth)!, width: geometry.size.width)
                 }
-                .offset(x: slideOffset)
-                .opacity(opacity)
+                .offset(x: -geometry.size.width + dragOffset)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in dragOffset = value.translation.width }
+                        .onEnded { value in
+                            let threshold = geometry.size.width * 0.3
+                            if value.translation.width < -threshold {
+                                moveMonth(by: 1)
+                            } else if value.translation.width > threshold {
+                                moveMonth(by: -1)
+                            } else {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragOffset = 0 }
+                            }
+                        }
+                )
             }
-            .gesture(DragGesture().onEnded { value in
-                if value.translation.width < -50 { slideMonth(by: 1) }
-                if value.translation.width > 50 { slideMonth(by: -1) }
-            })
-            .frame(height: 230) // カレンダー部分の総高さを抑える
+            .frame(height: 240) // 高さを調整
 
             Divider()
 
@@ -163,50 +153,68 @@ struct CalendarView: View {
         }
     }
 
-    // --- ロジック補助 ---
-    func slideMonth(by value: Int) {
-        let direction: CGFloat = value > 0 ? -1 : 1
-        withAnimation(.easeOut(duration: 0.2)) {
-            slideOffset = direction * 100
-            opacity = 0
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            if let next = calendar.date(byAdding: .month, value: value, to: currentMonth) {
-                currentMonth = next
-                slideOffset = direction * -100
-                withAnimation(.easeIn(duration: 0.2)) {
-                    slideOffset = 0
-                    opacity = 1.0
+    // 各月のグリッドを生成する関数
+    @ViewBuilder
+    func monthGrid(for month: Date, width: CGFloat) -> some View {
+        let allDays = generateFullGrid(for: month)
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
+            ForEach(0..<allDays.count, id: \.self) { index in
+                let date = allDays[index]
+                let isCurrentMonth = calendar.isDate(date, equalTo: month, toGranularity: .month)
+                let dayTransactions = transactions.filter { calendar.isDate($0.date, inSameDayAs: date) }
+                
+                VStack(spacing: 2) {
+                    Text("\(calendar.component(.day, from: date))")
+                        .font(.system(size: 13, design: .rounded))
+                        .fontWeight(calendar.isDate(date, inSameDayAs: selectedDate) ? .bold : .regular)
+                        .foregroundColor(isCurrentMonth ? (calendar.isDate(date, inSameDayAs: selectedDate) ? .white : .primary) : .gray.opacity(0.25))
+                        .frame(width: 24, height: 24)
+                        .background(calendar.isDate(date, inSameDayAs: selectedDate) && isCurrentMonth ? Color.blue : Color.clear)
+                        .clipShape(Circle())
+                    
+                    // 複数ドット表示：その日の全収支を古い順に並べる
+                    HStack(spacing: 2) {
+                        ForEach(dayTransactions.prefix(4)) { tx in // 最大4つまで表示
+                            Circle()
+                                .fill(tx.isIncome ? Color.green : Color.red)
+                                .frame(width: 3.5, height: 3.5)
+                        }
+                    }
+                    .frame(height: 4)
                 }
+                .frame(height: 40)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
             }
+        }
+        .frame(width: width)
+    }
+
+    func moveMonth(by v: Int) {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) {
+                currentMonth = next
+            }
+            dragOffset = 0
         }
     }
     
     func slideToDate(_ date: Date) {
         let isFuture = date > currentMonth
-        slideMonth(by: isFuture ? 1 : -1)
+        moveMonth(by: isFuture ? 1 : -1)
         selectedDate = date
-    }
-
-    func hasTransaction(on date: Date, isIncome: Bool) -> Bool {
-        transactions.contains { calendar.isDate($0.date, inSameDayAs: date) && $0.isIncome == isIncome }
     }
 
     func monthYearString(from d: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d)
     }
 
-    // 前後月を含むフルグリッド（42マス分）を生成
     func generateFullGrid(for date: Date) -> [Date] {
-        guard let firstOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }
-        let firstWeekday = calendar.component(.weekday, from: firstOfMonth)
-        let startDate = calendar.date(byAdding: .day, value: -(firstWeekday - 1), to: firstOfMonth)!
-        
-        var days: [Date] = []
-        for i in 0..<42 {
-            if let d = calendar.date(byAdding: .day, value: i, to: startDate) { days.append(d) }
-        }
-        return days
+        guard let first = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }
+        let firstWeekday = calendar.component(.weekday, from: first)
+        let startDate = calendar.date(byAdding: .day, value: -(firstWeekday - 1), to: first)!
+        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: startDate) }
     }
 
     func combinedDate() -> Date {
@@ -443,7 +451,6 @@ struct AccountEditView: View {
     }
 }
 
-// --- 7. 分析 ---
 struct WalletAnalysisView: View {
     let transactions: [Transaction]; @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
@@ -452,7 +459,6 @@ struct WalletAnalysisView: View {
     }
 }
 
-// --- 8. 残高表示 ---
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false
@@ -470,7 +476,6 @@ struct BalanceView: View {
     }
 }
 
-// --- 9. エディタ部品 ---
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String; var onInsert: (String) -> Void
     func makeUIView(context: Context) -> UITextView {
