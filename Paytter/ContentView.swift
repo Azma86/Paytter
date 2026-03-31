@@ -45,7 +45,6 @@ struct ContentView: View {
         .accentColor(Color(hex: themeTabAccent))
         .onAppear { recalculateBalances(); updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances() }
-        // テーマ変更を検知して即座にシステムバーを更新
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: themeBarText) { _ in updateAppearance() }
         .sheet(isPresented: $isShowingInputSheet) { 
@@ -103,26 +102,32 @@ struct ContentView: View {
     func updateAppearance() {
         let bgColor = UIColor(Color(hex: themeBarBG))
         let textColor = UIColor(Color(hex: themeBarText))
+        
         let navBarAppearance = UINavigationBarAppearance()
         navBarAppearance.configureWithOpaqueBackground()
         navBarAppearance.backgroundColor = bgColor
         navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]
         navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
+        
         UINavigationBar.appearance().standardAppearance = navBarAppearance
+        UINavigationBar.appearance().compactAppearance = navBarAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
+        
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
         tabBarAppearance.backgroundColor = bgColor
+        
         UITabBar.appearance().standardAppearance = tabBarAppearance
         if #available(iOS 15.0, *) { UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance }
-        // 変更を即座に適用させるためのハック
+
+        // 即座に反映させるための処理
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             windowScene.windows.forEach { $0.setNeedsLayout(); $0.layoutIfNeeded() }
         }
     }
 }
 
-// --- デザインを統一したテーマ設定画面 ---
+// --- テーマ設定画面 ---
 struct ThemeSettingView: View {
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
@@ -149,19 +154,19 @@ struct ThemeSettingView: View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             VStack(spacing: 0) {
-                // プリセットセレクターを上部に配置 (TwitterRowスタイルに合わせる)
+                // プリセットセレクター (中央揃えスタイル)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
+                    HStack(spacing: 20) {
                         ForEach(presets, id: \.name) { p in
                             Button(action: { apply(p) }) {
-                                VStack {
-                                    Circle().fill(Color(hex: p.main)).frame(width: 44, height: 44)
+                                VStack(spacing: 8) {
+                                    Circle().fill(Color(hex: p.main)).frame(width: 46, height: 46)
                                         .overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
-                                    Text(p.name).font(.caption2).foregroundColor(Color(hex: themeBarText))
+                                    Text(p.name).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeBarText))
                                 }
                             }.buttonStyle(.plain)
                         }
-                    }.padding()
+                    }.padding(.horizontal, 20).padding(.vertical, 16)
                 }.background(Color(hex: themeBarBG).opacity(0.5))
                 
                 Divider()
@@ -169,7 +174,7 @@ struct ThemeSettingView: View {
                 List {
                     Section(header: Text("全体設定").foregroundColor(Color(hex: themeBarText).opacity(0.7))) {
                         colorRow(title: "背景色", hex: $themeBG, defaultHex: "#FFFFFFFF")
-                        colorRow(title: "バー背景色", hex: $themeBarBG, defaultHex: "#F8F8F8FF")
+                        colorRow(title: "バー/フッター背景色", hex: $themeBarBG, defaultHex: "#F8F8F8FF")
                         colorRow(title: "メニュー文字色", hex: $themeBarText, defaultHex: "#FF000000")
                         colorRow(title: "フッター選択色", hex: $themeTabAccent, defaultHex: "#FF007AFF")
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
@@ -184,6 +189,7 @@ struct ThemeSettingView: View {
             }
         }
         .navigationTitle("テーマ設定")
+        .navigationBarTitleDisplayMode(.inline) // 中央揃え・インライン形式に変更
     }
     
     func apply(_ p: Preset) {
