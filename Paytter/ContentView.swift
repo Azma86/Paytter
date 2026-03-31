@@ -29,17 +29,26 @@ struct ContentView: View {
     var body: some View {
         TabView {
             homeTab
+                .tabItem { Label("ホーム", systemImage: "house") }
+            
+            // 【カレンダー】新規追加
+            calendarTab
+                .tabItem { Label("カレンダー", systemImage: "calendar") }
+            
             walletTab
+                .tabItem { Label("お財布", systemImage: "wallet.pass") }
+            
             settingTab
+                .tabItem { Label("設定", systemImage: "gearshape") }
         }
         .onAppear { recalculateBalances() }
         .onChange(of: transactions) { _ in recalculateBalances() }
         .sheet(isPresented: $isShowingInputSheet) { 
-            // クロージャの引数を (Bool, Date) に合わせて修正
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
     }
 
+    // --- タブ：ホーム ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -70,9 +79,17 @@ struct ContentView: View {
                 Button("キャンセル", role: .cancel) { transactionToDelete = nil }
                 Button("削除", role: .destructive) { if let t = transactionToDelete { withAnimation { deleteSpecificTransaction(t) } }; transactionToDelete = nil }
             } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
-        }.tabItem { Label("ホーム", systemImage: "house") }
+        }
+    }
+    
+    // --- タブ：カレンダー ---
+    private var calendarTab: some View {
+        NavigationView {
+            CalendarView(transactions: $transactions, accounts: $accounts)
+        }
     }
 
+    // --- タブ：お財布 ---
     private var walletTab: some View {
         NavigationView {
             List {
@@ -90,9 +107,10 @@ struct ContentView: View {
             }
             .navigationTitle("お財布")
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
-        }.tabItem { Label("お財布", systemImage: "wallet.pass") }
+        }
     }
 
+    // --- タブ：設定 ---
     private var settingTab: some View {
         NavigationView {
             List {
@@ -125,7 +143,7 @@ struct ContentView: View {
                 Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "全てのデータを初期状態にリセットしました。"; isShowingCompletionAlert = true }
             } message: { Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。") }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK") { } } message: { Text(completionMessage) }
-        }.tabItem { Label("設定", systemImage: "gearshape") }
+        }
     }
 
     func addTransaction(isInc: Bool, date: Date) {
@@ -149,7 +167,7 @@ struct ContentView: View {
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
     func parseAmount(from text: String) -> Int {
         let components = text.components(separatedBy: .whitespacesAndNewlines)
-        let amt = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        let amt = components.filter { $0.contains("¥") || Int($0.replacingOccurrences(of: "¥", with: "")) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
         return Int(amt) ?? 0
     }
     func parseSourceName(from text: String) -> String {
