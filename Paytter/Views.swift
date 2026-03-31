@@ -78,6 +78,7 @@ struct PostView: View {
             })
         }
     }
+    
     func updateSuggestionsForCursor() {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
         let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""
@@ -88,6 +89,7 @@ struct PostView: View {
         else if currentWord.hasPrefix("@") { suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(currentWord) && $0 != currentWord }.sorted() }
         else { suggestions = [] }
     }
+    
     func applySuggestion(_ suggestion: String) {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
         let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""
@@ -103,22 +105,23 @@ struct PostView: View {
         if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
             let sel = tv.selectedRange; let cur = tv.text ?? ""
             let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
-            let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
             
-            // 1回目から確実に反映させるため、TextView に直接 insertText を送る
+            // スペースが必要か判定
+            let needsSpace = !(lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil)
+            let prefix = needsSpace ? " " : ""
+            let ins = prefix + sym
+            
+            // 挿入を実行
             tv.becomeFirstResponder()
-            if prefix != "" { tv.insertText(prefix) }
-            tv.insertText(sym)
+            tv.insertText(ins)
             
-            // ¥ が入力された場合、数字・記号キーボードに切り替える（1回目で確実に発動）
+            // 強制的にキーボードのリロードを行う
             if sym == "¥" {
                 tv.keyboardType = .numbersAndPunctuation
-                tv.reloadInputViews()
             } else {
-                // デフォルト（元のキーボード設定）に戻す
                 tv.keyboardType = .default
-                tv.reloadInputViews()
             }
+            tv.reloadInputViews()
         }
     }
 }
