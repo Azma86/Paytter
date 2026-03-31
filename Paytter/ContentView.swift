@@ -23,7 +23,6 @@ struct ContentView: View {
     @State private var completionMessage = ""
 
     var displayedTransactions: [Transaction] {
-        // 日付順にソート（新しい順）
         transactions.sorted(by: { $0.date > $1.date })
     }
 
@@ -35,13 +34,12 @@ struct ContentView: View {
         }
         .onAppear { recalculateBalances() }
         .onChange(of: transactions) { _ in recalculateBalances() }
-        // 新規投稿シートの呼び出し部分を修正
         .sheet(isPresented: $isShowingInputSheet) { 
+            // クロージャの引数を (Bool, Date) に合わせて修正
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
     }
 
-    // --- タブ：ホーム ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -75,7 +73,6 @@ struct ContentView: View {
         }.tabItem { Label("ホーム", systemImage: "house") }
     }
 
-    // --- タブ：お財布 ---
     private var walletTab: some View {
         NavigationView {
             List {
@@ -96,7 +93,6 @@ struct ContentView: View {
         }.tabItem { Label("お財布", systemImage: "wallet.pass") }
     }
 
-    // --- タブ：設定 ---
     private var settingTab: some View {
         NavigationView {
             List {
@@ -132,7 +128,6 @@ struct ContentView: View {
         }.tabItem { Label("設定", systemImage: "gearshape") }
     }
 
-    // --- ロジック ---
     func addTransaction(isInc: Bool, date: Date) {
         let amount = parseAmount(from: inputText); let sourceName = parseSourceName(from: inputText)
         transactions.append(Transaction(amount: amount, date: date, note: inputText, source: sourceName, isIncome: isInc))
