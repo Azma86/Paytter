@@ -1,27 +1,7 @@
 import Foundation
 import SwiftUI
 
-// --- テーマ管理 ---
-struct AppTheme: Codable {
-    var mainColor: Color = .blue
-    var incomeColor: Color = Color(red: 0.1, green: 0.7, blue: 0.1)
-    var expenseColor: Color = .red
-    var holidayColor: Color = .red
-}
-
-// ColorをAppStorage(JSON)で保存するための拡張
-extension Color: Codable {
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let hex = try container.decode(String.self)
-        self.init(hex: hex)
-    }
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(self.toHex())
-    }
-}
-
+// Colorを保存するためのHex変換拡張
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -46,7 +26,6 @@ extension Color {
     }
 }
 
-// --- 既存モデル ---
 enum AccountType: String, Codable, CaseIterable {
     case wallet = "お財布", bank = "銀行口座", credit = "クレジットカード", point = "ポイント"
     var icon: String {
@@ -69,8 +48,12 @@ struct Transaction: Identifiable, Codable, Equatable {
     var tags: [String] { note.components(separatedBy: .whitespacesAndNewlines).filter { $0.hasPrefix("#") } }
     var cleanNote: String {
         let lines = note.components(separatedBy: .newlines)
-        let cleaned = lines.map { line in line.components(separatedBy: .whitespaces).filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }.joined(separator: " ") }
-        return cleaned.joined(separator: "\n")
+        let cleanedLines = lines.map { line in
+            line.components(separatedBy: .whitespaces)
+                .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }
+                .joined(separator: " ")
+        }
+        return cleanedLines.joined(separator: "\n")
     }
 }
 
@@ -81,17 +64,6 @@ extension Array: RawRepresentable where Element: Codable {
     }
     public var rawValue: String {
         guard let data = try? JSONEncoder().encode(self), let result = String(data: data, encoding: .utf8) else { return "[]" }
-        return result
-    }
-}
-
-extension AppTheme: RawRepresentable {
-    public init?(rawValue: String) {
-        guard let data = rawValue.data(using: .utf8), let result = try? JSONDecoder().decode(AppTheme.self, from: data) else { return nil }
-        self = result
-    }
-    public var rawValue: String {
-        guard let data = try? JSONEncoder().encode(self), let result = String(data: data, encoding: .utf8) else { return "{}" }
         return result
     }
 }
