@@ -239,13 +239,18 @@ struct BalanceView: View {
     var body: some View {
         VStack {
             Text(title).font(.caption).foregroundColor(.secondary)
-            ZStack {
-                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color)
+            ZStack(alignment: .topTrailing) { // 右上に配置
+                Text("¥\(amount)")
+                    .font(.system(.subheadline, design: .monospaced))
+                    .fontWeight(.bold)
+                    .foregroundColor(color)
+                    .padding(.horizontal, 4)
+                
                 if diff != 0 {
                     Text(diff > 0 ? "+\(diff)" : "\(diff)")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(.system(size: 8, weight: .bold, design: .rounded)) // 少し小さく
                         .foregroundColor(diff > 0 ? .green : .red)
-                        .offset(y: showDiff ? -15 : 0)
+                        .offset(x: 20, y: showDiff ? -15 : 0) // 右上に飛ばす
                         .opacity(showDiff ? 0 : 1)
                 }
             }
