@@ -9,6 +9,7 @@ struct CalendarView: View {
     @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
+    @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
     
     @State private var selectedDate = Date()
     @State private var currentMonth = Date()
@@ -49,7 +50,7 @@ struct CalendarView: View {
                         Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
                             .foregroundColor(day == "日" ? Color(hex: themeHoliday) : (day == "土" ? .blue : Color(hex: themeBarText).opacity(0.8)))
                     }
-                }.padding(.bottom, 5)
+                }.padding(.bottom, 5).background(Color(hex: themeBarBG).opacity(0.3))
 
                 GeometryReader { geometry in
                     let width = geometry.size.width
