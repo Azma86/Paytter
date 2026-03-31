@@ -36,13 +36,14 @@ struct HighlightedText: View {
     }
 }
 
-// --- 投稿画面 (日時指定機能付き) ---
+// --- 投稿画面 (Twitter風日時切り替え機能付き) ---
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool, Date) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
     @State private var postDate = Date()
     @State private var isShowingDatePicker = false
+    @State private var isPickingTime = false // 日付か時刻かの切り替え
     @State private var suggestions: [String] = []
     
     var body: some View {
@@ -76,7 +77,10 @@ struct PostView: View {
                 }
                 
                 HStack {
-                    Button(action: { isShowingDatePicker = true }) {
+                    Button(action: { 
+                        isPickingTime = false
+                        isShowingDatePicker = true 
+                    }) {
                         HStack(spacing: 4) {
                             Image(systemName: "calendar.badge.clock")
                             Text(formatDate(postDate))
@@ -94,10 +98,24 @@ struct PostView: View {
             })
             .sheet(isPresented: $isShowingDatePicker) {
                 NavigationView {
-                    DatePicker("日時を選択", selection: $postDate)
-                        .datePickerStyle(.wheel).labelsHidden().navigationTitle("日時の指定")
-                        .navigationBarItems(trailing: Button("完了") { isShowingDatePicker = false })
-                }.presentationDetents([.height(300)])
+                    VStack {
+                        DatePicker(
+                            "日時を選択",
+                            selection: $postDate,
+                            displayedComponents: isPickingTime ? .hourAndMinute : .date
+                        )
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                        .environment(\.locale, Locale(identifier: "ja_JP"))
+                    }
+                    .navigationTitle(isPickingTime ? "時刻の指定" : "日付の指定")
+                    .navigationBarItems(
+                        leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") {
+                            withAnimation { isPickingTime.toggle() }
+                        },
+                        trailing: Button("完了") { isShowingDatePicker = false }
+                    )
+                }.presentationDetents([.height(350)])
             }
         }
     }
@@ -169,7 +187,6 @@ struct TransactionDetailView: View {
         }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() } }
         .sheet(isPresented: $isShowingEditSheet) { 
-            // ここでのPostView呼び出しも引数を2つ（収支と日付）にする
             PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, onPost: { isInc, nDate in updateThis(newInc: isInc, newDate: nDate) }, transactions: transactions, accounts: accounts) 
         }
     }
