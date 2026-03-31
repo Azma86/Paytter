@@ -31,6 +31,7 @@ struct ThemeSettingView: View {
                 List {
                     Section(header: Text("外観").foregroundColor(Color(hex: themeSubText))) {
                         Toggle("ダークモード", isOn: $isDarkMode)
+                            .onChange(of: isDarkMode) { _ in notify() }
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
@@ -48,7 +49,9 @@ struct ThemeSettingView: View {
                         colorRow(title: "支出色", hex: $themeExpense)
                         colorRow(title: "祝日色", hex: $themeHoliday)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
+                }
+                .scrollContentBackground(.hidden)
+                .listStyle(.insetGrouped)
             }
         }
         .navigationTitle("テーマ設定")
@@ -59,6 +62,7 @@ struct ThemeSettingView: View {
         Button(action: { 
             withAnimation {
                 themeMain = m; themeBG = bg; themeBarBG = bb; themeBarText = bt; themeBodyText = body; themeSubText = sub; isDarkMode = dark 
+                notify() // 即時通知
             }
         }) {
             VStack(spacing: 8) {
@@ -69,6 +73,14 @@ struct ThemeSettingView: View {
     }
     
     func colorRow(title: String, hex: Binding<String>) -> some View {
-        ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() })).foregroundColor(Color(hex: themeBodyText))
+        ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { 
+            hex.wrappedValue = $0.toHex()
+            notify() // 即時通知
+        })).foregroundColor(Color(hex: themeBodyText))
+    }
+
+    // ContentViewに更新を知らせる
+    func notify() {
+        NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil)
     }
 }
