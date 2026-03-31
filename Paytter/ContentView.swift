@@ -2,6 +2,14 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
+// --- エクスポート用のデータ渡しソース ---
+struct BackupData: Transferable {
+    let data: Data
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .json) { backup in backup.data }
+    }
+}
+
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
     @AppStorage("accounts_v2") var accounts: [Account] = [
@@ -12,7 +20,7 @@ struct ContentView: View {
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
-    // --- テーマ設定データ（フルセット復活） ---
+    // --- テーマ設定データ ---
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -41,26 +49,30 @@ struct ContentView: View {
     @State private var isShowingImportConfirm = false
 
     var body: some View {
-        TabView(selection: $selection) {
-            homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }
-            calendarTab.tag(1).tabItem { Label("カレンダー", systemImage: "calendar") }
-            walletTab.tag(2).tabItem { Label("お財布", systemImage: "wallet.pass") }
-            settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
+        // ZStackで背景を敷くことで全タブの背景色を即時反映させる
+        ZStack {
+            Color(hex: themeBG).ignoresSafeArea()
+            
+            TabView(selection: $selection) {
+                homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }
+                calendarTab.tag(1).tabItem { Label("カレンダー", systemImage: "calendar") }
+                walletTab.tag(2).tabItem { Label("お財布", systemImage: "wallet.pass") }
+                settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
+            }
+            .accentColor(Color(hex: themeTabAccent)) // フッターアイコン色
         }
-        .accentColor(Color(hex: themeTabAccent))
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { recalculateBalances(); updateAppearance() }
-        .onChange(of: transactions) { _ in recalculateBalances() }
-        // ↓ 色が変更された瞬間にヘッダーを更新する
+        // すべての色変更を監視して即時反映
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: themeBarText) { _ in updateAppearance() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
+        .onChange(of: themeBG) { _ in updateAppearance() }
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
     }
 
-    // --- 各タブの定義 ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -91,10 +103,19 @@ struct ContentView: View {
                 }.padding(20).padding(.bottom, 10)
             }
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
         }
     }
     
-    private var calendarTab: some View { NavigationView { CalendarView(transactions: $transactions, accounts: $accounts).navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline) } }
+    private var calendarTab: some View { 
+        NavigationView { 
+            CalendarView(transactions: $transactions, accounts: $accounts)
+                .navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+                .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+        } 
+    }
 
     private var walletTab: some View { 
         NavigationView { 
@@ -115,6 +136,8 @@ struct ContentView: View {
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("お財布").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
         } 
     }
 
@@ -130,33 +153,27 @@ struct ContentView: View {
                         Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("手動保存から復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
-                        Button("バックアップを共有") { exportBackup() }.foregroundColor(Color(hex: themeMain))
-                        // --- インポート機能復活 ---
-                        Button("外部ファイルから読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
+                        Button("共有") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        Button("読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { 
-                        Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } 
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5)) 
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("設定").navigationBarTitleDisplayMode(.inline)
-            .alert("全リセット", isPresented: $isShowingResetAlert) { 
-                Button("キャンセル", role: .cancel) {}; Button("リセット", role: .destructive) { resetAll() } 
-            } message: { Text("全ての投稿とお財布設定を初期化します。") }
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .alert("復元", isPresented: $isShowingRestoreConfirm) { 
                 Button("キャンセル", role: .cancel) {}; Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元完了"; isShowingCompletionAlert = true } } 
-            } message: { Text("\(isRestoringManual ? "手動":"自動")保存日時: \(backupDateString)\nデータを上書きしますか？") }
+            } message: { Text("\(isRestoringManual ? "手動":"自動")保存日時: \(backupDateString)") }
             .alert("外部読込", isPresented: $isShowingImportConfirm) {
                 Button("キャンセル", role: .cancel) { pendingImportData = nil }
                 Button("復元", role: .destructive) { if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true }; pendingImportData = nil }
-            } message: { if let d = pendingImportData { Text("保存日時: \(d.2)\nデータを上書きしますか？") } }
+            } message: { if let d = pendingImportData { Text("保存日時: \(d.2)") } }
             .alert("保存", isPresented: $isShowingSaveConfirm) { Button("保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }; Button("キャンセル", role: .cancel) {} }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK"){} } message: { Text(completionMessage) }
             .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { r in if case .success(let u) = r { if u.startAccessingSecurityScopedResource() { handleImport(from: u); u.stopAccessingSecurityScopedResource() } } }
         } 
     }
 
-    // --- ロジック ---
     func handleImport(from url: URL) {
         guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dateStr = json["date"] as? String else { return }
         let dec = JSONDecoder()
@@ -164,7 +181,6 @@ struct ContentView: View {
             self.pendingImportData = (t, a, dateStr); self.isShowingImportConfirm = true
         }
     }
-    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank)]; recalculateBalances(); completionMessage = "リセット完了"; isShowingCompletionAlert = true }
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
@@ -200,10 +216,15 @@ struct ContentView: View {
         tabAppearance.backgroundColor = bgColor
         UITabBar.appearance().standardAppearance = tabAppearance
         UITabBar.appearance().scrollEdgeAppearance = tabAppearance
-        
-        // 全画面のレイアウトを強制更新してヘッダー色を即反映させる
+
+        // 全ウィンドウを強制的に再描画させる
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            windowScene.windows.forEach { $0.rootViewController?.view.setNeedsLayout(); $0.rootViewController?.view.layoutIfNeeded() }
+            windowScene.windows.forEach { window in
+                window.subviews.forEach { view in
+                    view.removeFromSuperview()
+                    window.addSubview(view)
+                }
+            }
         }
     }
 }
