@@ -11,7 +11,7 @@ struct ContentView: View {
     
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
-    @State private var isShowingDeleteAlert = false // 復元：全データリセット用
+    @State private var isShowingDeleteAlert = false
     @State private var isShowingSwipeDeleteAlert = false
     @State private var transactionToDelete: Transaction?
     @State private var isShowingAccountCreator = false
@@ -106,14 +106,24 @@ struct ContentView: View {
             }
             .navigationTitle("設定")
             .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
-                Button("キャンセル", role: .cancel) { }; Button("上書き保存", role: .none) { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }
-            }
+                Button("キャンセル", role: .cancel) { }
+                Button("上書き保存", role: .none) { 
+                    BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
+                    completionMessage = "手動バックアップの保存が完了しました。"; isShowingCompletionAlert = true 
+                }
+            } message: { Text("前回の手動保存日時: \(backupDateString)\n現在のデータでお財布設定と投稿を上書きしますか？") }
             .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) {
-                Button("キャンセル", role: .cancel) { }; Button("復元する", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances() } }
-            }
+                Button("キャンセル", role: .cancel) { }
+                Button("復元する", role: .destructive) { 
+                    if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { 
+                        transactions = t; accounts = a; recalculateBalances() 
+                        completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"; isShowingCompletionAlert = true
+                    } 
+                }
+            } message: { Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？") }
             .alert("リセット", isPresented: $isShowingDeleteAlert) {
-                Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "リセット完了"; isShowingCompletionAlert = true }
-            }
+                Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "全てのデータを初期状態にリセットしました。"; isShowingCompletionAlert = true }
+            } message: { Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。") }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK") { } } message: { Text(completionMessage) }
         }.tabItem { Label("設定", systemImage: "gearshape") }
     }
