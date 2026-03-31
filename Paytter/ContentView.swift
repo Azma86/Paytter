@@ -40,10 +40,10 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            homeTab.tabItem { tabLabel("ホーム", systemImage: "house") }
-            calendarTab.tabItem { tabLabel("カレンダー", systemImage: "calendar") }
-            walletTab.tabItem { tabLabel("お財布", systemImage: "wallet.pass") }
-            settingTab.tabItem { tabLabel("設定", systemImage: "gearshape") }
+            homeTab.tabItem { tabLabel("ホーム", icon: "house") }
+            calendarTab.tabItem { tabLabel("カレンダー", icon: "calendar") }
+            walletTab.tabItem { tabLabel("お財布", icon: "wallet.pass") }
+            settingTab.tabItem { tabLabel("設定", icon: "gearshape") }
         }
         .accentColor(Color(hex: themeTabAccent))
         .onAppear { recalculateBalances(); updateAppearance() }
@@ -56,9 +56,8 @@ struct ContentView: View {
         }
     }
 
-    // タブのラベル（非選択色を安定させるため）
-    func tabLabel(_ title: String, systemImage: String) -> some View {
-        VStack { Image(systemImage: systemImage); Text(title) }
+    func tabLabel(_ title: String, icon: String) -> some View {
+        VStack { Image(systemName: icon); Text(title) }
     }
 
     private var homeTab: some View {
@@ -138,7 +137,9 @@ struct ContentView: View {
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
-            .alert("削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } } } 
+            .alert("お財布を削除しますか？", isPresented: $isShowingAccountDeleteAlert) {
+                Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
+            } message: { Text("このお財布に関連付けられた投稿の金額計算ができなくなる可能性があります。") }
         } 
     }
 
@@ -234,7 +235,6 @@ struct ThemeSettingView: View {
     @AppStorage("theme_tabUnselected") var themeTabUnselected: String = "#FF8E8E93"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     
-    // 現在適用中のプリセット基準値を保持
     @AppStorage("theme_base_main") var baseMain: String = "#FF007AFF"
     @AppStorage("theme_base_inc") var baseInc: String = "#FF19B219"
     @AppStorage("theme_base_exp") var baseExp: String = "#FFFF3B30"
@@ -313,7 +313,6 @@ struct ThemeSettingView: View {
             themeMain = p.main; themeIncome = p.inc; themeExpense = p.exp; themeHoliday = p.hol
             themeBG = p.bg; themeBarBG = p.barBG; themeBarText = p.barTxt; themeTabAccent = p.tab
             themeTabUnselected = p.unselected; themeBodyText = p.body
-            // 基準値を更新
             baseMain = p.main; baseInc = p.inc; baseExp = p.exp; baseHol = p.hol
             baseBG = p.bg; baseBarBG = p.barBG; baseBarText = p.barTxt; baseTab = p.tab
             baseUnselected = p.unselected; baseBody = p.body
@@ -325,7 +324,6 @@ struct ThemeSettingView: View {
             ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() }))
                 .foregroundColor(Color(hex: themeBodyText))
             Spacer()
-            // プリセットの基準値と異なる場合のみ「戻す」ボタンを表示
             if hex.wrappedValue != base {
                 Button(action: { hex.wrappedValue = base }) { 
                     Image(systemName: "arrow.counterclockwise.circle.fill")
