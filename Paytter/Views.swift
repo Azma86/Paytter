@@ -39,8 +39,7 @@ struct HighlightedText: View {
 // --- 投稿画面 ---
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool) -> Void
-    var transactions: [Transaction]
-    var accounts: [Account]
+    var transactions: [Transaction]; var accounts: [Account]
     @State private var suggestions: [String] = []
     
     var body: some View {
@@ -58,23 +57,18 @@ struct PostView: View {
                         if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                     }
                 }.padding()
-                
                 if !suggestions.isEmpty {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(suggestions, id: \.self) { suggestion in
                                 Button(action: { applySuggestion(suggestion) }) {
                                     VStack(alignment: .leading) {
-                                        Text(suggestion).font(.body).foregroundColor(.primary).padding(.vertical, 12).padding(.horizontal, 20)
-                                        Divider()
+                                        Text(suggestion).font(.body).foregroundColor(.primary).padding(.vertical, 12).padding(.horizontal, 20); Divider()
                                     }
                                 }
                             }
                         }
-                    }
-                    .frame(maxHeight: 200)
-                    .background(Color(.systemBackground))
-                    .transition(.move(edge: .bottom))
+                    }.frame(maxHeight: 200).background(Color(.systemBackground)).transition(.move(edge: .bottom))
                 }
                 Spacer()
             }
@@ -84,43 +78,34 @@ struct PostView: View {
             })
         }
     }
-    
     func updateSuggestionsForCursor() {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
         let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""
-        let prefixText = String(text.prefix(cursorLoc))
-        let currentWord = prefixText.components(separatedBy: .whitespacesAndNewlines).last ?? ""
+        let prefixText = String(text.prefix(cursorLoc)); let currentWord = prefixText.components(separatedBy: .whitespacesAndNewlines).last ?? ""
         if currentWord == "#" { suggestions = Array(Set(transactions.flatMap { $0.tags })).sorted() }
         else if currentWord.hasPrefix("#") { suggestions = Array(Set(transactions.flatMap { $0.tags }.filter { $0.hasPrefix(currentWord) && $0 != currentWord })).sorted() }
         else if currentWord == "@" { suggestions = accounts.map { "@" + $0.name }.sorted() }
         else if currentWord.hasPrefix("@") { suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(currentWord) && $0 != currentWord }.sorted() }
         else { suggestions = [] }
     }
-    
     func applySuggestion(_ suggestion: String) {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
         let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""
-        let prefixText = String(text.prefix(cursorLoc))
-        let words = prefixText.components(separatedBy: .whitespacesAndNewlines)
+        let prefixText = String(text.prefix(cursorLoc)); let words = prefixText.components(separatedBy: .whitespacesAndNewlines)
         if let lastWord = words.last {
-            let rangeStart = cursorLoc - lastWord.count
-            let startIdx = text.index(text.startIndex, offsetBy: rangeStart)
-            let endIdx = text.index(text.startIndex, offsetBy: cursorLoc)
+            let rangeStart = cursorLoc - lastWord.count; let startIdx = text.index(text.startIndex, offsetBy: rangeStart); let endIdx = text.index(text.startIndex, offsetBy: cursorLoc)
             inputText = text.replacingCharacters(in: startIdx..<endIdx, with: suggestion + " ")
             DispatchQueue.main.async { tv.selectedRange = NSRange(location: rangeStart + suggestion.count + 1, length: 0); suggestions = [] }
         }
     }
-    
     func insertAtCursor(_ sym: String) {
         if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
             let sel = tv.selectedRange; let cur = tv.text ?? ""
             let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
             let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
             let ins = prefix + sym
-            if let ran = Range(sel, in: cur) {
-                inputText = cur.replacingCharacters(in: ran, with: ins)
-                DispatchQueue.main.async { tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0) }
-            }
+            if let ran = Range(sel, in: cur) { inputText = cur.replacingCharacters(in: ran, with: ins)
+                DispatchQueue.main.async { tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0) } }
         }
     }
 }
@@ -158,12 +143,10 @@ struct TransactionDetailView: View {
         }
     }
     func deleteThis() { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions.remove(at: idx); dismiss() } }
-    
     func updateThis(newInc: Bool) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = parseAmount(from: editLineText); let nSrc = parseSourceName(from: editLineText)
             transactions[idx] = Transaction(id: item.id, amount: nAmt, date: item.date, note: editLineText, source: nSrc, isIncome: newInc)
-            // ここで親の transactions が更新されるため、ContentView側の onChange が走り、再計算される
         }
     }
     func parseAmount(from text: String) -> Int {
@@ -177,7 +160,7 @@ struct TransactionDetailView: View {
     }
 }
 
-// --- お財布追加・編集・共通 ---
+// --- お財布設定 ---
 struct AccountCreateView: View {
     @Binding var accounts: [Account]; @Binding var transactions: [Transaction]; @Environment(\.dismiss) var dismiss
     @State private var name = ""; @State private var initial = ""; @State private var selectedType: AccountType = .wallet
@@ -251,29 +234,31 @@ struct WalletAnalysisView: View {
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false
+    @State private var lastAmount: Int = 0 // 前回の値を保持して変化を検知
     
     var body: some View {
         VStack {
             Text(title).font(.caption).foregroundColor(.secondary)
             ZStack {
                 Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color)
-                
                 if diff != 0 {
                     Text(diff > 0 ? "+\(diff)" : "\(diff)")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .foregroundColor(diff > 0 ? .green : .red)
-                        .offset(y: showDiff ? -20 : 0)
+                        .offset(y: showDiff ? -15 : 0)
                         .opacity(showDiff ? 0 : 1)
                 }
             }
         }
         .frame(maxWidth: .infinity)
-        .onChange(of: diff) { _ in
-            if diff != 0 {
+        .onChange(of: amount) { newValue in
+            if newValue != lastAmount {
                 showDiff = false
                 withAnimation(.easeOut(duration: 1.5)) { showDiff = true }
+                lastAmount = newValue
             }
         }
+        .onAppear { lastAmount = amount }
     }
 }
 
@@ -282,11 +267,8 @@ struct CustomTextEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView(); textView.font = .preferredFont(forTextStyle: .body); textView.backgroundColor = .clear; textView.delegate = context.coordinator
         let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
-        let hashBtn = UIBarButtonItem(title: "#", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertHash))
-        let yenBtn = UIBarButtonItem(title: "¥", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertYen))
-        let atBtn = UIBarButtonItem(title: "@", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertAt))
-        let doneBtn = UIBarButtonItem(title: "完了", style: .done, target: context.coordinator, action: #selector(context.coordinator.dismissKeyboard))
-        toolbar.items = [hashBtn, yenBtn, atBtn, UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil), doneBtn]; textView.inputAccessoryView = toolbar; return textView
+        let items = [UIBarButtonItem(title: "#", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertHash)), UIBarButtonItem(title: "¥", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertYen)), UIBarButtonItem(title: "@", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertAt)), UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil), UIBarButtonItem(title: "完了", style: .done, target: context.coordinator, action: #selector(context.coordinator.dismissKeyboard))]
+        toolbar.items = items; textView.inputAccessoryView = toolbar; return textView
     }
     func updateUIView(_ uiView: UITextView, context: Context) { if uiView.text != text { uiView.text = text } }
     func makeCoordinator() -> Coordinator { Coordinator(self) }
