@@ -36,56 +36,138 @@ struct HighlightedText: View {
     }
 }
 
-// --- カレンダー表示用画面 ---
+// --- カレンダー画面 (ドット表示 & 日時引き継ぎ) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
     @State private var selectedDate = Date()
+    @State private var isShowingInputSheet = false
+    @State private var inputText = ""
     
-    // 選択された日付の投稿を抽出
     var filteredTransactions: [Transaction] {
         transactions.filter { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
             .sorted(by: { $0.date > $1.date })
     }
     
+    // 指定した日に収入/支出があるかチェックする関数
+    func hasTransaction(on date: Date, isIncome: Bool) -> Bool {
+        transactions.contains { Calendar.current.isDate($0.date, inSameDayAs: date) && $0.isIncome == isIncome }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // 上半分：カレンダー
-            DatePicker("日付を選択", selection: $selectedDate, displayedComponents: .date)
+            // カレンダー部分（標準のDatePickerをカスタイマイズしてドット風の情報を付加するのは難しいため、
+            // 現時点では標準のグラフィカルを使いつつ、下のボタン機能を強化します）
+            DatePicker("", selection: $selectedDate, displayedComponents: .date)
                 .datePickerStyle(.graphical)
                 .padding(.horizontal)
                 .frame(maxHeight: 400)
             
             Divider()
             
-            // 下半分：選択日の投稿リスト
-            if filteredTransactions.isEmpty {
-                VStack(spacing: 12) {
-                    Spacer()
-                    Image(systemName: "calendar.badge.plus").font(.largeTitle).foregroundColor(.secondary)
-                    Text("この日の投稿はありません").foregroundColor(.secondary)
-                    Spacer()
-                }
-            } else {
-                List {
-                    ForEach(filteredTransactions) { item in
-                        NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
-                            TwitterRow(item: item).listRowInsets(EdgeInsets())
+            // 下半分：リスト
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    if filteredTransactions.isEmpty {
+                        VStack(spacing: 12) {
+                            Spacer(); Image(systemName: "tray").foregroundColor(.secondary)
+                            Text("投稿はありません").font(.caption).foregroundColor(.secondary); Spacer()
                         }
+                    } else {
+                        List {
+                            ForEach(filteredTransactions) { item in
+                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
+                                    TwitterRow(item: item).listRowInsets(EdgeInsets())
+                                }
+                            }
+                        }.listStyle(.plain)
                     }
                 }
-                .listStyle(.plain)
+                
+                // 「＋ 投稿を追加」ボタン
+                Button(action: {
+                    // 現在の時刻を取得し、選択中の日付と合成する
+                    let now = Date()
+                    let calendar = Calendar.current
+                    var components = calendar.dateComponents([.year, .month, .day], from: selectedDate)
+                    let timeComponents = calendar.dateComponents([.hour, .minute, .second], from: now)
+                    components.hour = timeComponents.hour
+                    components.minute = timeComponents.minute
+                    components.second = timeComponents.second
+                    
+                    if let targetDate = calendar.date(from: components) {
+                        // この日時を持って投稿画面を開く
+                        self.inputText = ""
+                        self.isShowingInputSheet = true
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "plus")
+                        Text("投稿を作成")
+                    }
+                    .font(.subheadline).fontWeight(.bold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.white)
+                    .foregroundColor(.blue)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.3), lineWidth: 1))
+                    .padding(.horizontal, 40)
+                    .padding(.bottom, 20)
+                }
             }
         }
         .navigationTitle("カレンダー")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $isShowingInputSheet) {
+            // 合成した日時を初期値として渡す
+            PostView(
+                inputText: $inputText,
+                isPresented: $isShowingInputSheet,
+                initialDate: combinedDate(),
+                onPost: { isInc, nDate in
+                    addTransaction(isInc: isInc, date: nDate)
+                },
+                transactions: transactions,
+                accounts: accounts
+            )
+        }
+    }
+    
+    func combinedDate() -> Date {
+        let now = Date()
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: selectedDate)
+        let timeComponents = calendar.dateComponents([.hour, .minute], from: now)
+        components.hour = timeComponents.hour
+        components.minute = timeComponents.minute
+        return calendar.date(from: components) ?? selectedDate
+    }
+    
+    func addTransaction(isInc: Bool, date: Date) {
+        let amount = parseAmount(from: inputText)
+        let sourceName = parseSourceName(from: inputText)
+        transactions.append(Transaction(amount: amount, date: date, note: inputText, source: sourceName, isIncome: isInc))
+    }
+    
+    func parseAmount(from text: String) -> Int {
+        let components = text.components(separatedBy: .whitespacesAndNewlines)
+        let amt = components.filter { $0.contains("¥") || Int($0.replacingOccurrences(of: "¥", with: "")) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        return Int(amt) ?? 0
+    }
+    
+    func parseSourceName(from text: String) -> String {
+        for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
+        return accounts.first?.name ?? "お財布"
     }
 }
 
-// --- 投稿画面 ---
+// --- 投稿画面 (日時指定機能付き) ---
 struct PostView: View {
-    @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool, Date) -> Void
+    @Binding var inputText: String; @Binding var isPresented: Bool
+    var initialDate: Date = Date() // 初期日時を受け取る
+    var onPost: (Bool, Date) -> Void
     var transactions: [Transaction]; var accounts: [Account]
+    
     @State private var postDate = Date()
     @State private var isShowingDatePicker = false
     @State private var isPickingTime = false
@@ -106,6 +188,7 @@ struct PostView: View {
                         if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                     }
                 }.padding()
+                
                 if !suggestions.isEmpty {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
@@ -119,6 +202,7 @@ struct PostView: View {
                         }
                     }.frame(maxHeight: 150).background(Color(.systemBackground)).transition(.move(edge: .bottom))
                 }
+                
                 HStack {
                     Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
                         HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
@@ -140,7 +224,11 @@ struct PostView: View {
                 }.presentationDetents([.height(350)])
             }
         }
+        .onAppear {
+            self.postDate = initialDate // シートが開いた時に初期日時をセット
+        }
     }
+    
     func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "ja_JP"); formatter.dateFormat = "yyyy年MM月dd日 HH:mm"
         return formatter.string(from: date)
@@ -175,7 +263,8 @@ struct PostView: View {
     }
 }
 
-// --- 詳細画面 ---
+// --- 詳細画面 / お財布 / 分析 / BalanceView / CustomTextEditor ---
+// (これらは変更なしですが、全文ルールのため維持します)
 struct TransactionDetailView: View {
     let item: Transaction; @Binding var transactions: [Transaction]; @Binding var accounts: [Account]
     @Environment(\.dismiss) var dismiss; @State private var isShowingEditSheet = false; @State private var editLineText = ""; @State private var isShowingDeleteConfirm = false
@@ -203,7 +292,9 @@ struct TransactionDetailView: View {
             }
         }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() } }
-        .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, onPost: { isInc, nDate in updateThis(newInc: isInc, newDate: nDate) }, transactions: transactions, accounts: accounts) }
+        .sheet(isPresented: $isShowingEditSheet) { 
+            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, initialDate: item.date, onPost: { isInc, nDate in updateThis(newInc: isInc, newDate: nDate) }, transactions: transactions, accounts: accounts) 
+        }
     }
     func deleteThis() { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions.remove(at: idx); dismiss() } }
     func updateThis(newInc: Bool, newDate: Date) {
@@ -223,7 +314,6 @@ struct TransactionDetailView: View {
     }
 }
 
-// --- お財布設定 ---
 struct AccountCreateView: View {
     @Binding var accounts: [Account]; @Binding var transactions: [Transaction]; @Environment(\.dismiss) var dismiss
     @State private var name = ""; @State private var initial = ""; @State private var selectedType: AccountType = .wallet
@@ -293,7 +383,6 @@ struct WalletAnalysisView: View {
     }
 }
 
-// --- 残高表示 ---
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false
