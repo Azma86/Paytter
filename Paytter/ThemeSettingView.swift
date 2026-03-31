@@ -48,15 +48,11 @@ struct ThemeSettingView: View {
                         colorRow(title: "支出色", hex: $themeExpense)
                         colorRow(title: "祝日色", hex: $themeHoliday)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                }
-                .scrollContentBackground(.hidden)
-                .listStyle(.insetGrouped)
+                }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
             }
         }
         .navigationTitle("テーマ設定")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
     }
 
     func presetBtn(_ n: String, _ m: String, _ bg: String, _ bb: String, _ bt: String, _ body: String, _ sub: String, _ dark: Bool) -> some View {
