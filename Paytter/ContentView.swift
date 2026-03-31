@@ -11,7 +11,6 @@ struct ContentView: View {
     
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
-    @State private var isShowingDeleteAlert = false
     @State private var isShowingSwipeDeleteAlert = false
     @State private var transactionToDelete: Transaction?
     @State private var isShowingAccountCreator = false
@@ -98,7 +97,7 @@ struct ContentView: View {
             }.tabItem { Label("設定", systemImage: "gearshape") }
         }
         .onAppear { recalculateBalances() }
-        .onChange(of: transactions) { _ in recalculateBalances() } // .countではなく配列そのものを監視
+        .onChange(of: transactions) { _ in recalculateBalances() }
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, onPost: { isInc in addTransaction(isInc: isInc) }, transactions: transactions, accounts: accounts) 
         }
@@ -115,8 +114,6 @@ struct ContentView: View {
         for i in 0..<accounts.count {
             var current = 0
             for tx in transactions where tx.source == accounts[i].name { current += (tx.isIncome ? tx.amount : -tx.amount) }
-            
-            // 差分を計算してエフェクト用変数に入れる
             let diff = current - accounts[i].balance
             accounts[i].diffAmount = diff
             accounts[i].balance = current
