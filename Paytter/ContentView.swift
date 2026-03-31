@@ -10,8 +10,15 @@ struct ContentView: View {
     ]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     
+    // テーマカラー（追加分含む）
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF" // 背景色
+    @AppStorage("theme_barText") var themeBarText: String = "#FF000000" // バーの文字色
+    @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF" // タブの選択色
+
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
     @State private var isShowingSwipeDeleteAlert = false
@@ -35,8 +42,13 @@ struct ContentView: View {
             walletTab.tabItem { Label("お財布", systemImage: "wallet.pass") }
             settingTab.tabItem { Label("設定", systemImage: "gearshape") }
         }
-        .onAppear { recalculateBalances() }
+        .accentColor(Color(hex: themeTabAccent)) // フッターメニューの選択色
+        .onAppear { 
+            recalculateBalances()
+            updateNavigationBarAppearance()
+        }
         .onChange(of: transactions) { _ in recalculateBalances() }
+        .onChange(of: themeBarText) { _ in updateNavigationBarAppearance() }
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
@@ -45,12 +57,14 @@ struct ContentView: View {
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
+                Color(hex: themeBG).ignoresSafeArea() // 背景色
+                
                 VStack(spacing: 0) {
                     HStack(spacing: 15) {
                         ForEach(accounts.filter { $0.isVisible }) { acc in
-                            BalanceView(title: acc.name, amount: acc.balance, color: .primary, diff: acc.diffAmount)
+                            BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBarText), diff: acc.diffAmount)
                         }
-                    }.padding().background(Color(.systemGray6))
+                    }.padding().background(Color(.systemGray6).opacity(0.5))
                     Divider()
                     List {
                         ForEach(transactions.sorted(by: { $0.date > $1.date })) { item in
@@ -59,11 +73,14 @@ struct ContentView: View {
                                 TwitterRow(item: item)
                             }
                             .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color(hex: themeBG)) // 背景色
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
                             }
                         }
-                    }.listStyle(.plain)
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden) // 背景色を有効にするため
                 }
                 Button(action: { inputText = ""; isShowingInputSheet = true }) {
                     Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle())
@@ -81,18 +98,23 @@ struct ContentView: View {
 
     private var walletTab: some View { 
         NavigationView { 
-            List { 
-                Section(header: Text("お財布の管理")) { 
-                    ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in 
-                        NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { 
-                            HStack { Image(systemName: acc.type.icon).foregroundColor(.secondary); Text(acc.name); Spacer(); Text("¥\(acc.balance)").foregroundColor(.secondary) } 
-                        }.swipeActions(edge: .trailing, allowsFullSwipe: false) { 
-                            Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) 
-                        } 
-                    }
-                    Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") } 
+            ZStack {
+                Color(hex: themeBG).ignoresSafeArea()
+                List { 
+                    Section(header: Text("お財布の管理")) { 
+                        ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in 
+                            NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { 
+                                HStack { Image(systemName: acc.type.icon).foregroundColor(.secondary); Text(acc.name); Spacer(); Text("¥\(acc.balance)").foregroundColor(.secondary) } 
+                            }.swipeActions(edge: .trailing, allowsFullSwipe: false) { 
+                                Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) 
+                            } 
+                        }
+                        Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") } 
+                    }.listRowBackground(Color(hex: themeBG))
+                    Section(header: Text("分析")) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis") } }.listRowBackground(Color(hex: themeBG))
                 }
-                Section(header: Text("分析")) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis") } } 
+                .scrollContentBackground(.hidden)
+                .listStyle(.insetGrouped)
             }
             .navigationTitle("お財布")
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
@@ -105,19 +127,24 @@ struct ContentView: View {
 
     private var settingTab: some View {
         NavigationView {
-            List {
-                Section(header: Text("カスタマイズ")) {
-                    NavigationLink(destination: ThemeSettingView()) {
-                        Label("テーマ設定", systemImage: "paintpalette")
-                    }
+            ZStack {
+                Color(hex: themeBG).ignoresSafeArea()
+                List {
+                    Section(header: Text("カスタマイズ")) {
+                        NavigationLink(destination: ThemeSettingView()) {
+                            Label("テーマ設定", systemImage: "paintpalette")
+                        }
+                    }.listRowBackground(Color(hex: themeBG))
+                    Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }.listRowBackground(Color(hex: themeBG))
+                    Section(header: Text("バックアップ管理")) {
+                        Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }
+                        Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }
+                        Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }
+                    }.listRowBackground(Color(hex: themeBG))
+                    Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } }.listRowBackground(Color(hex: themeBG))
                 }
-                Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }
-                Section(header: Text("バックアップ管理")) {
-                    Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }
-                    Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }
-                    Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }
-                }
-                Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } }
+                .scrollContentBackground(.hidden)
+                .listStyle(.insetGrouped)
             }
             .navigationTitle("設定")
             .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
@@ -146,6 +173,13 @@ struct ContentView: View {
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
+    
+    // ナビゲーションバーの文字色を更新する
+    func updateNavigationBarAppearance() {
+        let color = UIColor(Color(hex: themeBarText))
+        UINavigationBar.appearance().titleTextAttributes = [.foregroundColor: color]
+        UINavigationBar.appearance().largeTitleTextAttributes = [.foregroundColor: color]
+    }
 }
 
 // --- テーマ設定画面 ---
@@ -154,15 +188,29 @@ struct ThemeSettingView: View {
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
+    @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
     
     var body: some View {
-        List {
-            Section(header: Text("カラー設定")) {
-                colorRow(title: "メインカラー", hex: $themeMain, defaultHex: "#FF007AFF")
-                colorRow(title: "収入の色", hex: $themeIncome, defaultHex: "#FF19B219")
-                colorRow(title: "支出の色", hex: $themeExpense, defaultHex: "#FFFF3B30")
-                colorRow(title: "祝日の色", hex: $themeHoliday, defaultHex: "#FFFF3B30")
+        ZStack {
+            Color(hex: themeBG).ignoresSafeArea()
+            List {
+                Section(header: Text("全体")) {
+                    colorRow(title: "背景色", hex: $themeBG, defaultHex: "#FFFFFFFF")
+                    colorRow(title: "メニュー/バーの文字色", hex: $themeBarText, defaultHex: "#FF000000")
+                    colorRow(title: "フッターの選択色", hex: $themeTabAccent, defaultHex: "#FF007AFF")
+                }.listRowBackground(Color(hex: themeBG))
+                
+                Section(header: Text("パーツ")) {
+                    colorRow(title: "メイン（ボタン等）", hex: $themeMain, defaultHex: "#FF007AFF")
+                    colorRow(title: "収入の色", hex: $themeIncome, defaultHex: "#FF19B219")
+                    colorRow(title: "支出の色", hex: $themeExpense, defaultHex: "#FFFF3B30")
+                    colorRow(title: "祝日の色", hex: $themeHoliday, defaultHex: "#FFFF3B30")
+                }.listRowBackground(Color(hex: themeBG))
             }
+            .scrollContentBackground(.hidden)
+            .listStyle(.insetGrouped)
         }
         .navigationTitle("テーマ設定")
     }
