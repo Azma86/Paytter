@@ -18,10 +18,13 @@ struct CalendarView: View {
     @State private var isShowingInputSheet = false
     @State private var inputText = ""
     @State private var isShowingMonthPicker = false 
-    @State private var tempPickerDate = Date()
     @State private var dragOffset: CGFloat = 0
     @State private var isShowingDeleteAlert = false
     @State private var transactionToDelete: Transaction?
+
+    // ドラムロール用のテンポラリ変数
+    @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
+    @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
 
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
@@ -38,7 +41,11 @@ struct CalendarView: View {
                     HStack {
                         Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left").foregroundColor(Color(hex: themeMain)) }
                         Spacer()
-                        Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
+                        Button(action: { 
+                            pickerYear = calendar.component(.year, from: currentMonth)
+                            pickerMonth = calendar.component(.month, from: currentMonth)
+                            isShowingMonthPicker = true 
+                        }) {
                             HStack(spacing: 4) {
                                 Text(monthYearString(from: currentMonth)).font(.headline).foregroundColor(Color(hex: themeBarText))
                                 Image(systemName: "chevron.down").font(.caption).foregroundColor(Color(hex: themeBarText).opacity(0.6))
@@ -105,18 +112,32 @@ struct CalendarView: View {
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) {
             Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) { withAnimation(.easeOut(duration: 0.2)) { transactions.remove(at: idx) } } }
         } message: { if let t = transactionToDelete { Text(t.cleanNote).foregroundColor(Color(hex: themeBodyText)) } }
+        // 【修正】年月のみのドラムロール
         .sheet(isPresented: $isShowingMonthPicker) {
             NavigationView {
-                VStack {
-                    // 【修正】「年月」のみのドラムロール。DatePickerのスタイル制限のため、コンポーネントを配置
-                    DatePicker("年月を選択", selection: $tempPickerDate, displayedComponents: [.date])
-                        .datePickerStyle(.wheel)
-                        .labelsHidden()
-                        .environment(\.locale, Locale(identifier: "ja_JP"))
+                HStack(spacing: 0) {
+                    Picker("年", selection: $pickerYear) {
+                        ForEach(2000...2100, id: \.self) { year in
+                            Text("\(String(year))年").tag(year)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(maxWidth: .infinity)
+                    
+                    Picker("月", selection: $pickerMonth) {
+                        ForEach(1...12, id: \.self) { month in
+                            Text("\(month)月").tag(month)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(maxWidth: .infinity)
                 }
                 .navigationTitle("年月を選択")
+                .navigationBarTitleDisplayMode(.inline)
                 .navigationBarItems(leading: Button("キャンセル") { isShowingMonthPicker = false }.foregroundColor(Color(hex: themeMain)), trailing: Button("移動") {
-                    withAnimation(.easeInOut(duration: 0.4)) { currentMonth = tempPickerDate }
+                    if let newDate = calendar.date(from: DateComponents(year: pickerYear, month: pickerMonth)) {
+                        withAnimation(.easeInOut(duration: 0.4)) { currentMonth = newDate }
+                    }
                     isShowingMonthPicker = false
                 }.foregroundColor(Color(hex: themeMain)))
             }.presentationDetents([.height(300)])
