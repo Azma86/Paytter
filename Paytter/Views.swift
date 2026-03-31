@@ -36,10 +36,13 @@ struct HighlightedText: View {
     }
 }
 
-// --- 投稿画面 ---
+// --- 投稿画面 (日時指定機能付き) ---
 struct PostView: View {
-    @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool) -> Void
+    @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool, Date) -> Void
     var transactions: [Transaction]; var accounts: [Account]
+    
+    @State private var postDate = Date()
+    @State private var isShowingDatePicker = false
     @State private var suggestions: [String] = []
     
     var body: some View {
@@ -57,6 +60,7 @@ struct PostView: View {
                         if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                     }
                 }.padding()
+                
                 if !suggestions.isEmpty {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
@@ -68,17 +72,41 @@ struct PostView: View {
                                 }
                             }
                         }
-                    }.frame(maxHeight: 200).background(Color(.systemBackground)).transition(.move(edge: .bottom))
+                    }.frame(maxHeight: 150).background(Color(.systemBackground)).transition(.move(edge: .bottom))
                 }
+                
+                HStack {
+                    Button(action: { isShowingDatePicker = true }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar.badge.clock")
+                            Text(formatDate(postDate))
+                        }
+                        .font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue.opacity(0.1)).foregroundColor(.blue).cornerRadius(12)
+                    }
+                    Spacer()
+                }.padding(.horizontal)
+                
                 Spacer()
             }
             .navigationBarItems(leading: Button("キャンセル") { isPresented = false }, trailing: HStack(spacing: 12) {
-                Button("支出") { onPost(false); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.8)).foregroundColor(.white).cornerRadius(15)
-                Button("収入") { onPost(true); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue).foregroundColor(.white).cornerRadius(15)
+                Button("支出") { onPost(false, postDate); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.8)).foregroundColor(.white).cornerRadius(15)
+                Button("収入") { onPost(true, postDate); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue).foregroundColor(.white).cornerRadius(15)
             })
+            .sheet(isPresented: $isShowingDatePicker) {
+                NavigationView {
+                    DatePicker("日時を選択", selection: $postDate)
+                        .datePickerStyle(.wheel).labelsHidden().navigationTitle("日時の指定")
+                        .navigationBarItems(trailing: Button("完了") { isShowingDatePicker = false })
+                }.presentationDetents([.height(300)])
+            }
         }
     }
     
+    func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "ja_JP"); formatter.dateFormat = "yyyy年MM月dd日 HH:mm"
+        return formatter.string(from: date)
+    }
+
     func updateSuggestionsForCursor() {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
         let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""
@@ -105,24 +133,9 @@ struct PostView: View {
         if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
             let sel = tv.selectedRange; let cur = tv.text ?? ""
             let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
-            
-            // 半角スペースの挿入条件
             let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
-            let ins = prefix + sym
-            
-            // テキスト挿入
-            if let ran = Range(sel, in: cur) {
-                inputText = cur.replacingCharacters(in: ran, with: ins)
-                
-                // メインスレッドでフォーカスとキーボードタイプを確定
-                DispatchQueue.main.async {
-                    tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0)
-                    
-                    // キーボードタイプの切り替え（¥ボタンのみ数値・記号へ）
-                    tv.keyboardType = (sym == "¥") ? .numbersAndPunctuation : .default
-                    tv.reloadInputViews()
-                }
-            }
+            tv.becomeFirstResponder()
+            tv.insertText(prefix + sym)
         }
     }
 }
@@ -156,14 +169,15 @@ struct TransactionDetailView: View {
         }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteThis() } }
         .sheet(isPresented: $isShowingEditSheet) { 
-            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, onPost: { isInc in updateThis(newInc: isInc) }, transactions: transactions, accounts: accounts) 
+            // ここでのPostView呼び出しも引数を2つ（収支と日付）にする
+            PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, onPost: { isInc, nDate in updateThis(newInc: isInc, newDate: nDate) }, transactions: transactions, accounts: accounts) 
         }
     }
     func deleteThis() { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions.remove(at: idx); dismiss() } }
-    func updateThis(newInc: Bool) {
+    func updateThis(newInc: Bool, newDate: Date) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = parseAmount(from: editLineText); let nSrc = parseSourceName(from: editLineText)
-            transactions[idx] = Transaction(id: item.id, amount: nAmt, date: item.date, note: editLineText, source: nSrc, isIncome: newInc)
+            transactions[idx] = Transaction(id: item.id, amount: nAmt, date: newDate, note: editLineText, source: nSrc, isIncome: newInc)
         }
     }
     func parseAmount(from text: String) -> Int {
@@ -247,39 +261,21 @@ struct WalletAnalysisView: View {
     }
 }
 
-// --- 残高表示とエフェクト ---
+// --- 残高表示 ---
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false
     @State private var lastAmount: Int = 0 
-    
     var body: some View {
         VStack {
             Text(title).font(.caption).foregroundColor(.secondary)
             ZStack(alignment: .topTrailing) {
-                Text("¥\(amount)")
-                    .font(.system(.subheadline, design: .monospaced))
-                    .fontWeight(.bold)
-                    .foregroundColor(color)
-                    .padding(.horizontal, 4)
+                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
                 if diff != 0 {
-                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
-                        .foregroundColor(diff > 0 ? .green : .red)
-                        .offset(x: 20, y: showDiff ? -15 : 0)
-                        .opacity(showDiff ? 0 : 1)
+                    Text(diff > 0 ? "+\(diff)" : "\(diff)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? .green : .red).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1)
                 }
             }
-        }
-        .frame(maxWidth: .infinity)
-        .onChange(of: amount) { newValue in
-            if newValue != lastAmount {
-                showDiff = false
-                withAnimation(.easeOut(duration: 1.5)) { showDiff = true }
-                lastAmount = newValue
-            }
-        }
-        .onAppear { lastAmount = amount }
+        }.frame(maxWidth: .infinity).onChange(of: amount) { newValue in if newValue != lastAmount { showDiff = false; withAnimation(.easeOut(duration: 1.5)) { showDiff = true }; lastAmount = newValue } }.onAppear { lastAmount = amount }
     }
 }
 
