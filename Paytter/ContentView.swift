@@ -13,17 +13,14 @@ struct ContentView: View {
     @State private var isShowingInputSheet = false
     @State private var inputText: String = ""
     
-    // 削除用フラグ
     @State private var isShowingSwipeDeleteAlert = false
     @State private var transactionToDelete: Transaction?
     
-    // お財布管理用フラグ
     @State private var isShowingAccountCreator = false
     @State private var isShowingAccountDeleteAlert = false
     @State private var accountToDeleteIndex: IndexSet?
     
-    // 設定画面用フラグ
-    @State private var isShowingResetAlert = false // 全データリセット用
+    @State private var isShowingResetAlert = false 
     @State private var isShowingRestoreConfirm = false
     @State private var isShowingSaveConfirm = false
     @State private var isRestoringManual = false
@@ -69,12 +66,14 @@ struct ContentView: View {
                             }
                             .listRowInsets(EdgeInsets())
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
+                                // role: .destructive を外して、勝手に閉じたり動いたりするのを阻止
+                                Button {
                                     transactionToDelete = item
                                     isShowingSwipeDeleteAlert = true
                                 } label: {
                                     Text("削除")
                                 }
+                                .tint(.red)
                             }
                         }
                     }.listStyle(.plain)
@@ -116,12 +115,13 @@ struct ContentView: View {
                             }
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
+                            Button {
                                 accountToDeleteIndex = IndexSet(integer: index)
                                 isShowingAccountDeleteAlert = true
                             } label: {
                                 Text("削除")
                             }
+                            .tint(.red)
                         }
                     }
                     Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }
@@ -136,7 +136,7 @@ struct ContentView: View {
                 Button("キャンセル", role: .cancel) { accountToDeleteIndex = nil }
                 Button("削除", role: .destructive) {
                     if let offsets = accountToDeleteIndex {
-                        withAnimation { deleteAccount(at: offsets) }
+                        withAnimation(.easeOut(duration: 0.2)) { deleteAccount(at: offsets) }
                     }
                     accountToDeleteIndex = nil
                 }
