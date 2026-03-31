@@ -2,16 +2,6 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
-// --- エクスポートを確実にするためのデータ渡し用ソース ---
-struct BackupData: Transferable {
-    let data: Data
-    static var transferRepresentation: some TransferRepresentation {
-        DataRepresentation(exportedContentType: .json) { backup in
-            backup.data
-        }
-    }
-}
-
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
     @AppStorage("accounts_v2") var accounts: [Account] = [
@@ -22,10 +12,11 @@ struct ContentView: View {
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
-    // --- テーマ設定データ ---
+    // --- テーマ設定データ（フルセット復活） ---
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
@@ -38,9 +29,6 @@ struct ContentView: View {
     @State private var inputText: String = ""
     @State private var isShowingSwipeDeleteAlert = false
     @State private var transactionToDelete: Transaction?
-    @State private var isShowingAccountDeleteAlert = false
-    @State private var accountToDeleteIndex: IndexSet?
-    
     @State private var isShowingResetAlert = false
     @State private var isShowingRestoreConfirm = false
     @State private var isShowingSaveConfirm = false
@@ -50,6 +38,7 @@ struct ContentView: View {
     @State private var completionMessage = ""
     @State private var isShowingImporter = false
     @State private var pendingImportData: ([Transaction], [Account], String)?
+    @State private var isShowingImportConfirm = false
 
     var body: some View {
         TabView(selection: $selection) {
@@ -60,18 +49,18 @@ struct ContentView: View {
         }
         .accentColor(Color(hex: themeTabAccent))
         .preferredColorScheme(isDarkMode ? .dark : .light)
-        .onAppear { 
-            recalculateBalances()
-            updateAppearance() 
-        }
-        .onChange(of: selection) { _ in updateAppearance() } // タブ切り替え時にヘッダー色を即反映
-        .onChange(of: isDarkMode) { _ in updateAppearance() }
+        .onAppear { recalculateBalances(); updateAppearance() }
+        .onChange(of: transactions) { _ in recalculateBalances() }
+        // ↓ 色が変更された瞬間にヘッダーを更新する
         .onChange(of: themeBarBG) { _ in updateAppearance() }
+        .onChange(of: themeBarText) { _ in updateAppearance() }
+        .onChange(of: isDarkMode) { _ in updateAppearance() }
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
     }
 
+    // --- 各タブの定義 ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -138,10 +127,12 @@ struct ContentView: View {
                         NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { 
-                        Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("手動保存から復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("バックアップを共有") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        // --- インポート機能復活 ---
+                        Button("外部ファイルから読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { 
                         Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } 
@@ -153,18 +144,24 @@ struct ContentView: View {
                 Button("キャンセル", role: .cancel) {}; Button("リセット", role: .destructive) { resetAll() } 
             } message: { Text("全ての投稿とお財布設定を初期化します。") }
             .alert("復元", isPresented: $isShowingRestoreConfirm) { 
-                Button("キャンセル", role: .cancel) {}; Button("復元", role: .destructive) { performRestore() } 
+                Button("キャンセル", role: .cancel) {}; Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元完了"; isShowingCompletionAlert = true } } 
             } message: { Text("\(isRestoringManual ? "手動":"自動")保存日時: \(backupDateString)\nデータを上書きしますか？") }
+            .alert("外部読込", isPresented: $isShowingImportConfirm) {
+                Button("キャンセル", role: .cancel) { pendingImportData = nil }
+                Button("復元", role: .destructive) { if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true }; pendingImportData = nil }
+            } message: { if let d = pendingImportData { Text("保存日時: \(d.2)\nデータを上書きしますか？") } }
             .alert("保存", isPresented: $isShowingSaveConfirm) { Button("保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }; Button("キャンセル", role: .cancel) {} }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK"){} } message: { Text(completionMessage) }
+            .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { r in if case .success(let u) = r { if u.startAccessingSecurityScopedResource() { handleImport(from: u); u.stopAccessingSecurityScopedResource() } } }
         } 
     }
 
     // --- ロジック ---
-    func performRestore() {
-        if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) {
-            transactions = t; accounts = a; recalculateBalances()
-            completionMessage = "復元が完了しました。"; isShowingCompletionAlert = true
+    func handleImport(from url: URL) {
+        guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dateStr = json["date"] as? String else { return }
+        let dec = JSONDecoder()
+        if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!), let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) {
+            self.pendingImportData = (t, a, dateStr); self.isShowingImportConfirm = true
         }
     }
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank)]; recalculateBalances(); completionMessage = "リセット完了"; isShowingCompletionAlert = true }
@@ -172,19 +169,15 @@ struct ContentView: View {
     func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
-    
     func exportBackup() {
         let encoder = JSONEncoder(); encoder.outputFormatting = .prettyPrinted
         let dict: [String: Any] = ["transactions": String(data: (try? encoder.encode(transactions)) ?? Data(), encoding: .utf8) ?? "", "accounts": String(data: (try? encoder.encode(accounts)) ?? Data(), encoding: .utf8) ?? "", "date": BackupManager.getBackupDate(isManual: true)]
         guard let finalData = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) else { return }
-        
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("Paytter_Backup.json")
         try? finalData.write(to: tempURL)
-        
         let av = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController {
             av.popoverPresentationController?.sourceView = rootVC.view
-            av.popoverPresentationController?.sourceRect = CGRect(x: UIScreen.main.bounds.midX, y: UIScreen.main.bounds.midY, width: 0, height: 0)
             rootVC.present(av, animated: true)
         }
     }
@@ -208,9 +201,9 @@ struct ContentView: View {
         UITabBar.appearance().standardAppearance = tabAppearance
         UITabBar.appearance().scrollEdgeAppearance = tabAppearance
         
-        // 即時反映のために全画面を更新
+        // 全画面のレイアウトを強制更新してヘッダー色を即反映させる
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            windowScene.windows.forEach { $0.setNeedsLayout(); $0.layoutIfNeeded() }
+            windowScene.windows.forEach { $0.rootViewController?.view.setNeedsLayout(); $0.rootViewController?.view.layoutIfNeeded() }
         }
     }
 }
