@@ -2,6 +2,34 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
+// --- エクスポートを確実にするための共有ソース管理 ---
+class ActivityItemSource: NSObject, UIActivityItemSource {
+    var fileURL: URL
+    var title: String
+    
+    init(fileURL: URL, title: String) {
+        self.fileURL = fileURL
+        self.title = title
+        super.init()
+    }
+    
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        return fileURL
+    }
+    
+    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+        return fileURL
+    }
+    
+    func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
+        return title
+    }
+    
+    func activityViewController(_ activityViewController: UIActivityViewController, dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String {
+        return UTType.json.identifier
+    }
+}
+
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
     @AppStorage("accounts_v2") var accounts: [Account] = [
@@ -61,6 +89,7 @@ struct ContentView: View {
         }
     }
 
+    // --- メイン各タブの定義 (NavigationView入り) ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -161,8 +190,8 @@ struct ContentView: View {
                         Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
-                        Button("バックアップを共有") { exportBackup() }.foregroundColor(Color(hex: themeMain))
-                        Button("外部から読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
+                        Button("バックアップを外部へ共有") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        Button("外部ファイルから読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { 
                         Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } 
@@ -172,9 +201,9 @@ struct ContentView: View {
             .navigationTitle("設定")
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
-            .alert("保存", isPresented: $isShowingSaveConfirm) { Button("保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }; Button("キャンセル", role: .cancel){} } message: { Text("前回: \(backupDateString)") }
-            .alert("復元", isPresented: $isShowingRestoreConfirm) { Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元完了"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){} } message: { Text("\(isRestoringManual ? "手動":"自動")保存日: \(backupDateString)") }
-            .alert("外部読込", isPresented: $isShowingImportConfirm) { Button("復元", role: .destructive) { if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){ pendingImportData = nil } } message: { if let d = pendingImportData { Text("保存日時: \(d.2)\nデータを上書きしますか？") } }
+            .alert("保存", isPresented: $isShowingSaveConfirm) { Button("保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存しました"; isShowingCompletionAlert = true }; Button("キャンセル", role: .cancel){} } message: { Text("前回: \(backupDateString)") }
+            .alert("復元", isPresented: $isShowingRestoreConfirm) { Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元しました"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){} } message: { Text("\(isRestoringManual ? "手動":"自動")保存日: \(backupDateString)") }
+            .alert("外部読込", isPresented: $isShowingImportConfirm) { Button("復元", role: .destructive) { if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "外部から読み込みました"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){ pendingImportData = nil } } message: { if let d = pendingImportData { Text("バックアップ日時: \(d.2)\nデータを上書きしますか？") } }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK"){} } message: { Text(completionMessage) }
             .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in
                 switch result {
@@ -185,6 +214,7 @@ struct ContentView: View {
         } 
     }
 
+    // --- ロジック関数 ---
     func handleImport(from url: URL) {
         guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -197,6 +227,7 @@ struct ContentView: View {
             self.pendingImportData = (t, a, dateStr); self.isShowingImportConfirm = true
         }
     }
+
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     func deleteSpecificTransaction(_ target: Transaction) { if let index = transactions.firstIndex(where: { $0.id == target.id }) { transactions.remove(at: index) } }
     func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
@@ -205,15 +236,27 @@ struct ContentView: View {
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
 
     func exportBackup() {
-        let fileName = "manual_transactions.json"
-        let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
+        let fileName = "TwitterKakeibo_Backup.json"
+        let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json")
+        
+        // 最新データを保存
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
-        let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-        try? FileManager.default.removeItem(at: tempPath)
-        try? FileManager.default.copyItem(at: path, to: tempPath)
-        let av = UIActivityViewController(activityItems: [tempPath], applicationActivities: nil)
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController {
+        
+        // 共有用の一時URLを作成
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        try? FileManager.default.removeItem(at: tempURL)
+        try? FileManager.default.copyItem(at: path, to: tempURL)
+        
+        // 共有ソースを作成
+        let itemSource = ActivityItemSource(fileURL: tempURL, title: "家計簿バックアップ")
+        let av = UIActivityViewController(activityItems: [itemSource], applicationActivities: nil)
+        
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = scene.windows.first?.rootViewController {
+            // iPad対応: 共有シートを表示する場所を指定
             av.popoverPresentationController?.sourceView = rootVC.view
+            av.popoverPresentationController?.sourceRect = CGRect(x: UIScreen.main.bounds.midX, y: UIScreen.main.bounds.midY, width: 0, height: 0)
+            av.popoverPresentationController?.permittedArrowDirections = []
             rootVC.present(av, animated: true)
         }
     }
@@ -225,93 +268,5 @@ struct ContentView: View {
         UINavigationBar.appearance().standardAppearance = navBarAppearance; UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
         let tabBarAppearance = UITabBarAppearance(); tabBarAppearance.configureWithOpaqueBackground(); tabBarAppearance.backgroundColor = bgColor
         UITabBar.appearance().standardAppearance = tabBarAppearance
-    }
-}
-
-// --- 共有シート部品 ---
-struct ActivityView: UIViewControllerRepresentable {
-    var activityItems: [Any]; var applicationActivities: [UIActivity]? = nil
-    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities) }
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
-
-// --- テーマ設定画面 ---
-struct ThemeSettingView: View {
-    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
-    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
-    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
-    @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
-    @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
-    @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    
-    @AppStorage("theme_base_main") var baseMain: String = "#FF007AFF"
-    @AppStorage("theme_base_inc") var baseInc: String = "#FF19B219"
-    @AppStorage("theme_base_exp") var baseExp: String = "#FFFF3B30"
-    @AppStorage("theme_base_hol") var baseHol: String = "#FFFF3B30"
-    @AppStorage("theme_base_bg") var baseBG: String = "#FFFFFFFF"
-    @AppStorage("theme_base_barBG") var baseBarBG: String = "#F8F8F8FF"
-    @AppStorage("theme_base_barText") var baseBarText: String = "#FF000000"
-    @AppStorage("theme_base_tab") var baseTab: String = "#FF007AFF"
-    @AppStorage("theme_base_body") var baseBody: String = "#FF000000"
-    @AppStorage("theme_base_sub") var baseSub: String = "#FF8E8E93"
-
-    var body: some View {
-        ZStack {
-            Color(hex: themeBG).ignoresSafeArea()
-            VStack(spacing: 0) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 20) {
-                        presetBtn("デフォルト", "#FF007AFF", "#FF19B219", "#FFFF3B30", "#FFFF3B30", "#FFFFFFFF", "#F8F8F8FF", "#FF000000", "#FF007AFF", "#FF000000", "#FF8E8E93")
-                        presetBtn("ダーク", "#FF0A84FF", "#FF19B219", "#FFFF3B30", "#FFFF453A", "#FF000000", "#FF1C1C1E", "#FFFFFFFF", "#FF0A84FF", "#FFFFFFFF", "#FF8E8E93")
-                        presetBtn("ナチュラル", "#FF6B8E23", "#FF19B219", "#FFFF3B30", "#EB4E3D", "#FFF5F5DC", "#FFE4E4D0", "#FF4B3621", "#FF6B8E23", "#FF4B3621", "#FF999988")
-                        presetBtn("モノクロ", "#FF333333", "#FF19B219", "#FFFF3B30", "#FF999999", "#FFFFFFFF", "#FFF2F2F2", "#FF000000", "#FF000000", "#FF000000", "#FF999999")
-                        presetBtn("カフェ", "#FF8B4513", "#FF19B219", "#FFFF3B30", "#EB4E3D", "#FFFFF8DC", "#FFDEB887", "#FF3E2723", "#FF8B4513", "#FF3E2723", "#FFA08878")
-                    }.padding(.horizontal, 20).padding(.vertical, 16)
-                }.background(Color(hex: themeBarBG).opacity(0.5))
-                Divider()
-                List {
-                    Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "背景色", hex: $themeBG, base: baseBG)
-                        colorRow(title: "メニュー背景色", hex: $themeBarBG, base: baseBarBG)
-                        colorRow(title: "メニュー文字色", hex: $themeBarText, base: baseBarText)
-                        colorRow(title: "本文文字色", hex: $themeBodyText, base: baseBody)
-                        colorRow(title: "サブ文字色", hex: $themeSubText, base: baseSub)
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("フッターメニュー").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "メニュー選択色", hex: $themeTabAccent, base: baseTab)
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("個別パーツ").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "メインカラー", hex: $themeMain, base: baseMain)
-                        colorRow(title: "収入の色", hex: $themeIncome, base: baseInc)
-                        colorRow(title: "支出の色", hex: $themeExpense, base: baseExp)
-                        colorRow(title: "祝日の色", hex: $themeHoliday, base: baseHol)
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
-            }
-        }
-        .navigationTitle("テーマ設定").navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
-    }
-    
-    func presetBtn(_ n: String, _ m: String, _ i: String, _ e: String, _ h: String, _ b: String, _ bb: String, _ bt: String, _ t: String, _ bd: String, _ s: String) -> some View {
-        Button(action: { apply(m, i, e, h, b, bb, bt, t, bd, s) }) {
-            VStack(spacing: 8) {
-                Circle().fill(Color(hex: m)).frame(width: 46, height: 46).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
-                Text(n).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeSubText))
-            }
-        }.buttonStyle(.plain)
-    }
-    func apply(_ m: String, _ i: String, _ e: String, _ h: String, _ b: String, _ bb: String, _ bt: String, _ t: String, _ bd: String, _ s: String) {
-        withAnimation {
-            themeMain = m; themeIncome = i; themeExpense = e; themeHoliday = h; themeBG = b; themeBarBG = bb; themeBarText = bt; themeTabAccent = t; themeBodyText = bd; themeSubText = s
-            baseMain = m; baseInc = i; baseExp = e; baseHol = h; baseBG = b; baseBarBG = bb; baseBarText = bt; baseTab = t; baseBody = bd; baseSub = s
-        }
-    }
-    func colorRow(title: String, hex: Binding<String>, base: String) -> some View {
-        HStack { ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() })).foregroundColor(Color(hex: themeBodyText)); Spacer(); if hex.wrappedValue != base { Button(action: { hex.wrappedValue = base }) { Image(systemName: "arrow.counterclockwise.circle.fill").foregroundColor(Color(hex: themeSubText).opacity(0.8)).font(.title3) }.buttonStyle(.plain) } }
     }
 }
