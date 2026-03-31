@@ -1,6 +1,6 @@
 import Foundation
 
-struct Transaction: Identifiable, Codable {
+struct Transaction: Identifiable, Codable, Equatable {
     var id = UUID()
     var amount: Int
     var date: Date
@@ -8,7 +8,18 @@ struct Transaction: Identifiable, Codable {
     var source: String
     var isIncome: Bool
     
-    var cleanNoteav
+    // 計算プロパティを標準的な getter 形式で明記
+    var cleanNote: String {
+        let components = note.components(separatedBy: .whitespacesAndNewlines)
+        return components
+            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") && !($0.contains("¥") || Int($0) != nil) }
+            .joined(separator: " ")
+    }
+    
+    var tags: [String] {
+        let components = note.components(separatedBy: .whitespacesAndNewlines)
+        return components.filter { $0.hasPrefix("#") }
+    }
 }
 
 enum AccountType: String, Codable, CaseIterable {
@@ -27,7 +38,7 @@ enum AccountType: String, Codable, CaseIterable {
     }
 }
 
-struct Account: Identifiable, Codable {
+struct Account: Identifiable, Codable, Equatable {
     var id = UUID()
     var name: String
     var balance: Int
@@ -35,8 +46,6 @@ struct Account: Identifiable, Codable {
     var isVisible: Bool = true
     var payday: Int? = 1
     var withdrawalAccountId: UUID? = nil
-    
-    // エフェクト表示用（保存不要なため、Codableからは除外するか無視されるようにします）
     var diffAmount: Int = 0
 }
 
