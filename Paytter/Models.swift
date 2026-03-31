@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
 
-// Colorを保存するためのHex変換拡張
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
