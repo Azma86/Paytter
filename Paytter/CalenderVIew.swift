@@ -95,12 +95,13 @@ struct CalendarView: View {
                         }
                         .listRowInsets(EdgeInsets())
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
+                            Button {
                                 transactionToDelete = item
                                 isShowingDeleteAlert = true
                             } label: {
                                 Text("削除")
                             }
+                            .tint(.red)
                         }
                     }
                 }
@@ -121,7 +122,6 @@ struct CalendarView: View {
             Button("キャンセル", role: .cancel) { transactionToDelete = nil }
             Button("削除", role: .destructive) { 
                 if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) {
-                    // 吸い込まれる動きを抑えるため短いアニメーションで実行
                     withAnimation(.easeOut(duration: 0.2)) { 
                         transactions.remove(at: idx)
                     }
