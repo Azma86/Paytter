@@ -3,6 +3,8 @@ import SwiftUI
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
+    @AppStorage("app_theme") var theme = AppTheme()
+    
     @State private var selectedDate = Date()
     @State private var currentMonth = Date()
     @State private var isShowingInputSheet = false
@@ -39,7 +41,7 @@ struct CalendarView: View {
             HStack {
                 ForEach(daysOfWeek, id: \.self) { day in
                     Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
-                        .foregroundColor(day == "日" ? .red : (day == "土" ? .blue : .primary))
+                        .foregroundColor(day == "日" ? theme.holidayColor : (day == "土" ? .blue : .primary))
                 }
             }.padding(.bottom, 5)
 
@@ -53,25 +55,16 @@ struct CalendarView: View {
                 .offset(x: -width + dragOffset)
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture()
-                        .onChanged { dragOffset = $0.translation.width }
+                    DragGesture().onChanged { dragOffset = $0.translation.width }
                         .onEnded { value in
                             let threshold = width * 0.3
                             if value.translation.width < -threshold {
                                 withAnimation(.easeInOut(duration: 0.45)) { dragOffset = -width }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                                    currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)!
-                                    dragOffset = 0
-                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)!; dragOffset = 0 }
                             } else if value.translation.width > threshold {
                                 withAnimation(.easeInOut(duration: 0.45)) { dragOffset = width }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                                    currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth)!
-                                    dragOffset = 0
-                                }
-                            } else {
-                                withAnimation(.easeInOut(duration: 0.3)) { dragOffset = 0 }
-                            }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth)!; dragOffset = 0 }
+                            } else { withAnimation(.easeInOut(duration: 0.3)) { dragOffset = 0 } }
                         }
                 )
             }.frame(height: 280)
@@ -80,71 +73,35 @@ struct CalendarView: View {
 
             List {
                 if filteredTransactions.isEmpty {
-                    HStack {
-                        Spacer()
-                        Text("投稿はありません").font(.caption).foregroundColor(.secondary).padding(.top, 40)
-                        Spacer()
-                    }.listRowSeparator(.hidden)
+                    HStack { Spacer(); Text("投稿はありません").font(.caption).foregroundColor(.secondary).padding(.top, 40); Spacer() }.listRowSeparator(.hidden)
                 } else {
                     ForEach(filteredTransactions) { item in
                         ZStack {
-                            NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
-                                EmptyView()
-                            }.opacity(0)
+                            NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
                             TwitterRow(item: item)
                         }
                         .listRowInsets(EdgeInsets())
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button {
-                                transactionToDelete = item
-                                isShowingDeleteAlert = true
-                            } label: {
-                                Text("削除")
-                            }
-                            .tint(.red)
+                            Button { transactionToDelete = item; isShowingDeleteAlert = true } label: { Text("削除") }.tint(.red)
                         }
                     }
                 }
-                
                 Button(action: { self.inputText = ""; self.isShowingInputSheet = true }) {
                     HStack { Image(systemName: "plus"); Text("投稿を作成") }
                     .font(.subheadline).fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 12)
-                    .background(Color.white).foregroundColor(.blue)
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.3), lineWidth: 1))
+                    .background(Color.white).foregroundColor(theme.mainColor)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.mainColor.opacity(0.3), lineWidth: 1))
                     .padding(.horizontal, 40).padding(.vertical, 20)
                 }.listRowSeparator(.hidden)
-            }
-            .listStyle(.plain)
+            }.listStyle(.plain)
         }
         .navigationTitle("カレンダー")
         .navigationBarTitleDisplayMode(.inline)
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) {
             Button("キャンセル", role: .cancel) { transactionToDelete = nil }
-            Button("削除", role: .destructive) { 
-                if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) {
-                    withAnimation(.easeOut(duration: 0.2)) { 
-                        transactions.remove(at: idx)
-                    }
-                }
-                transactionToDelete = nil
-            }
+            Button("削除", role: .destructive) { if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) { withAnimation(.easeOut(duration: 0.2)) { transactions.remove(at: idx) } }; transactionToDelete = nil }
         } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
-        .sheet(isPresented: $isShowingInputSheet) {
-            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts)
-        }
-        .sheet(isPresented: $isShowingMonthPicker) {
-            NavigationView {
-                VStack {
-                    DatePicker("年月を選択", selection: $tempPickerDate, displayedComponents: .date)
-                        .datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP"))
-                }
-                .navigationTitle("年月を選択")
-                .navigationBarItems(leading: Button("キャンセル") { isShowingMonthPicker = false }, trailing: Button("移動") {
-                    withAnimation(.easeInOut(duration: 0.4)) { currentMonth = tempPickerDate }
-                    isShowingMonthPicker = false
-                })
-            }.presentationDetents([.height(300)])
-        }
+        .sheet(isPresented: $isShowingInputSheet) { PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) }
     }
 
     @ViewBuilder
@@ -157,42 +114,24 @@ struct CalendarView: View {
                 let dayTransactions = transactions.filter { calendar.isDate($0.date, inSameDayAs: date) }
                 let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
                 let isHoliday = checkIsHoliday(date)
-                
                 VStack(spacing: 2) {
                     Text("\(calendar.component(.day, from: date))")
-                        .font(.system(size: 13, design: .rounded))
-                        .fontWeight(isSelected ? .bold : .regular)
-                        .foregroundColor(isCurrentMonth ? (isSelected ? .white : (isHoliday ? .red : .primary)) : .gray.opacity(0.25))
-                        .frame(width: 24, height: 24)
-                        .background(isSelected && isCurrentMonth ? Color.blue : Color.clear)
-                        .clipShape(Circle())
-                    
+                        .font(.system(size: 13, design: .rounded)).fontWeight(isSelected ? .bold : .regular)
+                        .foregroundColor(isCurrentMonth ? (isSelected ? .white : (isHoliday ? theme.holidayColor : .primary)) : .gray.opacity(0.25))
+                        .frame(width: 24, height: 24).background(isSelected && isCurrentMonth ? theme.mainColor : Color.clear).clipShape(Circle())
                     VStack(alignment: .leading, spacing: 1) {
                         let total = dayTransactions.count
                         if total > 0 {
-                            HStack(spacing: 2) {
-                                ForEach(dayTransactions.prefix(5)) { tx in
-                                    Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 4.5, height: 4.5)
-                                }
-                            }
+                            HStack(spacing: 2) { ForEach(dayTransactions.prefix(5)) { tx in Circle().fill(tx.isIncome ? theme.incomeColor : theme.expenseColor).frame(width: 4.5, height: 4.5) } }
                             if total > 5 {
                                 HStack(spacing: 2) {
-                                    if total > 8 {
-                                        ForEach(dayTransactions.prefix(8).suffix(3)) { tx in
-                                            Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 4.5, height: 4.5)
-                                        }
-                                        Text("+\(total - 8)").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).offset(y: -1)
-                                    } else {
-                                        ForEach(dayTransactions.suffix(total - 5)) { tx in
-                                            Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 4.5, height: 4.5)
-                                        }
-                                    }
+                                    if total > 8 { ForEach(dayTransactions.prefix(8).suffix(3)) { tx in Circle().fill(tx.isIncome ? theme.incomeColor : theme.expenseColor).frame(width: 4.5, height: 4.5) }; Text("+\(total - 8)").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).offset(y: -1) }
+                                    else { ForEach(dayTransactions.suffix(total - 5)) { tx in Circle().fill(tx.isIncome ? theme.incomeColor : theme.expenseColor).frame(width: 4.5, height: 4.5) } }
                                 }
                             } else { Spacer().frame(height: 4.5) }
                         } else { Spacer().frame(height: 10) }
                     }.frame(height: 10).frame(maxWidth: .infinity, alignment: .center)
-                }.frame(height: 45).frame(maxWidth: .infinity).contentShape(Rectangle())
-                .onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
+                }.frame(height: 45).frame(maxWidth: .infinity).contentShape(Rectangle()).onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
             }
         }.frame(width: width)
     }
@@ -223,40 +162,21 @@ struct CalendarView: View {
     }
     func moveMonth(by v: Int) {
         let direction: CGFloat = v > 0 ? -1 : 1
-        let width = UIScreen.main.bounds.width
-        withAnimation(.easeInOut(duration: 0.45)) { dragOffset = direction * width }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-            if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) { currentMonth = next }
-            dragOffset = 0
-        }
+        withAnimation(.easeInOut(duration: 0.45)) { dragOffset = direction * UIScreen.main.bounds.width }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) { currentMonth = next }; dragOffset = 0 }
     }
     func slideToDate(_ date: Date) { let isFuture = date > currentMonth; moveMonth(by: isFuture ? 1 : -1); selectedDate = date }
     func monthYearString(from d: Date) -> String { let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d) }
     func generateFullGrid(for date: Date) -> [Date] {
         guard let first = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }
-        let firstWeekday = calendar.component(.weekday, from: first)
-        let startDate = calendar.date(byAdding: .day, value: -(firstWeekday - 1), to: first)!
+        let firstWeekday = calendar.component(.weekday, from: first); let startDate = calendar.date(byAdding: .day, value: -(firstWeekday - 1), to: first)!
         return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: startDate) }
     }
     func combinedDate() -> Date {
         let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate)
-        let tc = calendar.dateComponents([.hour, .minute], from: now)
-        c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate
+        let tc = calendar.dateComponents([.hour, .minute], from: now); c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate
     }
-    func addTransaction(isInc: Bool, date: Date) {
-        let amt = parseAmount(from: inputText); let src = parseSourceName(from: inputText)
-        transactions.append(Transaction(amount: amt, date: date, note: inputText, source: src, isIncome: isInc))
-    }
-    func parseAmount(from t: String) -> Int {
-        let comps = t.components(separatedBy: .whitespacesAndNewlines)
-        let total = comps.filter { $0.contains("¥") }.reduce(0) { sum, word in
-            let cleaned = word.replacingOccurrences(of: "¥", with: "")
-            return sum + (Int(cleaned) ?? 0)
-        }
-        return total
-    }
-    func parseSourceName(from t: String) -> String {
-        for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }
-        return accounts.first?.name ?? "お財布"
-    }
+    func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
+    func parseAmount(from t: String) -> Int { t.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
+    func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
 }
