@@ -23,25 +23,26 @@ struct TwitterRow: View {
     }
 }
 
-// --- 金額ハイライト (マイナス表記による反転対応) ---
+// --- 金額ハイライト (マイナス記号の非表示対応) ---
 struct HighlightedText: View {
     let text: String; let isIncome: Bool
     var body: some View {
         let words = text.components(separatedBy: " ")
         return words.reduce(Text("")) { (res, word) in
             if word.contains("¥") {
-                // 金額部分の数値を抽出して符号を確認
+                // 金額部分の数値を抽出
                 let amountStr = word.replacingOccurrences(of: "¥", with: "")
                 let amountVal = Int(amountStr) ?? 0
                 
-                // 表示色の決定ロジック
-                // 基本属性が収入(true)で金額がプラスなら緑、マイナスなら赤
-                // 基本属性が支出(false)で金額がプラスなら赤、マイナスなら緑
-                let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome
+                // 表示用のテキストを作成 (マイナス記号を除去)
+                let displayWord = word.replacingOccurrences(of: "-", with: "")
                 
+                // 表示色の決定ロジック
+                // 金額がマイナスの場合は、本来の収支属性(isIncome)を反転させる
+                let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome
                 let highlightColor = actuallyIncome ? Color(red: 0.1, green: 0.7, blue: 0.1) : .red
                 
-                return res + Text(word + " ").foregroundColor(highlightColor).fontWeight(.bold)
+                return res + Text(displayWord + " ").foregroundColor(highlightColor).fontWeight(.bold)
             } else { 
                 return res + Text(word + " ").foregroundColor(.primary) 
             }
