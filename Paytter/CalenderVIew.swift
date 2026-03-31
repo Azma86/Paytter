@@ -23,7 +23,6 @@ struct CalendarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // ヘッダー部分
             HStack {
                 Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left") }
                 Spacer()
@@ -37,7 +36,6 @@ struct CalendarView: View {
                 Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right") }
             }.padding(.horizontal).padding(.vertical, 8)
 
-            // 曜日ラベル
             HStack {
                 ForEach(daysOfWeek, id: \.self) { day in
                     Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
@@ -45,7 +43,6 @@ struct CalendarView: View {
                 }
             }.padding(.bottom, 5)
 
-            // カレンダーグリッド
             GeometryReader { geometry in
                 let width = geometry.size.width
                 HStack(spacing: 0) {
@@ -81,7 +78,6 @@ struct CalendarView: View {
 
             Divider()
 
-            // 選択日の投稿一覧
             List {
                 if filteredTransactions.isEmpty {
                     HStack {
@@ -92,25 +88,25 @@ struct CalendarView: View {
                 } else {
                     ForEach(filteredTransactions) { item in
                         ZStack {
+                            // 透明リンクでガタつき防止
                             NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                 EmptyView()
                             }.opacity(0)
+                            
                             TwitterRow(item: item)
                         }
                         .listRowInsets(EdgeInsets())
-                        // スワイプ削除の追加と統一
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
                                 transactionToDelete = item
                                 isShowingDeleteAlert = true
                             } label: {
-                                Label("削除", systemImage: "trash")
+                                Text("削除")
                             }
                         }
                     }
                 }
                 
-                // 投稿ボタンをリスト内に配置（または外でも可）
                 Button(action: { self.inputText = ""; self.isShowingInputSheet = true }) {
                     HStack { Image(systemName: "plus"); Text("投稿を作成") }
                     .font(.subheadline).fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -200,7 +196,6 @@ struct CalendarView: View {
         }.frame(width: width)
     }
 
-    // 祝日判定、月移動、グリッド生成などのヘルパー関数（既存のまま）
     func checkIsHoliday(_ date: Date) -> Bool {
         let comps = calendar.dateComponents([.month, .day, .year, .weekday], from: date)
         guard let month = comps.month, let day = comps.day, let year = comps.year, let weekday = comps.weekday else { return false }
