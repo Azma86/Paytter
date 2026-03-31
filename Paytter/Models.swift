@@ -8,16 +8,7 @@ struct Transaction: Identifiable, Codable {
     var source: String
     var isIncome: Bool
     
-    var cleanNote: String {
-        note.components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") && !($0.contains("¥") || Int($0) != nil) }
-            .joined(separator: " ")
-    }
-    
-    var tags: [String] {
-        note.components(separatedBy: .whitespacesAndNewlines)
-            .filter { $0.hasPrefix("#") }
-    }
+    var cleanNoteav
 }
 
 enum AccountType: String, Codable, CaseIterable {
