@@ -104,19 +104,23 @@ struct PostView: View {
             let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
             let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
             let ins = prefix + sym
-            if let ran = Range(sel, in: cur) { inputText = cur.replacingCharacters(in: ran, with: ins)
+            if let ran = Range(sel, in: cur) { 
+                inputText = cur.replacingCharacters(in: ran, with: ins)
+                
+                // 挿入後の処理を確実に1回目で反映させるため、メインスレッドで即座に実行
                 DispatchQueue.main.async { 
-                    tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0) 
-                    // ¥ボタンが押された場合のみ、キーボードを「数字と記号」レイヤーに切り替える
+                    tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0)
+                    
                     if sym == "¥" {
+                        // keyboardTypeを一時的に切り替えることで1回目から反映させる
                         tv.keyboardType = .numbersAndPunctuation
                         tv.reloadInputViews()
                     } else {
-                        // 他のボタン（#や@）では通常の日本語/英語キーボードに戻す
+                        // # や @ の場合はデフォルトに戻す
                         tv.keyboardType = .default
                         tv.reloadInputViews()
                     }
-                } 
+                }
             }
         }
     }
