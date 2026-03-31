@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// --- タイムラインの1行 ---
+// --- 1. タイムラインの1行 ---
 struct TwitterRow: View {
     let item: Transaction
     var body: some View {
@@ -23,7 +23,7 @@ struct TwitterRow: View {
     }
 }
 
-// --- 金額ハイライト ---
+// --- 2. 金額ハイライト ---
 struct HighlightedText: View {
     let text: String; let isIncome: Bool
     var body: some View {
@@ -36,135 +36,137 @@ struct HighlightedText: View {
     }
 }
 
-// --- カレンダー画面 (ドット表示 & 日時引き継ぎ) ---
+// --- 3. 自作カレンダー画面 (ドット表示 & 四角いデザイン) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
     @State private var selectedDate = Date()
+    @State private var currentMonth = Date()
     @State private var isShowingInputSheet = false
     @State private var inputText = ""
     
+    let calendar = Calendar.current
+    let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
+
     var filteredTransactions: [Transaction] {
-        transactions.filter { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
+        transactions.filter { calendar.isDate($0.date, inSameDayAs: selectedDate) }
             .sorted(by: { $0.date > $1.date })
-    }
-    
-    // 指定した日に収入/支出があるかチェックする関数
-    func hasTransaction(on date: Date, isIncome: Bool) -> Bool {
-        transactions.contains { Calendar.current.isDate($0.date, inSameDayAs: date) && $0.isIncome == isIncome }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // カレンダー部分（標準のDatePickerをカスタイマイズしてドット風の情報を付加するのは難しいため、
-            // 現時点では標準のグラフィカルを使いつつ、下のボタン機能を強化します）
-            DatePicker("", selection: $selectedDate, displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .padding(.horizontal)
-                .frame(maxHeight: 400)
-            
+            // ヘッダー
+            HStack {
+                Button(action: { changeMonth(by: -1) }) { Image(systemName: "chevron.left") }
+                Spacer()
+                Text(monthYearString(from: currentMonth)).font(.headline)
+                Spacer()
+                Button(action: { changeMonth(by: 1) }) { Image(systemName: "chevron.right") }
+            }.padding()
+
+            // 曜日ラベル
+            HStack {
+                ForEach(daysOfWeek, id: \.self) { day in
+                    Text(day).font(.caption).fontWeight(.bold).frame(maxWidth: .infinity)
+                        .foregroundColor(day == "日" ? .red : (day == "土" ? .blue : .primary))
+                }
+            }.padding(.bottom, 5)
+
+            // グリッド
+            let days = generateDaysInMonth(for: currentMonth)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
+                ForEach(days, id: \.self) { date in
+                    if let date = date {
+                        VStack(spacing: 4) {
+                            Text("\(calendar.component(.day, from: date))")
+                                .font(.system(.subheadline, design: .rounded))
+                                .fontWeight(calendar.isDate(date, inSameDayAs: selectedDate) ? .bold : .regular)
+                                .foregroundColor(calendar.isDate(date, inSameDayAs: selectedDate) ? .white : .primary)
+                                .frame(width: 30, height: 30)
+                                .background(calendar.isDate(date, inSameDayAs: selectedDate) ? Color.blue : Color.clear)
+                                .clipShape(Circle())
+                            
+                            HStack(spacing: 4) {
+                                if hasTransaction(on: date, isIncome: true) { Circle().fill(Color.green).frame(width: 4, height: 4) }
+                                if hasTransaction(on: date, isIncome: false) { Circle().fill(Color.red).frame(width: 4, height: 4) }
+                            }.frame(height: 4)
+                        }
+                        .frame(height: 50).frame(maxWidth: .infinity)
+                        .background(calendar.isDate(date, inSameDayAs: selectedDate) ? Color.blue.opacity(0.1) : Color.clear)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedDate = date }
+                    } else { Color.clear.frame(height: 50) }
+                }
+            }.padding(.bottom, 10)
+
             Divider()
-            
-            // 下半分：リスト
-            ZStack(alignment: .bottom) {
+
+            ScrollView {
                 VStack(spacing: 0) {
                     if filteredTransactions.isEmpty {
-                        VStack(spacing: 12) {
-                            Spacer(); Image(systemName: "tray").foregroundColor(.secondary)
-                            Text("投稿はありません").font(.caption).foregroundColor(.secondary); Spacer()
-                        }
+                        Text("投稿はありません").font(.caption).foregroundColor(.secondary).padding(.top, 40)
                     } else {
-                        List {
+                        LazyVStack(spacing: 0) {
                             ForEach(filteredTransactions) { item in
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
+                                Divider()
                             }
-                        }.listStyle(.plain)
+                        }
                     }
-                }
-                
-                // 「＋ 投稿を追加」ボタン
-                Button(action: {
-                    // 現在の時刻を取得し、選択中の日付と合成する
-                    let now = Date()
-                    let calendar = Calendar.current
-                    var components = calendar.dateComponents([.year, .month, .day], from: selectedDate)
-                    let timeComponents = calendar.dateComponents([.hour, .minute, .second], from: now)
-                    components.hour = timeComponents.hour
-                    components.minute = timeComponents.minute
-                    components.second = timeComponents.second
                     
-                    if let targetDate = calendar.date(from: components) {
-                        // この日時を持って投稿画面を開く
-                        self.inputText = ""
-                        self.isShowingInputSheet = true
+                    // リストの最後に配置
+                    Button(action: { self.inputText = ""; self.isShowingInputSheet = true }) {
+                        HStack { Image(systemName: "plus"); Text("投稿を作成") }
+                        .font(.subheadline).fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .background(Color.white).foregroundColor(.blue)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.3), lineWidth: 1))
+                        .padding(.horizontal, 40).padding(.vertical, 30)
                     }
-                }) {
-                    HStack {
-                        Image(systemName: "plus")
-                        Text("投稿を作成")
-                    }
-                    .font(.subheadline).fontWeight(.bold)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.white)
-                    .foregroundColor(.blue)
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.3), lineWidth: 1))
-                    .padding(.horizontal, 40)
-                    .padding(.bottom, 20)
                 }
             }
         }
         .navigationTitle("カレンダー")
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isShowingInputSheet) {
-            // 合成した日時を初期値として渡す
-            PostView(
-                inputText: $inputText,
-                isPresented: $isShowingInputSheet,
-                initialDate: combinedDate(),
-                onPost: { isInc, nDate in
-                    addTransaction(isInc: isInc, date: nDate)
-                },
-                transactions: transactions,
-                accounts: accounts
-            )
+            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts)
         }
     }
-    
+
+    func hasTransaction(on date: Date, isIncome: Bool) -> Bool { transactions.contains { calendar.isDate($0.date, inSameDayAs: date) && $0.isIncome == isIncome } }
+    func changeMonth(by v: Int) { if let n = calendar.date(byAdding: .month, value: v, to: currentMonth) { currentMonth = n } }
+    func monthYearString(from d: Date) -> String { let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d) }
+    func generateDaysInMonth(for date: Date) -> [Date?] {
+        guard let range = calendar.range(of: .day, in: .month, for: date), let first = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }
+        let firstWeekday = calendar.component(.weekday, from: first)
+        var days: [Date?] = Array(repeating: nil, count: firstWeekday - 1)
+        for day in range { if let d = calendar.date(byAdding: .day, value: day - 1, to: first) { days.append(d) } }
+        return days
+    }
     func combinedDate() -> Date {
-        let now = Date()
-        let calendar = Calendar.current
-        var components = calendar.dateComponents([.year, .month, .day], from: selectedDate)
-        let timeComponents = calendar.dateComponents([.hour, .minute], from: now)
-        components.hour = timeComponents.hour
-        components.minute = timeComponents.minute
-        return calendar.date(from: components) ?? selectedDate
+        let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate)
+        let tc = calendar.dateComponents([.hour, .minute], from: now)
+        c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate
     }
-    
     func addTransaction(isInc: Bool, date: Date) {
-        let amount = parseAmount(from: inputText)
-        let sourceName = parseSourceName(from: inputText)
-        transactions.append(Transaction(amount: amount, date: date, note: inputText, source: sourceName, isIncome: isInc))
+        let amt = parseAmount(from: inputText); let src = parseSourceName(from: inputText)
+        transactions.append(Transaction(amount: amt, date: date, note: inputText, source: src, isIncome: isInc))
     }
-    
-    func parseAmount(from text: String) -> Int {
-        let components = text.components(separatedBy: .whitespacesAndNewlines)
-        let amt = components.filter { $0.contains("¥") || Int($0.replacingOccurrences(of: "¥", with: "")) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+    func parseAmount(from t: String) -> Int {
+        let comps = t.components(separatedBy: .whitespacesAndNewlines)
+        let amt = comps.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
         return Int(amt) ?? 0
     }
-    
-    func parseSourceName(from text: String) -> String {
-        for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
+    func parseSourceName(from t: String) -> String {
+        for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }
         return accounts.first?.name ?? "お財布"
     }
 }
 
-// --- 投稿画面 (日時指定機能付き) ---
+// --- 4. 投稿画面 ---
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool
-    var initialDate: Date = Date() // 初期日時を受け取る
+    var initialDate: Date = Date()
     var onPost: (Bool, Date) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
@@ -224,14 +226,11 @@ struct PostView: View {
                 }.presentationDetents([.height(350)])
             }
         }
-        .onAppear {
-            self.postDate = initialDate // シートが開いた時に初期日時をセット
-        }
+        .onAppear { self.postDate = initialDate }
     }
     
     func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "ja_JP"); formatter.dateFormat = "yyyy年MM月dd日 HH:mm"
-        return formatter.string(from: date)
+        let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = "yyyy年MM月dd日 HH:mm"; return f.string(from: date)
     }
     func updateSuggestionsForCursor() {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
@@ -263,8 +262,7 @@ struct PostView: View {
     }
 }
 
-// --- 詳細画面 / お財布 / 分析 / BalanceView / CustomTextEditor ---
-// (これらは変更なしですが、全文ルールのため維持します)
+// --- 5. 詳細画面 ---
 struct TransactionDetailView: View {
     let item: Transaction; @Binding var transactions: [Transaction]; @Binding var accounts: [Account]
     @Environment(\.dismiss) var dismiss; @State private var isShowingEditSheet = false; @State private var editLineText = ""; @State private var isShowingDeleteConfirm = false
@@ -303,17 +301,18 @@ struct TransactionDetailView: View {
             transactions[idx] = Transaction(id: item.id, amount: nAmt, date: newDate, note: editLineText, source: nSrc, isIncome: newInc)
         }
     }
-    func parseAmount(from text: String) -> Int {
-        let components = text.components(separatedBy: .whitespacesAndNewlines)
-        let amtText = components.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amtText) ?? 0
+    func parseAmount(from t: String) -> Int {
+        let comps = t.components(separatedBy: .whitespacesAndNewlines)
+        let amtT = comps.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        return Int(amtT) ?? 0
     }
-    func parseSourceName(from text: String) -> String {
-        for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
+    func parseSourceName(from t: String) -> String {
+        for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }
         return item.source
     }
 }
 
+// --- 6. お財布設定 ---
 struct AccountCreateView: View {
     @Binding var accounts: [Account]; @Binding var transactions: [Transaction]; @Environment(\.dismiss) var dismiss
     @State private var name = ""; @State private var initial = ""; @State private var selectedType: AccountType = .wallet
@@ -375,6 +374,7 @@ struct AccountEditView: View {
     }
 }
 
+// --- 7. 分析 ---
 struct WalletAnalysisView: View {
     let transactions: [Transaction]; @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
@@ -383,6 +383,7 @@ struct WalletAnalysisView: View {
     }
 }
 
+// --- 8. 残高表示 ---
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false
@@ -400,6 +401,7 @@ struct BalanceView: View {
     }
 }
 
+// --- 9. エディタ部品 ---
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String; var onInsert: (String) -> Void
     func makeUIView(context: Context) -> UITextView {
@@ -418,5 +420,10 @@ struct CustomTextEditor: UIViewRepresentable {
     }
 }
 
-extension UIView { func findTextView() -> UITextView? { if let tv = self as? UITextView { return tv }
-    for sv in subviews { if let tv = sv.findTextView() { return tv } }; return nil } }
+extension UIView { 
+    func findTextView() -> UITextView? { 
+        if let tv = self as? UITextView { return tv }
+        for sv in subviews { if let tv = sv.findTextView() { return tv } }
+        return nil 
+    } 
+}
