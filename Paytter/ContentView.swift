@@ -57,17 +57,14 @@ struct ContentView: View {
                     List {
                         ForEach(displayedTransactions, id: \.id) { item in
                             ZStack {
-                                // リンクを透明にして背面に配置（ガタつき防止）
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     EmptyView()
                                 }.opacity(0)
-                                
                                 TwitterRow(item: item)
                             }
                             .listRowInsets(EdgeInsets())
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
-                                    // ここでの自動スワイプ閉じを抑えるため、即座にアラートを表示
                                     transactionToDelete = item
                                     isShowingSwipeDeleteAlert = true
                                 } label: {
@@ -86,8 +83,8 @@ struct ContentView: View {
                 Button("キャンセル", role: .cancel) { transactionToDelete = nil }
                 Button("削除", role: .destructive) { 
                     if let t = transactionToDelete { 
-                        // 削除時のみアニメーション
-                        withAnimation(.easeOut) { deleteSpecificTransaction(t) } 
+                        // 吸い込まれる動きを抑えるため短いアニメーションで実行
+                        withAnimation(.easeOut(duration: 0.2)) { deleteSpecificTransaction(t) } 
                     }
                     transactionToDelete = nil 
                 }
@@ -154,7 +151,7 @@ struct ContentView: View {
                     Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }
                     Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }
                 }
-                Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingSwipeDeleteAlert = true } }
+                Section(header: Text("データ管理")) { Button("全データをリセット", role: .destructive) { isShowingDeleteAlert = true } }
             }
             .navigationTitle("設定")
             .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
@@ -173,6 +170,9 @@ struct ContentView: View {
                     } 
                 }
             } message: { Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？") }
+            .alert("リセット", isPresented: $isShowingDeleteAlert) {
+                Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "全てのデータを初期状態にリセットしました。"; isShowingCompletionAlert = true }
+            } message: { Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。") }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK") { } } message: { Text(completionMessage) }
         }
     }
