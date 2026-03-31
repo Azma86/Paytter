@@ -11,6 +11,7 @@ struct ContentView: View {
     ]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     
+    // --- テーマ設定データ ---
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -230,10 +231,27 @@ struct ContentView: View {
     func updateAppearance() {
         let bgColor = UIColor(Color(hex: themeBarBG)); let textColor = UIColor(Color(hex: themeBarText))
         let accentColor = UIColor(Color(hex: themeTabAccent))
-        let navBarAppearance = UINavigationBarAppearance(); navBarAppearance.configureWithOpaqueBackground()
-        navBarAppearance.backgroundColor = bgColor; navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]; navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
-        UINavigationBar.appearance().standardAppearance = navBarAppearance; UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
-        let tabBarAppearance = UITabBarAppearance(); tabBarAppearance.configureWithOpaqueBackground(); tabBarAppearance.backgroundColor = bgColor
+        
+        let navBarAppearance = UINavigationBarAppearance()
+        navBarAppearance.configureWithOpaqueBackground()
+        navBarAppearance.backgroundColor = bgColor
+        // ここでタイトルの色を「メニュー文字色」に強制指定
+        navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]
+        navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
+        
+        // 戻るボタンなどのパーツ色（themeMainと連動させると自然です）
+        let backButtonAppearance = UIBarButtonItemAppearance()
+        backButtonAppearance.normal.titleTextAttributes = [.foregroundColor: textColor]
+        navBarAppearance.backButtonAppearance = backButtonAppearance
+        
+        UINavigationBar.appearance().standardAppearance = navBarAppearance
+        UINavigationBar.appearance().compactAppearance = navBarAppearance
+        UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
+        UINavigationBar.appearance().tintColor = textColor // 戻るアイコンの色
+        
+        let tabBarAppearance = UITabBarAppearance()
+        tabBarAppearance.configureWithOpaqueBackground()
+        tabBarAppearance.backgroundColor = bgColor
         UITabBar.appearance().standardAppearance = tabBarAppearance
     }
 }
@@ -303,7 +321,7 @@ struct ThemeSettingView: View {
         Button(action: { apply(main, inc, exp, hol, bg, barBG, barTxt, tab, body, sub) }) {
             VStack(spacing: 8) {
                 Circle().fill(Color(hex: main)).frame(width: 46, height: 46).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
-                Text(name).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeSubText)) // 【修正】サブ文字色を反映
+                Text(name).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeSubText))
             }
         }.buttonStyle(.plain)
     }
