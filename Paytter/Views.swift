@@ -37,10 +37,14 @@ struct TransactionDetailView: View {
             transactions[idx] = Transaction(id: item.id, amount: nAmt, date: newDate, note: editLineText, source: nSrc, isIncome: newInc)
         }
     }
+    // 【修正】¥付きの数値をすべて合計する
     func parseAmount(from t: String) -> Int {
         let comps = t.components(separatedBy: .whitespacesAndNewlines)
-        let amtT = comps.filter { $0.contains("¥") }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amtT) ?? 0
+        let total = comps.filter { $0.contains("¥") }.reduce(0) { sum, word in
+            let val = Int(word.replacingOccurrences(of: "¥", with: "")) ?? 0
+            return sum + val
+        }
+        return total
     }
     func parseSourceName(from t: String) -> String {
         for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }
