@@ -2,7 +2,7 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
-// --- エクスポート用の部品（ContentViewと同じファイルに置いてOK） ---
+// --- エクスポートを確実にするための共有ソース（ContentView内に配置） ---
 class DocumentItemSource: NSObject, UIActivityItemSource {
     let fileURL: URL
     init(fileURL: URL) { self.fileURL = fileURL; super.init() }
@@ -25,6 +25,7 @@ struct ContentView: View {
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
@@ -63,6 +64,7 @@ struct ContentView: View {
         .onAppear { recalculateBalances(); updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
+        .onChange(of: themeBarBG) { _ in updateAppearance() }
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
@@ -101,10 +103,9 @@ struct ContentView: View {
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
-            .alert("削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
-                Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } }
-                Button("キャンセル", role: .cancel) {}
-            }
+            .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
+                Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } }
+            } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
         }
     }
     
@@ -136,6 +137,9 @@ struct ContentView: View {
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) {
+                Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
+            } message: { Text("このお財布に関連付けられた投稿の金額計算ができなくなる可能性があります。") }
         } 
     }
 
@@ -146,6 +150,9 @@ struct ContentView: View {
                 List { 
                     Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { 
                         NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } 
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("予算設定").foregroundColor(Color(hex: themeSubText))) { 
+                        Stepper(value: $monthlyBudget, in: 1000...500000, step: 1000) { Text("今月の予算: ¥\(monthlyBudget)").foregroundColor(Color(hex: themeBodyText)) } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { 
                         Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
@@ -159,27 +166,38 @@ struct ContentView: View {
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("設定")
-            .alert("全リセット", isPresented: $isShowingResetAlert) { Button("リセット", role: .destructive) { resetAll() }; Button("キャンセル", role: .cancel) {} }
-            .alert("保存", isPresented: $isShowingSaveConfirm) { Button("保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "完了"; isShowingCompletionAlert = true }; Button("キャンセル", role: .cancel) {} }
-            .alert("復元", isPresented: $isShowingRestoreConfirm) { Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "完了"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel) {} }
-            .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK"){} }
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .alert("全リセット", isPresented: $isShowingResetAlert) { 
+                Button("キャンセル", role: .cancel) {}
+                Button("初期化する", role: .destructive) { resetAll() } 
+            } message: { Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。") }
+            .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) { 
+                Button("キャンセル", role: .cancel) {}
+                Button("保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "手動バックアップの保存が完了しました。"; isShowingCompletionAlert = true }
+            } message: { Text("前回の手動保存日時: \(backupDateString)\n現在のデータでお財布設定と投稿を上書きしますか？") }
+            .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) { 
+                Button("キャンセル", role: .cancel) {}
+                Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元が完了しました。"; isShowingCompletionAlert = true } }
+            } message: { Text("\(isRestoringManual ? "手動":"自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？") }
+            .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK"){} } message: { Text(completionMessage) }
             .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { r in if case .success(let u) = r { if u.startAccessingSecurityScopedResource() { handleImport(from: u); u.stopAccessingSecurityScopedResource() } } }
         } 
     }
 
     // --- ロジック ---
-    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000; completionMessage = "リセットしました"; isShowingCompletionAlert = true }
+    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000; completionMessage = "全てのデータをリセットしました"; isShowingCompletionAlert = true }
     func handleImport(from url: URL) {
         guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String else { return }
         let dec = JSONDecoder()
         if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!), let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) {
-            self.transactions = t; self.accounts = a; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true
+            self.transactions = t; self.accounts = a; recalculateBalances(); completionMessage = "外部バックアップの読込に成功しました"; isShowingCompletionAlert = true
         }
     }
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
-    func exportBackup() { let fileName = "Paytter_Backup.json"; let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName); BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName); try? FileManager.default.removeItem(at: tempURL); try? FileManager.default.copyItem(at: path, to: tempURL); let itemSource = DocumentItemSource(fileURL: tempURL); let av = UIActivityViewController(activityItems: [itemSource], applicationActivities: nil); if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController { av.popoverPresentationController?.sourceView = rootVC.view; rootVC.present(av, animated: true) } }
-    func updateAppearance() { let navBarAppearance = UINavigationBarAppearance(); navBarAppearance.configureWithOpaqueBackground(); navBarAppearance.backgroundColor = UIColor(Color(hex: themeBarBG)); UINavigationBar.appearance().standardAppearance = navBarAppearance; UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance; let tabBarAppearance = UITabBarAppearance(); tabBarAppearance.configureWithOpaqueBackground(); tabBarAppearance.backgroundColor = UIColor(Color(hex: themeBarBG)); UITabBar.appearance().standardAppearance = tabBarAppearance }
+    func exportBackup() { let fileName = "Paytter_Backup.json"; let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json"); BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName); try? FileManager.default.removeItem(at: tempURL); try? FileManager.default.copyItem(at: path, to: tempURL); let itemSource = DocumentItemSource(fileURL: tempURL); let av = UIActivityViewController(activityItems: [itemSource], applicationActivities: nil); if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController { av.popoverPresentationController?.sourceView = rootVC.view; rootVC.present(av, animated: true) } }
+    func updateAppearance() { let navBarAppearance = UINavigationBarAppearance(); navBarAppearance.configureWithOpaqueBackground(); navBarAppearance.backgroundColor = UIColor(Color(hex: themeBarBG)); navBarAppearance.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: themeBarText))]; UINavigationBar.appearance().standardAppearance = navBarAppearance; UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance; let tabBarAppearance = UITabBarAppearance(); tabBarAppearance.configureWithOpaqueBackground(); tabBarAppearance.backgroundColor = UIColor(Color(hex: themeBarBG)); UITabBar.appearance().standardAppearance = tabBarAppearance }
 }
