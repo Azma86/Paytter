@@ -234,7 +234,7 @@ struct WalletAnalysisView: View {
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false
-    @State private var lastAmount: Int = 0 // 前回の値を保持して変化を検知
+    @State private var lastAmount: Int = 0 
     
     var body: some View {
         VStack {
