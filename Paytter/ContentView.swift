@@ -2,6 +2,18 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
+// --- 共有機能を確実に動作させるためのクラス ---
+class DocumentItemSource: NSObject, UIActivityItemSource {
+    let fileURL: URL
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+        super.init()
+    }
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any { return fileURL }
+    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? { return fileURL }
+    func activityViewController(_ activityViewController: UIActivityViewController, dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String { return UTType.json.identifier }
+}
+
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
     @AppStorage("accounts_v2") var accounts: [Account] = [
@@ -61,7 +73,6 @@ struct ContentView: View {
         }
     }
 
-    // --- ホームタブ ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -94,16 +105,50 @@ struct ContentView: View {
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
-            .alert("削除", isPresented: $isShowingSwipeDeleteAlert) {
-                Button("削除", role: .destructive) { if let t = transactionToDelete { deleteSpecificTransaction(t) } }
-                Button("キャンセル", role: .cancel) {}
-            }
+            .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
+                Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete { deleteSpecificTransaction(t) } }
+            } message: { if let t = transactionToDelete { Text(t.cleanNote).foregroundColor(Color(hex: themeBodyText)) } }
         }
     }
     
     private var calendarTab: some View { NavigationView { CalendarView(transactions: $transactions, accounts: $accounts).toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar) } }
-    
-    private var walletTab: some View { NavigationView { ZStack { Color(hex: themeBG).ignoresSafeArea(); List { Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) { ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) } }; Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5)) }.scrollContentBackground(.hidden).listStyle(.insetGrouped) }.navigationTitle("お財布").toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) } } }
+
+    private var walletTab: some View { 
+        NavigationView { 
+            ZStack {
+                Color(hex: themeBG).ignoresSafeArea()
+                List { 
+                    Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) { 
+                        ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in 
+                            NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { 
+                                HStack { 
+                                    Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                    Text(acc.name).foregroundColor(Color(hex: themeBodyText))
+                                    Spacer()
+                                    Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                } 
+                            }.swipeActions(edge: .trailing, allowsFullSwipe: false) { 
+                                Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) 
+                            } 
+                        }
+                        Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { 
+                        NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { 
+                            Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText))
+                        } 
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5)) 
+                }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
+            }
+            .navigationTitle("お財布")
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) {
+                Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
+            } message: { Text("このお財布に関連付けられた投稿の金額計算ができなくなる可能性があります。") }
+        } 
+    }
 
     private var settingTab: some View { 
         NavigationView { 
@@ -117,19 +162,36 @@ struct ContentView: View {
                         Stepper(value: $monthlyBudget, in: 1000...500000, step: 1000) { Text("今月の予算: ¥\(monthlyBudget)").foregroundColor(Color(hex: themeBodyText)) } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { 
-                        Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
-                        Button("復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
-                        Button("共有 (外部に書き出す)") { exportBackup() }.foregroundColor(Color(hex: themeMain))
-                        Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
+                        Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("バックアップを共有 (外部に書き出す)") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        Button("外部ファイルから読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { 
-                        Button("全リセット", role: .destructive) { isShowingResetAlert = true } 
+                        Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5)) 
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("設定")
-            .alert("保存", isPresented: $isShowingSaveConfirm) { Button("保存"){ BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }; Button("キャンセル", role:.cancel){} }
-            .alert("復元", isPresented: $isShowingRestoreConfirm) { Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元完了"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){} }
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
+                Button("キャンセル", role: .cancel) { }; Button("上書き保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "手動バックアップの保存が完了しました。"; isShowingCompletionAlert = true }
+            } message: { Text("前回の手動保存日時: \(backupDateString)\n現在のデータでお財布設定と投稿を上書きしますか？") }
+            .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) {
+                Button("キャンセル", role: .cancel) { }; Button("復元する", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "\(isRestoringManual ? "手動バックアップ" : "自動保存ファイル")からの復元が完了しました。"; isShowingCompletionAlert = true } }
+            } message: { Text("\(isRestoringManual ? "手動" : "自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？") }
+            .alert("全リセット", isPresented: $isShowingResetAlert) {
+                Button("キャンセル", role: .cancel) { }; Button("初期化する", role: .destructive) { resetAll(); completionMessage = "全てのデータを初期状態にリセットしました。"; isShowingCompletionAlert = true }
+            } message: { Text("全ての投稿、お財布設定、予算を初期状態に戻します。バックアップファイルは保護されます。") }
+            .alert("外部バックアップの読み込み", isPresented: $isShowingImportConfirm) {
+                Button("キャンセル", role: .cancel) { pendingImportData = nil }
+                Button("復元する", role: .destructive) {
+                    if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "外部バックアップからの復元が完了しました。"; isShowingCompletionAlert = true }
+                    pendingImportData = nil
+                }
+            } message: { if let d = pendingImportData { Text("選択されたファイルの保存日時: \(d.2)\n現在のデータを上書きしてもよろしいですか？") } }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK"){} } message: { Text(completionMessage) }
             .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in 
                 switch result { 
@@ -140,7 +202,7 @@ struct ContentView: View {
         } 
     }
 
-    // --- ロジック ---
+    // --- 内部ロジック ---
     func handleImport(from url: URL) {
         guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -150,7 +212,7 @@ struct ContentView: View {
         let dec = JSONDecoder()
         if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!),
            let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) {
-            self.transactions = t; self.accounts = a; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true
+            self.pendingImportData = (t, a, dateStr); self.isShowingImportConfirm = true
         }
     }
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
@@ -160,37 +222,17 @@ struct ContentView: View {
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
 
-    // 【究極版：Dataオブジェクトとして直接共有】
     func exportBackup() {
         let fileName = "TwitterKakeibo_Backup.json"
-        
-        // 1. 最新データをJSON文字列として構築
-        let encoder = JSONEncoder()
-        guard let txData = try? encoder.encode(transactions),
-              let accData = try? encoder.encode(accounts),
-              let txString = String(data: txData, encoding: .utf8),
-              let accString = String(data: accData, encoding: .utf8) else { return }
-        
-        let dict: [String: Any] = [
-            "transactions": txString,
-            "accounts": accString,
-            "date": BackupManager.getBackupDate(isManual: true)
-        ]
-        
-        guard let finalData = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) else { return }
-        
-        // 2. 共有用の一時ファイルを作成（確実にアクセス可能な場所）
+        BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
+        let sourceURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json")
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-        try? finalData.write(to: tempURL)
-        
-        // 3. UIActivityViewController を表示
-        let av = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
-        
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = scene.windows.first?.rootViewController {
-            // iPad対応
+        try? FileManager.default.removeItem(at: tempURL)
+        try? FileManager.default.copyItem(at: sourceURL, to: tempURL)
+        let itemSource = DocumentItemSource(fileURL: tempURL)
+        let av = UIActivityViewController(activityItems: [itemSource], applicationActivities: nil)
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController {
             av.popoverPresentationController?.sourceView = rootVC.view
-            av.popoverPresentationController?.sourceRect = CGRect(x: UIScreen.main.bounds.midX, y: UIScreen.main.bounds.midY, width: 0, height: 0)
             rootVC.present(av, animated: true)
         }
     }
@@ -205,7 +247,7 @@ struct ContentView: View {
     }
 }
 
-// --- テーマ設定画面 ---
+// --- テーマ設定画面 (以前のデザイン要望を維持) ---
 struct ThemeSettingView: View {
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
@@ -217,27 +259,71 @@ struct ThemeSettingView: View {
     @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    
+    @AppStorage("theme_base_main") var baseMain: String = "#FF007AFF"
+    @AppStorage("theme_base_inc") var baseInc: String = "#FF19B219"
+    @AppStorage("theme_base_exp") var baseExp: String = "#FFFF3B30"
+    @AppStorage("theme_base_hol") var baseHol: String = "#FFFF3B30"
+    @AppStorage("theme_base_bg") var baseBG: String = "#FFFFFFFF"
+    @AppStorage("theme_base_barBG") var baseBarBG: String = "#F8F8F8FF"
+    @AppStorage("theme_base_barText") var baseBarText: String = "#FF000000"
+    @AppStorage("theme_base_tab") var baseTab: String = "#FF007AFF"
+    @AppStorage("theme_base_body") var baseBody: String = "#FF000000"
+    @AppStorage("theme_base_sub") var baseSub: String = "#FF8E8E93"
 
     var body: some View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
-            List {
-                Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
-                    colorRow(title: "背景色", hex: $themeBG)
-                    colorRow(title: "メニュー背景", hex: $themeBarBG)
-                    colorRow(title: "メニュー文字", hex: $themeBarText)
-                    colorRow(title: "本文文字", hex: $themeBodyText)
-                    colorRow(title: "サブ文字", hex: $themeSubText)
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                Section(header: Text("個別パーツ").foregroundColor(Color(hex: themeSubText))) {
-                    colorRow(title: "メインカラー", hex: $themeMain)
-                    colorRow(title: "収入色", hex: $themeIncome)
-                    colorRow(title: "支出色", hex: $themeExpense)
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-            }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
-        }.navigationTitle("テーマ設定")
+            VStack(spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 20) {
+                        presetBtn("デフォルト", "#FF007AFF", "#FF19B219", "#FFFF3B30", "#FFFF3B30", "#FFFFFFFF", "#F8F8F8FF", "#FF000000", "#FF007AFF", "#FF000000", "#FF8E8E93")
+                        presetBtn("ダーク", "#FF0A84FF", "#FF19B219", "#FFFF3B30", "#FFFF453A", "#FF000000", "#FF1C1C1E", "#FFFFFFFF", "#FF0A84FF", "#FFFFFFFF", "#FF8E8E93")
+                        presetBtn("ナチュラル", "#FF6B8E23", "#FF19B219", "#FFFF3B30", "#EB4E3D", "#FFF5F5DC", "#FFE4E4D0", "#FF4B3621", "#FF6B8E23", "#FF4B3621", "#FF999988")
+                        presetBtn("モノクロ", "#FF333333", "#FF19B219", "#FFFF3B30", "#FF999999", "#FFFFFFFF", "#FFF2F2F2", "#FF000000", "#FF000000", "#FF000000", "#FF999999")
+                        presetBtn("カフェ", "#FF8B4513", "#FF19B219", "#FFFF3B30", "#EB4E3D", "#FFFFF8DC", "#FFDEB887", "#FF3E2723", "#FF8B4513", "#FF3E2723", "#FFA08878")
+                    }.padding(.horizontal, 20).padding(.vertical, 16)
+                }.background(Color(hex: themeBarBG).opacity(0.5))
+                Divider()
+                List {
+                    Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
+                        colorRow(title: "背景色", hex: $themeBG, base: baseBG)
+                        colorRow(title: "メニュー背景色", hex: $themeBarBG, base: baseBarBG)
+                        colorRow(title: "メニュー文字色", hex: $themeBarText, base: baseBarText)
+                        colorRow(title: "本文文字色", hex: $themeBodyText, base: baseBody)
+                        colorRow(title: "サブ文字色", hex: $themeSubText, base: baseSub)
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("フッターメニュー").foregroundColor(Color(hex: themeSubText))) {
+                        colorRow(title: "メニュー選択色", hex: $themeTabAccent, base: baseTab)
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("個別パーツ").foregroundColor(Color(hex: themeSubText))) {
+                        colorRow(title: "メインカラー", hex: $themeMain, base: baseMain)
+                        colorRow(title: "収入の色", hex: $themeIncome, base: baseInc)
+                        colorRow(title: "支出の色", hex: $themeExpense, base: baseExp)
+                        colorRow(title: "祝日の色", hex: $themeHoliday, base: baseHol)
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
+            }
+        }
+        .navigationTitle("テーマ設定").navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
     }
-    func colorRow(title: String, hex: Binding<String>) -> some View {
-        ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() }))
+    
+    func presetBtn(_ n: String, _ m: String, _ i: String, _ e: String, _ h: String, _ b: String, _ bb: String, _ bt: String, _ t: String, _ bd: String, _ s: String) -> some View {
+        Button(action: { apply(m, i, e, h, b, bb, bt, t, bd, s) }) {
+            VStack(spacing: 8) {
+                Circle().fill(Color(hex: m)).frame(width: 46, height: 46).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
+                Text(n).font(.system(size: 10, weight: .medium)).foregroundColor(Color(hex: themeSubText))
+            }
+        }.buttonStyle(.plain)
+    }
+    func apply(_ m: String, _ i: String, _ e: String, _ h: String, _ b: String, _ bb: String, _ bt: String, _ t: String, _ bd: String, _ s: String) {
+        withAnimation {
+            themeMain = m; themeIncome = i; themeExpense = e; themeHoliday = h; themeBG = b; themeBarBG = bb; themeBarText = bt; themeTabAccent = t; themeBodyText = bd; themeSubText = s
+            baseMain = m; baseInc = i; baseExp = e; baseHol = h; baseBG = b; baseBarBG = bb; baseBarText = bt; baseTab = t; baseBody = bd; baseSub = s
+        }
+    }
+    func colorRow(title: String, hex: Binding<String>, base: String) -> some View {
+        HStack { ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex() })).foregroundColor(Color(hex: themeBodyText)); Spacer(); if hex.wrappedValue != base { Button(action: { hex.wrappedValue = base }) { Image(systemName: "arrow.counterclockwise.circle.fill").foregroundColor(Color(hex: themeSubText).opacity(0.8)).font(.title3) }.buttonStyle(.plain) } }
     }
 }
