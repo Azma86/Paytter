@@ -2,15 +2,29 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
-// --- エクスポートを確実にするための共有ソース管理 ---
-class ActivityItemSource: NSObject, UIActivityItemSource {
-    var fileURL: URL
+// --- 共有機能を確実に動作させるためのクラス ---
+class DocumentItemSource: NSObject, UIActivityItemSource {
+    let fileURL: URL
+
     init(fileURL: URL) {
         self.fileURL = fileURL
         super.init()
     }
-    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any { fileURL }
-    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? { fileURL }
+
+    // プレースホルダーとしてURLを返す
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        return fileURL
+    }
+
+    // 共有アイテム本体としてURLを返す
+    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+        return fileURL
+    }
+    
+    // メタデータとしてファイルタイプを明示する（これが重要！）
+    func activityViewController(_ activityViewController: UIActivityViewController, dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String {
+        return UTType.json.identifier
+    }
 }
 
 struct ContentView: View {
@@ -72,7 +86,7 @@ struct ContentView: View {
         }
     }
 
-    // --- 各タブのビュー定義 ---
+    // --- 各タブのビュー ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -198,7 +212,7 @@ struct ContentView: View {
         } 
     }
 
-    // --- ロジック関数群 ---
+    // --- ロジック関数 ---
     func handleImport(from url: URL) {
         guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -219,12 +233,28 @@ struct ContentView: View {
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
 
+    // 【共有機能の核心部分】
     func exportBackup() {
-        let fileName = "Paytter_Backup.json"
-        let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
+        // 1. まず手動バックアップ用ファイルを更新
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
-        let av = UIActivityViewController(activityItems: [path], applicationActivities: nil)
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController {
+        
+        // 2. ファイルパスを取得
+        let fileName = "manual_transactions.json"
+        let sourceURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
+        
+        // 3. 共有用の名前で一時コピーを作成
+        let shareName = "TwitterKakeibo_Backup.json"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(shareName)
+        
+        try? FileManager.default.removeItem(at: tempURL)
+        try? FileManager.default.copyItem(at: sourceURL, to: tempURL)
+        
+        // 4. カスタムSourceを使って共有シートを起動
+        let itemSource = DocumentItemSource(fileURL: tempURL)
+        let av = UIActivityViewController(activityItems: [itemSource], applicationActivities: nil)
+        
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = scene.windows.first?.rootViewController {
             av.popoverPresentationController?.sourceView = rootVC.view
             rootVC.present(av, animated: true)
         }
