@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 3. 自作カレンダー画面 (粘り気のある滑らかなスライド対応) ---
+// --- 3. 自作カレンダー画面 (エラー修正 & 滑らかなスライド対応) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -82,7 +82,7 @@ struct CalendarView: View {
                 }
             }.padding(.bottom, 5)
 
-            // カレンダーグリッド（粘り気のあるゆっくりしたスライド）
+            // カレンダーグリッド
             GeometryReader { geometry in
                 let width = geometry.size.width
                 HStack(spacing: 0) {
@@ -98,11 +98,9 @@ struct CalendarView: View {
                             dragOffset = value.translation.width
                         }
                         .onEnded { value in
-                            let velocity = value.predictedTranslation.width
                             let threshold = width * 0.3
-                            
-                            // ゆっくり、かつ滑らかに吸い込まれるようなeaseInOutアニメーション
-                            if value.translation.width < -threshold || velocity < -threshold {
+                            // 予測変換ではなく、実際のドラッグ距離でシンプルに判定
+                            if value.translation.width < -threshold {
                                 withAnimation(.easeInOut(duration: 0.45)) {
                                     dragOffset = -width
                                 }
@@ -110,7 +108,7 @@ struct CalendarView: View {
                                     currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)!
                                     dragOffset = 0
                                 }
-                            } else if value.translation.width > threshold || velocity > threshold {
+                            } else if value.translation.width > threshold {
                                 withAnimation(.easeInOut(duration: 0.45)) {
                                     dragOffset = width
                                 }
