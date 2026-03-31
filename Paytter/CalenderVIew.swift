@@ -7,6 +7,8 @@ struct CalendarView: View {
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
     
     @State private var selectedDate = Date()
     @State private var currentMonth = Date()
@@ -27,85 +29,92 @@ struct CalendarView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left") }
-                Spacer()
-                Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
-                    HStack(spacing: 4) {
-                        Text(monthYearString(from: currentMonth)).font(.headline).foregroundColor(.primary)
-                        Image(systemName: "chevron.down").font(.caption).foregroundColor(.secondary)
+        ZStack {
+            Color(hex: themeBG).ignoresSafeArea() // 背景色
+            
+            VStack(spacing: 0) {
+                HStack {
+                    Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left") }
+                    Spacer()
+                    Button(action: { tempPickerDate = currentMonth; isShowingMonthPicker = true }) {
+                        HStack(spacing: 4) {
+                            Text(monthYearString(from: currentMonth)).font(.headline).foregroundColor(Color(hex: themeBarText))
+                            Image(systemName: "chevron.down").font(.caption).foregroundColor(.secondary)
+                        }
                     }
-                }
-                Spacer()
-                Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right") }
-            }.padding(.horizontal).padding(.vertical, 8)
+                    Spacer()
+                    Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right") }
+                }.padding(.horizontal).padding(.vertical, 8)
 
-            HStack {
-                ForEach(daysOfWeek, id: \.self) { day in
-                    Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
-                        .foregroundColor(day == "日" ? Color(hex: themeHoliday) : (day == "土" ? .blue : .primary))
-                }
-            }.padding(.bottom, 5)
+                HStack {
+                    ForEach(daysOfWeek, id: \.self) { day in
+                        Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
+                            .foregroundColor(day == "日" ? Color(hex: themeHoliday) : (day == "土" ? .blue : Color(hex: themeBarText)))
+                    }
+                }.padding(.bottom, 5)
 
-            GeometryReader { geometry in
-                let width = geometry.size.width
-                HStack(spacing: 0) {
-                    monthGrid(for: calendar.date(byAdding: .month, value: -1, to: currentMonth)!, width: width)
-                    monthGrid(for: currentMonth, width: width)
-                    monthGrid(for: calendar.date(byAdding: .month, value: 1, to: currentMonth)!, width: width)
-                }
-                .offset(x: -width + dragOffset)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture()
-                        .onChanged { dragOffset = $0.translation.width }
-                        .onEnded { value in
-                            let threshold = width * 0.3
-                            if value.translation.width < -threshold {
-                                withAnimation(.easeInOut(duration: 0.45)) { dragOffset = -width }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                                    currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)!
-                                    dragOffset = 0
+                GeometryReader { geometry in
+                    let width = geometry.size.width
+                    HStack(spacing: 0) {
+                        monthGrid(for: calendar.date(byAdding: .month, value: -1, to: currentMonth)!, width: width)
+                        monthGrid(for: currentMonth, width: width)
+                        monthGrid(for: calendar.date(byAdding: .month, value: 1, to: currentMonth)!, width: width)
+                    }
+                    .offset(x: -width + dragOffset)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture()
+                            .onChanged { dragOffset = $0.translation.width }
+                            .onEnded { value in
+                                let threshold = width * 0.3
+                                if value.translation.width < -threshold {
+                                    withAnimation(.easeInOut(duration: 0.45)) { dragOffset = -width }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                                        currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)!
+                                        dragOffset = 0
+                                    }
+                                } else if value.translation.width > threshold {
+                                    withAnimation(.easeInOut(duration: 0.45)) { dragOffset = width }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                                        currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth)!
+                                        dragOffset = 0
+                                    }
+                                } else {
+                                    withAnimation(.easeInOut(duration: 0.3)) { dragOffset = 0 }
                                 }
-                            } else if value.translation.width > threshold {
-                                withAnimation(.easeInOut(duration: 0.45)) { dragOffset = width }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                                    currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth)!
-                                    dragOffset = 0
-                                }
-                            } else {
-                                withAnimation(.easeInOut(duration: 0.3)) { dragOffset = 0 }
+                            }
+                    )
+                }.frame(height: 280)
+
+                Divider()
+
+                List {
+                    if filteredTransactions.isEmpty {
+                        HStack { Spacer(); Text("投稿はありません").font(.caption).foregroundColor(.secondary).padding(.top, 40); Spacer() }.listRowSeparator(.hidden).listRowBackground(Color.clear)
+                    } else {
+                        ForEach(filteredTransactions) { item in
+                            ZStack {
+                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
+                                TwitterRow(item: item)
+                            }
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color(hex: themeBG))
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button { transactionToDelete = item; isShowingDeleteAlert = true } label: { Text("削除") }.tint(.red)
                             }
                         }
-                )
-            }.frame(height: 280)
-
-            Divider()
-
-            List {
-                if filteredTransactions.isEmpty {
-                    HStack { Spacer(); Text("投稿はありません").font(.caption).foregroundColor(.secondary).padding(.top, 40); Spacer() }.listRowSeparator(.hidden)
-                } else {
-                    ForEach(filteredTransactions) { item in
-                        ZStack {
-                            NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
-                            TwitterRow(item: item)
-                        }
-                        .listRowInsets(EdgeInsets())
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button { transactionToDelete = item; isShowingDeleteAlert = true } label: { Text("削除") }.tint(.red)
-                        }
                     }
+                    Button(action: { self.inputText = ""; self.isShowingInputSheet = true }) {
+                        HStack { Image(systemName: "plus"); Text("投稿を作成") }
+                        .font(.subheadline).fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .background(Color(hex: themeBG)).foregroundColor(Color(hex: themeMain))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(hex: themeMain).opacity(0.3), lineWidth: 1))
+                        .padding(.horizontal, 40).padding(.vertical, 20)
+                    }.listRowSeparator(.hidden).listRowBackground(Color.clear)
                 }
-                Button(action: { self.inputText = ""; self.isShowingInputSheet = true }) {
-                    HStack { Image(systemName: "plus"); Text("投稿を作成") }
-                    .font(.subheadline).fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 12)
-                    .background(Color.white).foregroundColor(Color(hex: themeMain))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(hex: themeMain).opacity(0.3), lineWidth: 1))
-                    .padding(.horizontal, 40).padding(.vertical, 20)
-                }.listRowSeparator(.hidden)
-            }.listStyle(.plain)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+            }
         }
         .navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline)
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) {
@@ -128,7 +137,7 @@ struct CalendarView: View {
                 VStack(spacing: 2) {
                     Text("\(calendar.component(.day, from: date))")
                         .font(.system(size: 13, design: .rounded)).fontWeight(isSelected ? .bold : .regular)
-                        .foregroundColor(isCurrentMonth ? (isSelected ? .white : (isHoliday ? Color(hex: themeHoliday) : .primary)) : .gray.opacity(0.25))
+                        .foregroundColor(isCurrentMonth ? (isSelected ? .white : (isHoliday ? Color(hex: themeHoliday) : Color(hex: themeBarText))) : .gray.opacity(0.25))
                         .frame(width: 24, height: 24).background(isSelected && isCurrentMonth ? Color(hex: themeMain) : Color.clear).clipShape(Circle())
                     
                     VStack(alignment: .leading, spacing: 1) {
