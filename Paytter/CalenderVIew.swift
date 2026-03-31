@@ -91,7 +91,6 @@ struct CalendarView: View {
                             NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                 EmptyView()
                             }.opacity(0)
-                            
                             TwitterRow(item: item)
                         }
                         .listRowInsets(EdgeInsets())
@@ -122,8 +121,8 @@ struct CalendarView: View {
             Button("キャンセル", role: .cancel) { transactionToDelete = nil }
             Button("削除", role: .destructive) { 
                 if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) {
-                    // 削除決定時のみアニメーションを実行
-                    withAnimation(.easeOut) {
+                    // 吸い込まれる動きを抑えるため短いアニメーションで実行
+                    withAnimation(.easeOut(duration: 0.2)) { 
                         transactions.remove(at: idx)
                     }
                 }
