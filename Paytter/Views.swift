@@ -2,7 +2,7 @@ import SwiftUI
 
 struct TransactionDetailView: View {
     let item: Transaction; @Binding var transactions: [Transaction]; @Binding var accounts: [Account]
-    @AppStorage("app_theme") var theme = AppTheme()
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @Environment(\.dismiss) var dismiss; @State private var isShowingEditSheet = false; @State private var editLineText = ""; @State private var isShowingDeleteConfirm = false
     var body: some View {
         ScrollView {
@@ -13,7 +13,7 @@ struct TransactionDetailView: View {
                     Spacer(); Text(item.source).font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color.gray.opacity(0.1)).cornerRadius(5).foregroundColor(.primary)
                 }
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3)
-                if !item.tags.isEmpty { HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(theme.mainColor) } } }
+                if !item.tags.isEmpty { HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(Color(hex: themeMain)) } } }
                 Text(item.date, style: .date) + Text(" " ) + Text(item.date, style: .time)
                 Divider()
                 HStack(spacing: 60) { Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "shareplay") }.font(.subheadline).foregroundColor(.secondary).frame(maxWidth: .infinity)
@@ -41,7 +41,6 @@ struct TransactionDetailView: View {
 struct AccountCreateView: View {
     @Binding var accounts: [Account]; @Binding var transactions: [Transaction]; @Environment(\.dismiss) var dismiss
     @State private var name = ""; @State private var initial = ""; @State private var selectedType: AccountType = .wallet
-    @State private var payday: Int = 1; @State private var withdrawalAccountId: UUID? = nil
     var body: some View {
         NavigationView {
             Form {
@@ -70,10 +69,12 @@ struct AccountEditView: View {
 }
 
 struct WalletAnalysisView: View {
-    let transactions: [Transaction]; @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000; @AppStorage("app_theme") var theme = AppTheme()
+    let transactions: [Transaction]; @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
     var body: some View {
-        List { Section(header: Text("今月のサマリー")) { VStack(alignment: .leading, spacing: 10) { Text("合計支出").font(.caption).foregroundColor(.secondary); Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()); ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget)).accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? theme.expenseColor : theme.mainColor); Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))").font(.caption2).foregroundColor(.secondary) }.padding(.vertical, 10) } }.listStyle(.insetGrouped).navigationTitle("分析")
+        List { Section(header: Text("今月のサマリー")) { VStack(alignment: .leading, spacing: 10) { Text("合計支出").font(.caption).foregroundColor(.secondary); Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()); ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget)).accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? Color(hex: themeExpense) : Color(hex: themeMain)); Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))").font(.caption2).foregroundColor(.secondary) }.padding(.vertical, 10) } }.listStyle(.insetGrouped).navigationTitle("分析")
     }
 }
 
