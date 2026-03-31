@@ -43,10 +43,8 @@ struct ContentView: View {
             settingTab.tabItem { Label("設定", systemImage: "gearshape") }
         }
         .accentColor(Color(hex: themeTabAccent))
-        .onAppear { recalculateBalances(); updateAppearance() }
+        .onAppear { recalculateBalances() }
         .onChange(of: transactions) { _ in recalculateBalances() }
-        .onChange(of: themeBarBG) { _ in updateAppearance() }
-        .onChange(of: themeBarText) { _ in updateAppearance() }
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
@@ -82,15 +80,66 @@ struct ContentView: View {
                 }.padding(20).padding(.bottom, 10)
             }
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+            // バーの色を強制反映
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                 Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete { withAnimation(.easeOut(duration: 0.2)) { deleteSpecificTransaction(t) } } }
             } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
         }
     }
     
-    private var calendarTab: some View { NavigationView { CalendarView(transactions: $transactions, accounts: $accounts) } }
-    private var walletTab: some View { NavigationView { ZStack { Color(hex: themeBG).ignoresSafeArea(); List { Section(header: Text("お財布の管理")) { ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { HStack { Image(systemName: acc.type.icon).foregroundColor(.secondary); Text(acc.name); Spacer(); Text("¥\(acc.balance)").foregroundColor(.secondary) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) } }; Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") } }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(header: Text("分析")) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis") } }.listRowBackground(Color(hex: themeBG).opacity(0.5)) }.scrollContentBackground(.hidden).listStyle(.insetGrouped) }.navigationTitle("お財布").sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }.alert("削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } } } } }
-    private var settingTab: some View { NavigationView { ZStack { Color(hex: themeBG).ignoresSafeArea(); List { Section(header: Text("カスタマイズ")) { NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette") } }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(header: Text("バックアップ")) { Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }; Button("復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true } }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(header: Text("データ")) { Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } }.listRowBackground(Color(hex: themeBG).opacity(0.5)) }.scrollContentBackground(.hidden).listStyle(.insetGrouped) }.navigationTitle("設定").alert("リセット", isPresented: $isShowingResetAlert) { Button("キャンセル", role: .cancel){}; Button("リセット", role: .destructive){ resetAll() } } } }
+    private var calendarTab: some View { 
+        NavigationView { 
+            CalendarView(transactions: $transactions, accounts: $accounts)
+                .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+                .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+        } 
+    }
+
+    private var walletTab: some View { 
+        NavigationView { 
+            ZStack {
+                Color(hex: themeBG).ignoresSafeArea()
+                List { 
+                    Section(header: Text("お財布の管理")) { 
+                        ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in 
+                            NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { 
+                                HStack { Image(systemName: acc.type.icon).foregroundColor(.secondary); Text(acc.name); Spacer(); Text("¥\(acc.balance)").foregroundColor(.secondary) } 
+                            }.swipeActions(edge: .trailing, allowsFullSwipe: false) { 
+                                Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) 
+                            } 
+                        }
+                        Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") } 
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("分析")) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis") } }.listRowBackground(Color(hex: themeBG).opacity(0.5)) 
+                }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
+            }
+            .navigationTitle("お財布")
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .alert("削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } } } 
+        } 
+    }
+
+    private var settingTab: some View { 
+        NavigationView { 
+            ZStack { 
+                Color(hex: themeBG).ignoresSafeArea()
+                List { 
+                    Section(header: Text("カスタマイズ")) { NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette") } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("予算設定")) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("バックアップ")) { Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }; Button("復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("データ")) { Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } }.listRowBackground(Color(hex: themeBG).opacity(0.5)) 
+                }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
+            }
+            .navigationTitle("設定")
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .alert("リセット", isPresented: $isShowingResetAlert) { Button("キャンセル", role: .cancel){}; Button("リセット", role: .destructive){ resetAll() } } 
+        } 
+    }
 
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     func deleteSpecificTransaction(_ target: Transaction) { if let index = transactions.firstIndex(where: { $0.id == target.id }) { transactions.remove(at: index) } }
@@ -98,33 +147,6 @@ struct ContentView: View {
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000 }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
-
-    func updateAppearance() {
-        let bgColor = UIColor(Color(hex: themeBarBG))
-        let textColor = UIColor(Color(hex: themeBarText))
-        
-        let navBarAppearance = UINavigationBarAppearance()
-        navBarAppearance.configureWithOpaqueBackground()
-        navBarAppearance.backgroundColor = bgColor
-        navBarAppearance.titleTextAttributes = [.foregroundColor: textColor]
-        navBarAppearance.largeTitleTextAttributes = [.foregroundColor: textColor]
-        
-        UINavigationBar.appearance().standardAppearance = navBarAppearance
-        UINavigationBar.appearance().compactAppearance = navBarAppearance
-        UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
-        
-        let tabBarAppearance = UITabBarAppearance()
-        tabBarAppearance.configureWithOpaqueBackground()
-        tabBarAppearance.backgroundColor = bgColor
-        
-        UITabBar.appearance().standardAppearance = tabBarAppearance
-        if #available(iOS 15.0, *) { UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance }
-
-        // 即座に反映させるための処理
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            windowScene.windows.forEach { $0.setNeedsLayout(); $0.layoutIfNeeded() }
-        }
-    }
 }
 
 // --- テーマ設定画面 ---
@@ -144,7 +166,7 @@ struct ThemeSettingView: View {
 
     let presets: [Preset] = [
         Preset(name: "デフォルト", main: "#FF007AFF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF3B30", bg: "#FFFFFFFF", barBG: "#F8F8F8FF", barTxt: "#FF000000", tab: "#FF007AFF"),
-        Preset(name: "ダーク", main: "#FF0A84FF", inc: "#FF30D158", exp: "#FFFF453A", hol: "#FFFF453A", bg: "#FF000000", barBG: "#FF1C1C1E", barTxt: "#FFFFFFFF", tab: "#FF0A84FF"),
+        Preset(name: "ダーク", main: "#FF0A84FF", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFFF453A", bg: "#FF000000", barBG: "#FF1C1C1E", barTxt: "#FFFFFFFF", tab: "#FF0A84FF"),
         Preset(name: "ナチュラル", main: "#FF6B8E23", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFCD5C5C", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barTxt: "#FF4B3621", tab: "#FF6B8E23"),
         Preset(name: "モノクロ", main: "#FF333333", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FF999999", bg: "#FFFFFFFF", barBG: "#FFF2F2F2", barTxt: "#FF000000", tab: "#FF000000"),
         Preset(name: "カフェ", main: "#FF8B4513", inc: "#FF19B219", exp: "#FFFF3B30", hol: "#FFA52A2A", bg: "#FFFFF8DC", barBG: "#FFDEB887", barTxt: "#FF3E2723", tab: "#FF8B4513")
@@ -154,7 +176,6 @@ struct ThemeSettingView: View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             VStack(spacing: 0) {
-                // プリセットセレクター (中央揃えスタイル)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 20) {
                         ForEach(presets, id: \.name) { p in
@@ -189,7 +210,9 @@ struct ThemeSettingView: View {
             }
         }
         .navigationTitle("テーマ設定")
-        .navigationBarTitleDisplayMode(.inline) // 中央揃え・インライン形式に変更
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+        .toolbarBackground(.visible, for: .navigationBar, .tabBar)
     }
     
     func apply(_ p: Preset) {
