@@ -5,29 +5,12 @@ import UniformTypeIdentifiers
 // --- エクスポートを確実にするための共有ソース管理 ---
 class ActivityItemSource: NSObject, UIActivityItemSource {
     var fileURL: URL
-    var title: String
-    
-    init(fileURL: URL, title: String) {
+    init(fileURL: URL) {
         self.fileURL = fileURL
-        self.title = title
         super.init()
     }
-    
-    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
-        return fileURL
-    }
-    
-    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
-        return fileURL
-    }
-    
-    func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
-        return title
-    }
-    
-    func activityViewController(_ activityViewController: UIActivityViewController, dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String {
-        return UTType.json.identifier
-    }
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any { fileURL }
+    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? { fileURL }
 }
 
 struct ContentView: View {
@@ -39,6 +22,7 @@ struct ContentView: View {
     ]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     
+    // --- テーマ設定データ ---
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -88,6 +72,7 @@ struct ContentView: View {
         }
     }
 
+    // --- 各タブのビュー定義 ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -121,8 +106,8 @@ struct ContentView: View {
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
-                Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete { withAnimation(.easeOut(duration: 0.2)) { deleteSpecificTransaction(t) } } }
-            } message: { if let t = transactionToDelete { Text(t.cleanNote).foregroundColor(Color(hex: themeBodyText)) } }
+                Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete { deleteSpecificTransaction(t) } }
+            } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
         }
     }
     
@@ -185,11 +170,11 @@ struct ContentView: View {
                         }
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { 
-                        Button("手動バックアップを作成") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
-                        Button("手動バックアップから復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); isShowingSaveConfirm = true }.foregroundColor(Color(hex: themeBodyText))
+                        Button("復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
-                        Button("バックアップを共有") { exportBackup() }.foregroundColor(Color(hex: themeMain))
-                        Button("外部から読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
+                        Button("共有 (外部に書き出す)") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { 
                         Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } 
@@ -199,19 +184,21 @@ struct ContentView: View {
             .navigationTitle("設定")
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
-            .alert("保存", isPresented: $isShowingSaveConfirm) { Button("保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }; Button("キャンセル", role: .cancel){} } message: { Text("前回: \(backupDateString)") }
+            .alert("保存", isPresented: $isShowingSaveConfirm) { Button("保存"){ BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true }; Button("キャンセル", role:.cancel){} } message: { Text("前回: \(backupDateString)") }
             .alert("復元", isPresented: $isShowingRestoreConfirm) { Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元完了"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){} } message: { Text("\(isRestoringManual ? "手動":"自動")保存日: \(backupDateString)") }
-            .alert("外部読込", isPresented: $isShowingImportConfirm) { Button("復元", role: .destructive) { if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){ pendingImportData = nil } } message: { if let d = pendingImportData { Text("保存日時: \(d.2)\nデータを上書きしますか？") } }
+            .alert("外部読込", isPresented: $isShowingImportConfirm) { Button("復元", role: .destructive) { if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true } }; Button("キャンセル", role: .cancel){ pendingImportData = nil } } message: { if let d = pendingImportData { Text("保存日時: \(d.2)") } }
+            .alert("リセット", isPresented: $isShowingResetAlert) { Button("初期化", role: .destructive) { resetAll(); completionMessage = "リセット完了"; isShowingCompletionAlert = true }; Button("キャンセル", role: .cancel){} }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK"){} } message: { Text(completionMessage) }
-            .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in
-                switch result {
-                case .success(let url): if url.startAccessingSecurityScopedResource() { handleImport(from: url); url.stopAccessingSecurityScopedResource() }
-                case .failure(let error): print(error.localizedDescription)
-                }
+            .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in 
+                switch result { 
+                case .success(let url): if url.startAccessingSecurityScopedResource() { handleImport(from: url); url.stopAccessingSecurityScopedResource() }; 
+                case .failure(let e): print(e.localizedDescription) 
+                } 
             }
         } 
     }
 
+    // --- ロジック関数群 ---
     func handleImport(from url: URL) {
         guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -224,6 +211,7 @@ struct ContentView: View {
             self.pendingImportData = (t, a, dateStr); self.isShowingImportConfirm = true
         }
     }
+    
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     func deleteSpecificTransaction(_ target: Transaction) { if let index = transactions.firstIndex(where: { $0.id == target.id }) { transactions.remove(at: index) } }
     func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
@@ -232,17 +220,12 @@ struct ContentView: View {
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
 
     func exportBackup() {
-        let fileName = "TwitterKakeibo_Backup.json"
-        let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json")
+        let fileName = "Paytter_Backup.json"
+        let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-        try? FileManager.default.removeItem(at: tempURL)
-        try? FileManager.default.copyItem(at: path, to: tempURL)
-        let itemSource = ActivityItemSource(fileURL: tempURL, title: "家計簿バックアップ")
-        let av = UIActivityViewController(activityItems: [itemSource], applicationActivities: nil)
+        let av = UIActivityViewController(activityItems: [path], applicationActivities: nil)
         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController {
             av.popoverPresentationController?.sourceView = rootVC.view
-            av.popoverPresentationController?.sourceRect = CGRect(x: UIScreen.main.bounds.midX, y: UIScreen.main.bounds.midY, width: 0, height: 0)
             rootVC.present(av, animated: true)
         }
     }
@@ -255,13 +238,6 @@ struct ContentView: View {
         let tabBarAppearance = UITabBarAppearance(); tabBarAppearance.configureWithOpaqueBackground(); tabBarAppearance.backgroundColor = bgColor
         UITabBar.appearance().standardAppearance = tabBarAppearance
     }
-}
-
-// --- 共有シート部品 ---
-struct ActivityView: UIViewControllerRepresentable {
-    var activityItems: [Any]; var applicationActivities: [UIActivity]? = nil
-    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities) }
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // --- テーマ設定画面 ---
