@@ -36,12 +36,11 @@ struct HighlightedText: View {
     }
 }
 
-// --- 投稿画面 (即時サジェスト修正版) ---
+// --- 投稿画面 ---
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool; var onPost: (Bool) -> Void
     var transactions: [Transaction]
     var accounts: [Account]
-    
     @State private var suggestions: [String] = []
     
     var body: some View {
@@ -52,15 +51,10 @@ struct PostView: View {
                     ZStack(alignment: .topLeading) {
                         CustomTextEditor(text: $inputText) { sym in 
                             insertAtCursor(sym)
-                            // 挿入直後にサジェストを更新
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                updateSuggestionsForCursor()
-                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() }
                         }
                         .frame(minHeight: 150)
-                        .onChange(of: inputText) { _ in
-                            updateSuggestionsForCursor()
-                        }
+                        .onChange(of: inputText) { _ in updateSuggestionsForCursor() }
                         if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
                     }
                 }.padding()
@@ -92,78 +86,40 @@ struct PostView: View {
     }
     
     func updateSuggestionsForCursor() {
-        guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let win = sc.windows.first,
-              let tv = win.findTextView() else { return }
-        
-        let cursorLoc = tv.selectedRange.location
-        let text = tv.text ?? ""
-        
+        guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
+        let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""
         let prefixText = String(text.prefix(cursorLoc))
         let currentWord = prefixText.components(separatedBy: .whitespacesAndNewlines).last ?? ""
-        
-        if currentWord == "#" {
-            let allTags = transactions.flatMap { $0.tags }
-            suggestions = Array(Set(allTags)).sorted()
-        } else if currentWord.hasPrefix("#") {
-            let allTags = transactions.flatMap { $0.tags }
-            suggestions = Array(Set(allTags.filter { $0.hasPrefix(currentWord) && $0 != currentWord })).sorted()
-        } else if currentWord == "@" {
-            suggestions = accounts.map { "@" + $0.name }.sorted()
-        } else if currentWord.hasPrefix("@") {
-            suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(currentWord) && $0 != currentWord }.sorted()
-        } else {
-            suggestions = []
-        }
+        if currentWord == "#" { suggestions = Array(Set(transactions.flatMap { $0.tags })).sorted() }
+        else if currentWord.hasPrefix("#") { suggestions = Array(Set(transactions.flatMap { $0.tags }.filter { $0.hasPrefix(currentWord) && $0 != currentWord })).sorted() }
+        else if currentWord == "@" { suggestions = accounts.map { "@" + $0.name }.sorted() }
+        else if currentWord.hasPrefix("@") { suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(currentWord) && $0 != currentWord }.sorted() }
+        else { suggestions = [] }
     }
     
     func applySuggestion(_ suggestion: String) {
-        guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let win = sc.windows.first,
-              let tv = win.findTextView() else { return }
-        
-        let cursorLoc = tv.selectedRange.location
-        let text = tv.text ?? ""
+        guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
+        let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""
         let prefixText = String(text.prefix(cursorLoc))
-        
         let words = prefixText.components(separatedBy: .whitespacesAndNewlines)
         if let lastWord = words.last {
             let rangeStart = cursorLoc - lastWord.count
             let startIdx = text.index(text.startIndex, offsetBy: rangeStart)
             let endIdx = text.index(text.startIndex, offsetBy: cursorLoc)
-            
-            let newText = text.replacingCharacters(in: startIdx..<endIdx, with: suggestion + " ")
-            inputText = newText
-            
-            DispatchQueue.main.async {
-                tv.selectedRange = NSRange(location: rangeStart + suggestion.count + 1, length: 0)
-                suggestions = []
-            }
+            inputText = text.replacingCharacters(in: startIdx..<endIdx, with: suggestion + " ")
+            DispatchQueue.main.async { tv.selectedRange = NSRange(location: rangeStart + suggestion.count + 1, length: 0); suggestions = [] }
         }
     }
     
     func insertAtCursor(_ sym: String) {
         if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() {
-            let sel = tv.selectedRange
-            let cur = tv.text ?? ""
-            
-            let lastChar: Character? = {
-                if sel.location > 0 {
-                    let index = cur.index(cur.startIndex, offsetBy: sel.location - 1)
-                    return cur[index]
-                }
-                return nil
-            }()
-            
+            let sel = tv.selectedRange; let cur = tv.text ?? ""
+            let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
             let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
             let ins = prefix + sym
-            
             if let ran = Range(sel, in: cur) {
-                let nText = cur.replacingCharacters(in: ran, with: ins)
-                inputText = nText
-                DispatchQueue.main.async {
-                    tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0)
-                }
+                inputText = cur.replacingCharacters(in: ran, with: ins)
+                DispatchQueue.main.async { tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0) }
             }
         }
     }
@@ -202,10 +158,12 @@ struct TransactionDetailView: View {
         }
     }
     func deleteThis() { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions.remove(at: idx); dismiss() } }
+    
     func updateThis(newInc: Bool) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = parseAmount(from: editLineText); let nSrc = parseSourceName(from: editLineText)
             transactions[idx] = Transaction(id: item.id, amount: nAmt, date: item.date, note: editLineText, source: nSrc, isIncome: newInc)
+            // ここで親の transactions が更新されるため、ContentView側の onChange が走り、再計算される
         }
     }
     func parseAmount(from text: String) -> Int {
@@ -215,91 +173,54 @@ struct TransactionDetailView: View {
     }
     func parseSourceName(from text: String) -> String {
         for acc in accounts { if text.contains("@\(acc.name)") { return acc.name } }
-        return "お財布"
+        return item.source
     }
 }
 
-// --- お財布追加画面 ---
+// --- お財布追加・編集・共通 ---
 struct AccountCreateView: View {
-    @Binding var accounts: [Account]
-    @Binding var transactions: [Transaction]
-    @Environment(\.dismiss) var dismiss
-    @State private var name = ""
-    @State private var initial = ""
-    @State private var selectedType: AccountType = .wallet
-    @State private var payday: Int = 1
-    @State private var withdrawalAccountId: UUID? = nil
-    
-    var bankAccounts: [Account] { accounts.filter { $0.type == .bank } }
-    
+    @Binding var accounts: [Account]; @Binding var transactions: [Transaction]; @Environment(\.dismiss) var dismiss
+    @State private var name = ""; @State private var initial = ""; @State private var selectedType: AccountType = .wallet
+    @State private var payday: Int = 1; @State private var withdrawalAccountId: UUID? = nil
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("基本情報")) {
                     TextField("お財布の名前", text: $name)
-                    Picker(selection: $selectedType) {
-                        ForEach(AccountType.allCases, id: \.self) { type in Label(type.rawValue, systemImage: type.icon).tag(type) }
-                    } label: { Text("種類") }
+                    Picker(selection: $selectedType) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }
                     TextField("現在の金額", text: $initial).keyboardType(.numberPad)
                 }
                 if selectedType == .credit {
                     Section(header: Text("クレジットカード設定")) {
-                        Picker(selection: $payday) {
-                            ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
-                            Text("月末").tag(32)
-                        } label: { Text("引き落とし日") }.pickerStyle(.menu)
-                        Picker(selection: $withdrawalAccountId) {
-                            Text("指定なし").tag(nil as UUID?)
-                            ForEach(bankAccounts) { acc in Text(acc.name).tag(acc.id as UUID?) }
-                        } label: { Text("引き落とし口座") }.pickerStyle(.menu)
+                        Picker(selection: $payday) { ForEach(1...31, id: \.self) { Text("\($0)日").tag($0) }; Text("月末").tag(32) } label: { Text("引き落とし日") }.pickerStyle(.menu)
+                        Picker(selection: $withdrawalAccountId) { Text("指定なし").tag(nil as UUID?); ForEach(accounts.filter { $0.type == .bank }) { Text($0.name).tag($0.id as UUID?) } } label: { Text("引き落とし口座") }.pickerStyle(.menu)
                     }
                 }
-            }
-            .navigationTitle("新しいお財布")
-            .navigationBarItems(leading: Button("キャンセル"){ dismiss() }, trailing: Button("追加") {
+            }.navigationTitle("新しいお財布").navigationBarItems(leading: Button("キャンセル"){ dismiss() }, trailing: Button("追加") {
                 let val = Int(initial) ?? 0
                 let newAcc = Account(name: name, balance: val, type: selectedType, isVisible: true, payday: selectedType == .credit ? payday : nil, withdrawalAccountId: selectedType == .credit ? withdrawalAccountId : nil)
                 accounts.append(newAcc)
-                if val != 0 {
-                    transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val)", source: name, isIncome: true))
-                }
+                if val != 0 { transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val)", source: name, isIncome: true)) }
                 dismiss()
             }.disabled(name.isEmpty))
         }
     }
 }
 
-// --- お財布編集画面 ---
 struct AccountEditView: View {
-    @Binding var account: Account; @Binding var transactions: [Transaction]
-    var allAccounts: [Account]
-    @State private var editBalance: String = ""
-    @Environment(\.dismiss) var dismiss
-    
+    @Binding var account: Account; @Binding var transactions: [Transaction]; var allAccounts: [Account]
+    @State private var editBalance: String = ""; @Environment(\.dismiss) var dismiss
     var body: some View {
         Form {
             Section(header: Text("基本設定")) {
                 TextField("名前", text: $account.name)
-                Picker(selection: $account.type) {
-                    ForEach(AccountType.allCases, id: \.self) { type in Label(type.rawValue, systemImage: type.icon).tag(type) }
-                } label: { Text("種類") }
+                Picker(selection: $account.type) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }
                 Toggle("ホーム上部に表示", isOn: $account.isVisible)
             }
             if account.type == .credit {
                 Section(header: Text("クレジットカード設定")) {
-                    Picker(selection: Binding(
-                        get: { account.payday ?? 1 },
-                        set: { account.payday = $0 }
-                    )) {
-                        ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
-                        Text("月末").tag(32)
-                    } label: { Text("引き落とし日") }.pickerStyle(.menu)
-                    Picker(selection: $account.withdrawalAccountId) {
-                        Text("指定なし").tag(nil as UUID?)
-                        ForEach(allAccounts.filter { $0.type == .bank }) { acc in
-                            Text(acc.name).tag(acc.id as UUID?)
-                        }
-                    } label: { Text("引き落とし口座") }.pickerStyle(.menu)
+                    Picker(selection: Binding(get: { account.payday ?? 1 }, set: { account.payday = $0 })) { ForEach(1...31, id: \.self) { Text("\($0)日").tag($0) }; Text("月末").tag(32) } label: { Text("引き落とし日") }.pickerStyle(.menu)
+                    Picker(selection: $account.withdrawalAccountId) { Text("指定なし").tag(nil as UUID?); ForEach(allAccounts.filter { $0.type == .bank }) { Text($0.name).tag($0.id as UUID?) } } label: { Text("引き落とし口座") }.pickerStyle(.menu)
                 }
             }
             Section(header: Text("残高の調整")) {
@@ -308,11 +229,7 @@ struct AccountEditView: View {
                     Button("調整投稿") {
                         if let newVal = Int(editBalance) {
                             let diff = newVal - account.balance
-                            if diff != 0 {
-                                let isInc = diff > 0
-                                let absDiff = abs(diff)
-                                transactions.append(Transaction(amount: absDiff, date: Date(), note: "残額調整 @\(account.name) ¥\(absDiff)", source: account.name, isIncome: isInc))
-                            }
+                            if diff != 0 { transactions.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff))", source: account.name, isIncome: diff > 0)) }
                             editBalance = ""; dismiss()
                         }
                     }.buttonStyle(.borderedProminent)
@@ -322,32 +239,41 @@ struct AccountEditView: View {
     }
 }
 
-// --- 分析画面 ---
 struct WalletAnalysisView: View {
-    let transactions: [Transaction]
-    @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
+    let transactions: [Transaction]; @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
     var body: some View {
-        List {
-            Section(header: Text("今月のサマリー")) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("合計支出").font(.caption).foregroundColor(.secondary); Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold())
-                    ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget)).accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? .red : .blue)
-                    Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))").font(.caption2).foregroundColor(.secondary)
-                }.padding(.vertical, 10)
-            }
-        }.listStyle(.insetGrouped).navigationTitle("分析")
+        List { Section(header: Text("今月のサマリー")) { VStack(alignment: .leading, spacing: 10) { Text("合計支出").font(.caption).foregroundColor(.secondary); Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()); ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget)).accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? .red : .blue); Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))").font(.caption2).foregroundColor(.secondary) }.padding(.vertical, 10) } }.listStyle(.insetGrouped).navigationTitle("分析")
     }
 }
 
-// --- 共通部品 ---
+// --- 残高表示とエフェクト ---
 struct BalanceView: View {
-    let title: String; let amount: Int; let color: Color
+    let title: String; let amount: Int; let color: Color; let diff: Int
+    @State private var showDiff = false
+    
     var body: some View {
         VStack {
             Text(title).font(.caption).foregroundColor(.secondary)
-            Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color)
-        }.frame(maxWidth: .infinity)
+            ZStack {
+                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color)
+                
+                if diff != 0 {
+                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(diff > 0 ? .green : .red)
+                        .offset(y: showDiff ? -20 : 0)
+                        .opacity(showDiff ? 0 : 1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .onChange(of: diff) { _ in
+            if diff != 0 {
+                showDiff = false
+                withAnimation(.easeOut(duration: 1.5)) { showDiff = true }
+            }
+        }
     }
 }
 
@@ -356,12 +282,11 @@ struct CustomTextEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView(); textView.font = .preferredFont(forTextStyle: .body); textView.backgroundColor = .clear; textView.delegate = context.coordinator
         let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
-        let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
         let hashBtn = UIBarButtonItem(title: "#", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertHash))
         let yenBtn = UIBarButtonItem(title: "¥", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertYen))
         let atBtn = UIBarButtonItem(title: "@", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertAt))
         let doneBtn = UIBarButtonItem(title: "完了", style: .done, target: context.coordinator, action: #selector(context.coordinator.dismissKeyboard))
-        toolbar.items = [hashBtn, yenBtn, atBtn, flexSpace, doneBtn]; textView.inputAccessoryView = toolbar; return textView
+        toolbar.items = [hashBtn, yenBtn, atBtn, UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil), doneBtn]; textView.inputAccessoryView = toolbar; return textView
     }
     func updateUIView(_ uiView: UITextView, context: Context) { if uiView.text != text { uiView.text = text } }
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -373,10 +298,5 @@ struct CustomTextEditor: UIViewRepresentable {
     }
 }
 
-extension UIView {
-    func findTextView() -> UITextView? {
-        if let tv = self as? UITextView { return tv }
-        for sv in subviews { if let tv = sv.findTextView() { return tv } }
-        return nil
-    }
-}
+extension UIView { func findTextView() -> UITextView? { if let tv = self as? UITextView { return tv }
+    for sv in subviews { if let tv = sv.findTextView() { return tv } }; return nil } }
