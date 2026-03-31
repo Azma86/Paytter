@@ -22,7 +22,10 @@ struct ContentView: View {
     @State private var isShowingCompletionAlert = false
     @State private var completionMessage = ""
 
-    var displayedTransactions: [Transaction] { transactions.reversed() }
+    var displayedTransactions: [Transaction] {
+        // 日付順にソート（新しい順）
+        transactions.sorted(by: { $0.date > $1.date })
+    }
 
     var body: some View {
         TabView {
@@ -33,11 +36,10 @@ struct ContentView: View {
         .onAppear { recalculateBalances() }
         .onChange(of: transactions) { _ in recalculateBalances() }
         .sheet(isPresented: $isShowingInputSheet) { 
-            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, onPost: { isInc in addTransaction(isInc: isInc) }, transactions: transactions, accounts: accounts) 
+            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
     }
 
-    // --- タブ：ホーム ---
     private var homeTab: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
@@ -71,7 +73,6 @@ struct ContentView: View {
         }.tabItem { Label("ホーム", systemImage: "house") }
     }
 
-    // --- タブ：お財布 ---
     private var walletTab: some View {
         NavigationView {
             List {
@@ -92,7 +93,6 @@ struct ContentView: View {
         }.tabItem { Label("お財布", systemImage: "wallet.pass") }
     }
 
-    // --- タブ：設定 ---
     private var settingTab: some View {
         NavigationView {
             List {
@@ -128,10 +128,9 @@ struct ContentView: View {
         }.tabItem { Label("設定", systemImage: "gearshape") }
     }
 
-    // --- ロジック ---
-    func addTransaction(isInc: Bool) {
+    func addTransaction(isInc: Bool, date: Date) {
         let amount = parseAmount(from: inputText); let sourceName = parseSourceName(from: inputText)
-        transactions.append(Transaction(amount: amount, date: Date(), note: inputText, source: sourceName, isIncome: isInc))
+        transactions.append(Transaction(amount: amount, date: date, note: inputText, source: sourceName, isIncome: isInc))
     }
     func deleteSpecificTransaction(_ target: Transaction) { if let index = transactions.firstIndex(where: { $0.id == target.id }) { transactions.remove(at: index) } }
     func deleteAccount(at offsets: IndexSet) { accounts.remove(atOffsets: offsets); recalculateBalances() }
