@@ -36,7 +36,7 @@ struct HighlightedText: View {
     }
 }
 
-// --- 3. 自作カレンダー画面 (滑らかなスライド & 複数ドット対応) ---
+// --- 3. 自作カレンダー画面 (滑らかなリニアスライド対応) ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -82,7 +82,7 @@ struct CalendarView: View {
                 }
             }.padding(.bottom, 5)
 
-            // カレンダーグリッド（物理スライド対応）
+            // カレンダーグリッド（滑らかなリニアスライド）
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     // 前の月
@@ -103,12 +103,13 @@ struct CalendarView: View {
                             } else if value.translation.width > threshold {
                                 moveMonth(by: -1)
                             } else {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragOffset = 0 }
+                                // キャンセル時の動きをリニアに
+                                withAnimation(.easeOut(duration: 0.2)) { dragOffset = 0 }
                             }
                         }
                 )
             }
-            .frame(height: 240) // 高さを調整
+            .frame(height: 240)
 
             Divider()
 
@@ -153,7 +154,6 @@ struct CalendarView: View {
         }
     }
 
-    // 各月のグリッドを生成する関数
     @ViewBuilder
     func monthGrid(for month: Date, width: CGFloat) -> some View {
         let allDays = generateFullGrid(for: month)
@@ -172,9 +172,8 @@ struct CalendarView: View {
                         .background(calendar.isDate(date, inSameDayAs: selectedDate) && isCurrentMonth ? Color.blue : Color.clear)
                         .clipShape(Circle())
                     
-                    // 複数ドット表示：その日の全収支を古い順に並べる
                     HStack(spacing: 2) {
-                        ForEach(dayTransactions.prefix(4)) { tx in // 最大4つまで表示
+                        ForEach(dayTransactions.prefix(4)) { tx in
                             Circle()
                                 .fill(tx.isIncome ? Color.green : Color.red)
                                 .frame(width: 3.5, height: 3.5)
@@ -192,7 +191,8 @@ struct CalendarView: View {
     }
 
     func moveMonth(by v: Int) {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        // バネ感のない滑らかなeaseInOutアニメーションに変更
+        withAnimation(.easeInOut(duration: 0.25)) {
             if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) {
                 currentMonth = next
             }
