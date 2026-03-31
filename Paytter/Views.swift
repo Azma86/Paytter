@@ -9,10 +9,10 @@ struct TwitterRow: View {
             Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("むつき").font(.subheadline).fontWeight(.bold)
+                    Text("むつき").font(.subheadline).fontWeight(.bold).foregroundColor(.primary)
                     Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(.secondary)
                     Spacer()
-                    Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4)
+                    Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(.primary)
                 }
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline)
                 if !item.tags.isEmpty {
@@ -23,20 +23,23 @@ struct TwitterRow: View {
     }
 }
 
-// --- 2. 金額ハイライト ---
+// --- 2. 金額ハイライト (¥付きのみに限定) ---
 struct HighlightedText: View {
     let text: String; let isIncome: Bool
     var body: some View {
         let words = text.components(separatedBy: " ")
         return words.reduce(Text("")) { (res, word) in
-            if word.contains("¥") || (Int(word.replacingOccurrences(of: "¥", with: "")) != nil) {
+            // 「¥」が含まれている場合のみハイライトする
+            if word.contains("¥") {
                 return res + Text(word + " ").foregroundColor(isIncome ? Color(red: 0.1, green: 0.7, blue: 0.1) : .red).fontWeight(.bold)
-            } else { return res + Text(word + " ") }
+            } else { 
+                return res + Text(word + " ").foregroundColor(.primary) 
+            }
         }
     }
 }
 
-// --- 3. 自作カレンダー画面 (ドット詳細ロジック & スワイプ削除) ---
+// --- 3. 自作カレンダー画面 ---
 struct CalendarView: View {
     @Binding var transactions: [Transaction]
     @Binding var accounts: [Account]
@@ -47,8 +50,6 @@ struct CalendarView: View {
     @State private var isShowingMonthPicker = false
     @State private var tempPickerDate = Date()
     @State private var dragOffset: CGFloat = 0
-    
-    // 削除確認用
     @State private var isShowingDeleteAlert = false
     @State private var transactionToDelete: Transaction?
 
@@ -128,6 +129,7 @@ struct CalendarView: View {
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     TwitterRow(item: item).listRowInsets(EdgeInsets())
                                 }
+                                .buttonStyle(.plain) // 文字が青くなるのを防ぐ
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button { transactionToDelete = item; isShowingDeleteAlert = true } label: { Label("削除", systemImage: "trash") }.tint(.red)
                                 }
@@ -194,27 +196,23 @@ struct CalendarView: View {
                         .background(isSelected && isCurrentMonth ? Color.blue : Color.clear)
                         .clipShape(Circle())
                     
-                    // ドット表示ロジック (1行5個、2行目右端に+n)
                     VStack(alignment: .leading, spacing: 1) {
                         let total = dayTransactions.count
                         if total > 0 {
-                            // 1行目 (最大5個)
                             HStack(spacing: 1.5) {
                                 ForEach(dayTransactions.prefix(5)) { tx in
                                     Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3, height: 3)
                                 }
                             }
-                            // 2行目
                             if total > 5 {
                                 HStack(spacing: 1.5) {
                                     if total > 8 {
-                                        // 6,7,8個目まで表示して、右2つ分を「+n」に充てる
                                         ForEach(dayTransactions.prefix(8).suffix(3)) { tx in
                                             Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3, height: 3)
                                         }
-                                        Text("+\(total - 8)").font(.system(size: 5, weight: .black)).foregroundColor(.secondary).offset(y: -0.5)
+                                        // +n 表示を少し大きく、太く
+                                        Text("+\(total - 8)").font(.system(size: 8, weight: .bold)).foregroundColor(.secondary).offset(y: -1)
                                     } else {
-                                        // 全て表示
                                         ForEach(dayTransactions.suffix(total - 5)) { tx in
                                             Circle().fill(tx.isIncome ? Color.green : Color.red).frame(width: 3, height: 3)
                                         }
@@ -224,7 +222,7 @@ struct CalendarView: View {
                         } else { Spacer().frame(height: 7) }
                     }
                     .frame(height: 8)
-                    .frame(maxWidth: .infinity, alignment: .center) // 塊自体は中央、点は左揃え
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .frame(height: 45)
                 .frame(maxWidth: .infinity)
@@ -269,41 +267,28 @@ struct CalendarView: View {
             dragOffset = 0
         }
     }
-    
-    func slideToDate(_ date: Date) {
-        let isFuture = date > currentMonth
-        moveMonth(by: isFuture ? 1 : -1)
-        selectedDate = date
-    }
-
-    func monthYearString(from d: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d)
-    }
-
+    func slideToDate(_ date: Date) { let isFuture = date > currentMonth; moveMonth(by: isFuture ? 1 : -1); selectedDate = date }
+    func monthYearString(from d: Date) -> String { let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f.string(from: d) }
     func generateFullGrid(for date: Date) -> [Date] {
         guard let first = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }
         let firstWeekday = calendar.component(.weekday, from: first)
         let startDate = calendar.date(byAdding: .day, value: -(firstWeekday - 1), to: first)!
         return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: startDate) }
     }
-
     func combinedDate() -> Date {
         let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate)
         let tc = calendar.dateComponents([.hour, .minute], from: now)
         c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate
     }
-
     func addTransaction(isInc: Bool, date: Date) {
         let amt = parseAmount(from: inputText); let src = parseSourceName(from: inputText)
         transactions.append(Transaction(amount: amt, date: date, note: inputText, source: src, isIncome: isInc))
     }
-
     func parseAmount(from t: String) -> Int {
         let comps = t.components(separatedBy: .whitespacesAndNewlines)
-        let amt = comps.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        let amt = comps.filter { $0.contains("¥") }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
         return Int(amt) ?? 0
     }
-
     func parseSourceName(from t: String) -> String {
         for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }
         return accounts.first?.name ?? "お財布"
@@ -406,8 +391,8 @@ struct TransactionDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "person.circle.fill").resizable().frame(width: 56, height: 56).foregroundColor(.gray)
-                    VStack(alignment: .leading, spacing: 4) { Text("むつき").font(.headline).fontWeight(.bold); Text("@Mutsuki_dev").font(.subheadline).foregroundColor(.secondary) }
-                    Spacer(); Text(item.source).font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color.gray.opacity(0.1)).cornerRadius(5)
+                    VStack(alignment: .leading, spacing: 4) { Text("むつき").font(.headline).fontWeight(.bold).foregroundColor(.primary); Text("@Mutsuki_dev").font(.subheadline).foregroundColor(.secondary) }
+                    Spacer(); Text(item.source).font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color.gray.opacity(0.1)).cornerRadius(5).foregroundColor(.primary)
                 }
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3)
                 if !item.tags.isEmpty { HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(.blue) } } }
@@ -436,7 +421,7 @@ struct TransactionDetailView: View {
     }
     func parseAmount(from t: String) -> Int {
         let comps = t.components(separatedBy: .whitespacesAndNewlines)
-        let amtT = comps.filter { $0.contains("¥") || Int($0) != nil }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
+        let amtT = comps.filter { $0.contains("¥") }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
         return Int(amtT) ?? 0
     }
     func parseSourceName(from t: String) -> String {
