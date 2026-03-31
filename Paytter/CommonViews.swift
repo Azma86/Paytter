@@ -1,10 +1,9 @@
 import SwiftUI
 import UIKit
 
-// --- タイムラインの1行 ---
 struct TwitterRow: View {
     let item: Transaction
-    @AppStorage("app_theme") var theme = AppTheme()
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
@@ -18,17 +17,17 @@ struct TwitterRow: View {
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
                     .font(.subheadline).fixedSize(horizontal: false, vertical: true)
                 if !item.tags.isEmpty {
-                    HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(theme.mainColor) } }
+                    HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } }
                 }
             }
         }.padding(.vertical, 8).padding(.horizontal, 16)
     }
 }
 
-// --- 金額ハイライト ---
 struct HighlightedText: View {
     let text: String; let isIncome: Bool
-    @AppStorage("app_theme") var theme = AppTheme()
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     var body: some View {
         let components = tokenize(text)
         return components.reduce(Text("")) { (res, token) in
@@ -36,7 +35,7 @@ struct HighlightedText: View {
             else if token.contains("¥") {
                 let amountVal = Int(token.replacingOccurrences(of: "¥", with: "")) ?? 0
                 let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome
-                return res + Text(token.replacingOccurrences(of: "-", with: "")).foregroundColor(actuallyIncome ? theme.incomeColor : theme.expenseColor).fontWeight(.bold)
+                return res + Text(token.replacingOccurrences(of: "-", with: "")).foregroundColor(actuallyIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).fontWeight(.bold)
             } else { return res + Text(token).foregroundColor(.primary) }
         }
     }
@@ -53,12 +52,10 @@ struct HighlightedText: View {
     }
 }
 
-// --- エディタ部品 ---
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String; var onInsert: (String) -> Void
     func makeUIView(context: Context) -> UITextView {
-        let tv = UITextView(); tv.font = .preferredFont(forTextStyle: .body); tv.backgroundColor = .clear
-        tv.isScrollEnabled = true; tv.isEditable = true; tv.delegate = context.coordinator
+        let tv = UITextView(); tv.font = .preferredFont(forTextStyle: .body); tv.backgroundColor = .clear; tv.isScrollEnabled = true; tv.isEditable = true; tv.delegate = context.coordinator
         let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
         toolbar.items = [UIBarButtonItem(title: "#", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertHash)), UIBarButtonItem(title: "¥", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertYen)), UIBarButtonItem(title: "@", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertAt)), UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil), UIBarButtonItem(title: "完了", style: .done, target: context.coordinator, action: #selector(context.coordinator.dismissKeyboard))]
         tv.inputAccessoryView = toolbar; return tv
@@ -73,11 +70,4 @@ struct CustomTextEditor: UIViewRepresentable {
     }
 }
 
-// これが無いと PostView でエラーになります
-extension UIView { 
-    func findTextView() -> UITextView? { 
-        if let tv = self as? UITextView { return tv }
-        for sv in subviews { if let tv = sv.findTextView() { return tv } }
-        return nil 
-    } 
-}
+extension UIView { func findTextView() -> UITextView? { if let tv = self as? UITextView { return tv }; for sv in subviews { if let tv = sv.findTextView() { return tv } }; return nil } }
