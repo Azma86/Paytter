@@ -12,6 +12,7 @@ struct ContentView: View {
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
+    // --- テーマ設定データ ---
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -195,7 +196,31 @@ struct ContentView: View {
     func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
-    func exportBackup() { let fileName = "Paytter_Backup.json"; let sourceURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("manual_transactions.json"); let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName); try? FileManager.default.removeItem(at: tempURL); try? FileManager.default.copyItem(at: sourceURL, to: tempURL); let av = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil); if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController { av.popoverPresentationController?.sourceView = rootVC.view; rootVC.present(av, animated: true) } }
+    
+    // 【データ本体（Data）を直接渡す方式】
+    func exportBackup() {
+        let encoder = JSONEncoder(); encoder.outputFormatting = .prettyPrinted
+        let dict: [String: Any] = [
+            "transactions": String(data: (try? encoder.encode(transactions)) ?? Data(), encoding: .utf8) ?? "",
+            "accounts": String(data: (try? encoder.encode(accounts)) ?? Data(), encoding: .utf8) ?? "",
+            "date": BackupManager.getBackupDate(isManual: true)
+        ]
+        
+        guard let finalData = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) else { return }
+        
+        // メモ帳などに「テキスト」ではなく「ファイル」として認識させるため、一時的なファイル名を指定してDataを共有
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("TwitterKakeibo_Backup.json")
+        try? finalData.write(to: tempURL)
+        
+        let av = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
+        
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = scene.windows.first?.rootViewController {
+            av.popoverPresentationController?.sourceView = rootVC.view
+            av.popoverPresentationController?.sourceRect = CGRect(x: UIScreen.main.bounds.midX, y: UIScreen.main.bounds.midY, width: 0, height: 0)
+            rootVC.present(av, animated: true)
+        }
+    }
 
     func updateAppearance() {
         let bgColor = UIColor(Color(hex: themeBarBG))
@@ -207,7 +232,6 @@ struct ContentView: View {
         appearance.titleTextAttributes = [.foregroundColor: textColor]
         appearance.largeTitleTextAttributes = [.foregroundColor: textColor]
         
-        // システム全体の外観を上書き
         UINavigationBar.appearance().standardAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().compactAppearance = appearance
@@ -218,7 +242,6 @@ struct ContentView: View {
         UITabBar.appearance().standardAppearance = tabAppearance
         UITabBar.appearance().scrollEdgeAppearance = tabAppearance
 
-        // 実行中のすべてのナビゲーションコントローラーの外観を直接強制更新
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             windowScene.windows.forEach { window in
                 updateViewHierarchy(window.rootViewController)
