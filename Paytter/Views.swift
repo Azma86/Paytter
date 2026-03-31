@@ -81,12 +81,24 @@ struct WalletAnalysisView: View {
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false; @State private var lastAmount: Int = 0 
+    
+    // テーマカラー取得
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+
     var body: some View {
         VStack {
             Text(title).font(.caption).foregroundColor(.secondary)
             ZStack(alignment: .topTrailing) {
                 Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
-                if diff != 0 { Text(diff > 0 ? "+\(diff)" : "\(diff)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? .green : .red).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) }
+                if diff != 0 {
+                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        // 【修正】エフェクト色を設定色と連動
+                        .foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense))
+                        .offset(x: 20, y: showDiff ? -15 : 0)
+                        .opacity(showDiff ? 0 : 1)
+                }
             }
         }.frame(maxWidth: .infinity).onChange(of: amount) { newValue in if newValue != lastAmount { showDiff = false; withAnimation(.easeOut(duration: 1.5)) { showDiff = true }; lastAmount = newValue } }.onAppear { lastAmount = amount }
     }
