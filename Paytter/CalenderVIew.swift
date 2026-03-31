@@ -23,6 +23,7 @@ struct CalendarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // ヘッダー部分
             HStack {
                 Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left") }
                 Spacer()
@@ -36,6 +37,7 @@ struct CalendarView: View {
                 Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right") }
             }.padding(.horizontal).padding(.vertical, 8)
 
+            // 曜日ラベル
             HStack {
                 ForEach(daysOfWeek, id: \.self) { day in
                     Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity)
@@ -43,6 +45,7 @@ struct CalendarView: View {
                 }
             }.padding(.bottom, 5)
 
+            // カレンダーグリッド
             GeometryReader { geometry in
                 let width = geometry.size.width
                 HStack(spacing: 0) {
@@ -78,33 +81,45 @@ struct CalendarView: View {
 
             Divider()
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    if filteredTransactions.isEmpty {
+            // 選択日の投稿一覧
+            List {
+                if filteredTransactions.isEmpty {
+                    HStack {
+                        Spacer()
                         Text("投稿はありません").font(.caption).foregroundColor(.secondary).padding(.top, 40)
-                    } else {
-                        LazyVStack(spacing: 0) {
-                            ForEach(filteredTransactions) { item in
-                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
-                                    TwitterRow(item: item).listRowInsets(EdgeInsets())
-                                }
-                                .buttonStyle(.plain)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button { transactionToDelete = item; isShowingDeleteAlert = true } label: { Label("削除", systemImage: "trash") }.tint(.red)
-                                }
-                                Divider()
+                        Spacer()
+                    }.listRowSeparator(.hidden)
+                } else {
+                    ForEach(filteredTransactions) { item in
+                        ZStack {
+                            NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
+                                EmptyView()
+                            }.opacity(0)
+                            TwitterRow(item: item)
+                        }
+                        .listRowInsets(EdgeInsets())
+                        // スワイプ削除の追加と統一
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                transactionToDelete = item
+                                isShowingDeleteAlert = true
+                            } label: {
+                                Label("削除", systemImage: "trash")
                             }
                         }
                     }
-                    Button(action: { self.inputText = ""; self.isShowingInputSheet = true }) {
-                        HStack { Image(systemName: "plus"); Text("投稿を作成") }
-                        .font(.subheadline).fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 12)
-                        .background(Color.white).foregroundColor(.blue)
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.3), lineWidth: 1))
-                        .padding(.horizontal, 40).padding(.vertical, 30)
-                    }
                 }
+                
+                // 投稿ボタンをリスト内に配置（または外でも可）
+                Button(action: { self.inputText = ""; self.isShowingInputSheet = true }) {
+                    HStack { Image(systemName: "plus"); Text("投稿を作成") }
+                    .font(.subheadline).fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .background(Color.white).foregroundColor(.blue)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.3), lineWidth: 1))
+                    .padding(.horizontal, 40).padding(.vertical, 20)
+                }.listRowSeparator(.hidden)
             }
+            .listStyle(.plain)
         }
         .navigationTitle("カレンダー")
         .navigationBarTitleDisplayMode(.inline)
@@ -112,7 +127,7 @@ struct CalendarView: View {
             Button("キャンセル", role: .cancel) { transactionToDelete = nil }
             Button("削除", role: .destructive) { 
                 if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) {
-                    transactions.remove(at: idx)
+                    withAnimation { transactions.remove(at: idx) }
                 }
                 transactionToDelete = nil
             }
@@ -185,6 +200,7 @@ struct CalendarView: View {
         }.frame(width: width)
     }
 
+    // 祝日判定、月移動、グリッド生成などのヘルパー関数（既存のまま）
     func checkIsHoliday(_ date: Date) -> Bool {
         let comps = calendar.dateComponents([.month, .day, .year, .weekday], from: date)
         guard let month = comps.month, let day = comps.day, let year = comps.year, let weekday = comps.weekday else { return false }
@@ -209,7 +225,6 @@ struct CalendarView: View {
         if month == 9 && day == (year % 4 == 0 ? 22 : 23) { return true }
         return false
     }
-
     func moveMonth(by v: Int) {
         let direction: CGFloat = v > 0 ? -1 : 1
         let width = UIScreen.main.bounds.width
@@ -238,8 +253,11 @@ struct CalendarView: View {
     }
     func parseAmount(from t: String) -> Int {
         let comps = t.components(separatedBy: .whitespacesAndNewlines)
-        let amtStr = comps.filter { $0.contains("¥") }.first?.replacingOccurrences(of: "¥", with: "") ?? "0"
-        return Int(amtStr) ?? 0
+        let total = comps.filter { $0.contains("¥") }.reduce(0) { sum, word in
+            let cleaned = word.replacingOccurrences(of: "¥", with: "")
+            return sum + (Int(cleaned) ?? 0)
+        }
+        return total
     }
     func parseSourceName(from t: String) -> String {
         for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }
