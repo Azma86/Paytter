@@ -105,7 +105,19 @@ struct PostView: View {
             let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
             let ins = prefix + sym
             if let ran = Range(sel, in: cur) { inputText = cur.replacingCharacters(in: ran, with: ins)
-                DispatchQueue.main.async { tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0) } }
+                DispatchQueue.main.async { 
+                    tv.selectedRange = NSRange(location: sel.location + ins.count, length: 0) 
+                    // ¥ボタンが押された場合のみ、キーボードを数値用に切り替える
+                    if sym == "¥" {
+                        tv.keyboardType = .decimalPad
+                        tv.reloadInputViews()
+                    } else {
+                        // 他のボタン（#や@）では通常キーボードに戻す
+                        tv.keyboardType = .default
+                        tv.reloadInputViews()
+                    }
+                } 
+            }
         }
     }
 }
@@ -239,18 +251,17 @@ struct BalanceView: View {
     var body: some View {
         VStack {
             Text(title).font(.caption).foregroundColor(.secondary)
-            ZStack(alignment: .topTrailing) { // 右上に配置
+            ZStack(alignment: .topTrailing) {
                 Text("¥\(amount)")
                     .font(.system(.subheadline, design: .monospaced))
                     .fontWeight(.bold)
                     .foregroundColor(color)
                     .padding(.horizontal, 4)
-                
                 if diff != 0 {
                     Text(diff > 0 ? "+\(diff)" : "\(diff)")
-                        .font(.system(size: 8, weight: .bold, design: .rounded)) // 少し小さく
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
                         .foregroundColor(diff > 0 ? .green : .red)
-                        .offset(x: 20, y: showDiff ? -15 : 0) // 右上に飛ばす
+                        .offset(x: 20, y: showDiff ? -15 : 0)
                         .opacity(showDiff ? 0 : 1)
                 }
             }
