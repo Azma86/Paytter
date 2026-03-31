@@ -14,6 +14,7 @@ struct TwitterRow: View {
                     Spacer()
                     Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(.primary)
                 }
+                // ここで改行を含むハイライトテキストを表示
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline)
                 if !item.tags.isEmpty {
                     HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(.blue) } }
@@ -23,30 +24,56 @@ struct TwitterRow: View {
     }
 }
 
-// --- 金額ハイライト (マイナス記号の非表示対応) ---
+// --- 金額ハイライト (改行・マイナス非表示対応) ---
 struct HighlightedText: View {
     let text: String; let isIncome: Bool
+    
     var body: some View {
-        let words = text.components(separatedBy: " ")
-        return words.reduce(Text("")) { (res, word) in
-            if word.contains("¥") {
+        // 正規表現的に「スペース」か「改行」で分割し、その区切り文字自体も保持するロジック
+        let components = tokenize(text)
+        
+        return components.reduce(Text("")) { (res, token) in
+            if token == "\n" {
+                return res + Text("\n")
+            } else if token.contains("¥") {
                 // 金額部分の数値を抽出
-                let amountStr = word.replacingOccurrences(of: "¥", with: "")
+                let amountStr = token.replacingOccurrences(of: "¥", with: "")
                 let amountVal = Int(amountStr) ?? 0
                 
                 // 表示用のテキストを作成 (マイナス記号を除去)
-                let displayWord = word.replacingOccurrences(of: "-", with: "")
+                let displayWord = token.replacingOccurrences(of: "-", with: "")
                 
                 // 表示色の決定ロジック
-                // 金額がマイナスの場合は、本来の収支属性(isIncome)を反転させる
                 let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome
                 let highlightColor = actuallyIncome ? Color(red: 0.1, green: 0.7, blue: 0.1) : .red
                 
-                return res + Text(displayWord + " ").foregroundColor(highlightColor).fontWeight(.bold)
-            } else { 
-                return res + Text(word + " ").foregroundColor(.primary) 
+                return res + Text(displayWord).foregroundColor(highlightColor).fontWeight(.bold)
+            } else {
+                return res + Text(token).foregroundColor(.primary)
             }
         }
+    }
+    
+    // テキストを単語、スペース、改行に分解する補助関数
+    func tokenize(_ input: String) -> [String] {
+        var tokens: [String] = []
+        var currentToken = ""
+        
+        for char in input {
+            if char == " " || char == "　" || char == "\n" {
+                if !currentToken.isEmpty {
+                    tokens.append(currentToken)
+                    currentToken = ""
+                }
+                tokens.append(String(char))
+            } else {
+                currentToken.append(char)
+            }
+        }
+        if !currentToken.isEmpty {
+            tokens.append(currentToken)
+        }
+        return tokens
     }
 }
 
