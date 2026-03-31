@@ -4,19 +4,19 @@ import UIKit
 struct TwitterRow: View {
     let item: Transaction
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("むつき").font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBarText))
-                    Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBarText).opacity(0.6))
+                    Text("むつき").font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
+                    Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
-                    Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBarText))
+                    Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText))
                 }
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
-                    .font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBarText))
+                    .font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBodyText))
                 if !item.tags.isEmpty {
                     HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } }
                 }
