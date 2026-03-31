@@ -14,7 +14,11 @@ struct ContentView: View {
     @State private var isShowingDeleteAlert = false
     @State private var isShowingSwipeDeleteAlert = false
     @State private var transactionToDelete: Transaction?
+    
     @State private var isShowingAccountCreator = false
+    @State private var isShowingAccountDeleteAlert = false
+    @State private var accountToDeleteIndex: IndexSet?
+    
     @State private var isShowingRestoreConfirm = false
     @State private var isShowingSaveConfirm = false
     @State private var isRestoringManual = false
@@ -53,9 +57,11 @@ struct ContentView: View {
                     List {
                         ForEach(displayedTransactions, id: \.id) { item in
                             ZStack {
+                                // リンクを透明にして背面に配置（ガタつき防止）
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
                                     EmptyView()
                                 }.opacity(0)
+                                
                                 TwitterRow(item: item)
                             }
                             .listRowInsets(EdgeInsets())
@@ -64,7 +70,7 @@ struct ContentView: View {
                                     transactionToDelete = item
                                     isShowingSwipeDeleteAlert = true
                                 } label: {
-                                    Label("削除", systemImage: "trash")
+                                    Text("削除")
                                 }
                             }
                         }
@@ -78,9 +84,7 @@ struct ContentView: View {
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                 Button("キャンセル", role: .cancel) { transactionToDelete = nil }
                 Button("削除", role: .destructive) { 
-                    if let t = transactionToDelete { 
-                        withAnimation { deleteSpecificTransaction(t) } 
-                    }
+                    if let t = transactionToDelete { withAnimation { deleteSpecificTransaction(t) } }
                     transactionToDelete = nil 
                 }
             } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
@@ -97,11 +101,24 @@ struct ContentView: View {
         NavigationView {
             List {
                 Section(header: Text("お財布の管理")) {
-                    ForEach($accounts) { $acc in
-                        NavigationLink(destination: AccountEditView(account: $acc, transactions: $transactions, allAccounts: accounts)) {
-                            HStack { Image(systemName: acc.type.icon).foregroundColor(.secondary); Text(acc.name); Spacer(); Text("¥\(acc.balance)").foregroundColor(.secondary) }
+                    ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in
+                        NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) {
+                            HStack {
+                                Image(systemName: acc.type.icon).foregroundColor(.secondary)
+                                Text(acc.name)
+                                Spacer()
+                                Text("¥\(acc.balance)").foregroundColor(.secondary)
+                            }
                         }
-                    }.onDelete(perform: deleteAccount)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                accountToDeleteIndex = IndexSet(integer: index)
+                                isShowingAccountDeleteAlert = true
+                            } label: {
+                                Text("削除")
+                            }
+                        }
+                    }
                     Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }
                 }
                 Section(header: Text("分析")) {
@@ -110,6 +127,17 @@ struct ContentView: View {
             }
             .navigationTitle("お財布")
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .alert("お財布を削除しますか？", isPresented: $isShowingAccountDeleteAlert) {
+                Button("キャンセル", role: .cancel) { accountToDeleteIndex = nil }
+                Button("削除", role: .destructive) {
+                    if let offsets = accountToDeleteIndex {
+                        withAnimation { deleteAccount(at: offsets) }
+                    }
+                    accountToDeleteIndex = nil
+                }
+            } message: {
+                Text("このお財布に関連付けられた投稿の金額計算ができなくなる可能性があります。")
+            }
         }
     }
 
@@ -127,7 +155,7 @@ struct ContentView: View {
             .navigationTitle("設定")
             .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) {
                 Button("キャンセル", role: .cancel) { }
-                Button("上書き保存", role: .none) { 
+                Button("上書き保存") { 
                     BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true)
                     completionMessage = "手動バックアップの保存が完了しました。"; isShowingCompletionAlert = true 
                 }
