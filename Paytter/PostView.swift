@@ -5,6 +5,7 @@ struct PostView: View {
     var initialDate: Date = Date()
     var onPost: (Bool, Date) -> Void
     var transactions: [Transaction]; var accounts: [Account]
+    @AppStorage("app_theme") var theme = AppTheme()
     
     @State private var postDate = Date()
     @State private var isShowingDatePicker = false
@@ -35,21 +36,21 @@ struct PostView: View {
                                 }
                             }
                         }
-                    }.frame(maxHeight: 150).background(Color(.systemBackground)).transition(.move(edge: .bottom))
+                    }.frame(maxHeight: 150).background(Color(.systemBackground))
                 }
                 
                 HStack {
                     Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
                         HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
-                        .font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue.opacity(0.1)).foregroundColor(.blue).cornerRadius(12)
+                        .font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(theme.mainColor.opacity(0.1)).foregroundColor(theme.mainColor).cornerRadius(12)
                     }
                     Spacer()
                 }.padding(.horizontal)
                 Spacer()
             }
             .navigationBarItems(leading: Button("キャンセル") { isPresented = false }, trailing: HStack(spacing: 12) {
-                Button("支出") { onPost(false, postDate); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.red.opacity(0.8)).foregroundColor(.white).cornerRadius(15)
-                Button("収入") { onPost(true, postDate); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue).foregroundColor(.white).cornerRadius(15)
+                Button("支出") { onPost(false, postDate); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(theme.expenseColor.opacity(0.8)).foregroundColor(.white).cornerRadius(15)
+                Button("収入") { onPost(true, postDate); isPresented = false }.padding(.horizontal, 12).padding(.vertical, 6).background(theme.incomeColor).foregroundColor(.white).cornerRadius(15)
             })
             .sheet(isPresented: $isShowingDatePicker) {
                 NavigationView {
