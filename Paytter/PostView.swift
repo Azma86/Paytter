@@ -11,6 +11,7 @@ struct PostView: View {
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
+    @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
     @State private var postDate = Date()
     @State private var isShowingDatePicker = false
@@ -20,7 +21,7 @@ struct PostView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // 1. シート全体の背景をテーマに合わせる
+                // シート全体の背景色をテーマ設定に合わせる（クリーム色等も反映）
                 Color(hex: themeBG).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
@@ -31,8 +32,16 @@ struct PostView: View {
                                 insertAtCursor(sym)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() }
                             }
-                            .frame(minHeight: 150).foregroundColor(Color(hex: themeBarText)).onChange(of: inputText) { _ in updateSuggestionsForCursor() }
-                            if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
+                            .frame(minHeight: 150)
+                            .foregroundColor(Color(hex: themeBarText))
+                            .onChange(of: inputText) { _ in updateSuggestionsForCursor() }
+                            
+                            if inputText.isEmpty { 
+                                Text("どんな買い物をしましたか？")
+                                    .foregroundColor(.gray.opacity(0.7))
+                                    .padding(.top, 8).padding(.leading, 5)
+                                    .allowsHitTesting(false) 
+                            }
                         }
                     }.padding()
                     
@@ -41,35 +50,61 @@ struct PostView: View {
                             VStack(alignment: .leading, spacing: 0) {
                                 ForEach(suggestions, id: \.self) { suggestion in
                                     Button(action: { applySuggestion(suggestion) }) {
-                                        VStack(alignment: .leading) { Text(suggestion).font(.body).foregroundColor(Color(hex: themeBarText)).padding(.vertical, 12).padding(.horizontal, 20); Divider() }
+                                        VStack(alignment: .leading) { 
+                                            Text(suggestion)
+                                                .font(.body)
+                                                .foregroundColor(Color(hex: themeBarText))
+                                                .padding(.vertical, 12).padding(.horizontal, 20)
+                                            Divider() 
+                                        }
                                     }
                                 }
                             }
-                        }.frame(maxHeight: 150).background(Color(hex: themeBG).opacity(0.9))
+                        }
+                        .frame(maxHeight: 150)
+                        .background(Color(hex: themeBG).opacity(0.9))
                     }
                     
                     HStack {
                         Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
-                            HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
-                            .font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(Color(hex: themeMain).opacity(0.1)).foregroundColor(Color(hex: themeMain)).cornerRadius(12)
+                            HStack(spacing: 4) { 
+                                Image(systemName: "calendar.badge.clock")
+                                Text(formatDate(postDate)) 
+                            }
+                            .font(.footnote)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Color(hex: themeMain).opacity(0.1))
+                            .foregroundColor(Color(hex: themeMain))
+                            .cornerRadius(12)
                         }
                         Spacer()
                     }.padding(.horizontal)
                     Spacer()
                 }
             }
-            .navigationBarItems(leading: Button("キャンセル") { isPresented = false }.foregroundColor(Color(hex: themeBarText)), trailing: HStack(spacing: 12) {
-                Button(action: { onPost(false, postDate); isPresented = false }) {
-                    Text("支出").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34, alignment: .center).background(Color(hex: themeExpense).opacity(0.8)).foregroundColor(.white).cornerRadius(17)
+            .navigationBarItems(
+                leading: Button("キャンセル") { isPresented = false }
+                    .foregroundColor(Color(hex: themeBarText)), 
+                trailing: HStack(spacing: 12) {
+                    Button(action: { onPost(false, postDate); isPresented = false }) {
+                        Text("支出").font(.subheadline).fontWeight(.bold)
+                            .frame(width: 60, height: 34)
+                            .background(Color(hex: themeExpense).opacity(0.8))
+                            .foregroundColor(.white).cornerRadius(17)
+                    }
+                    Button(action: { onPost(true, postDate); isPresented = false }) {
+                        Text("収入").font(.subheadline).fontWeight(.bold)
+                            .frame(width: 60, height: 34)
+                            .background(Color(hex: themeIncome))
+                            .foregroundColor(.white).cornerRadius(17)
+                    }
                 }
-                Button(action: { onPost(true, postDate); isPresented = false }) {
-                    Text("収入").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34, alignment: .center).background(Color(hex: themeIncome)).foregroundColor(.white).cornerRadius(17)
-                }
-            })
+            )
+            // ドラムロール（DatePicker）を表示するシート
             .sheet(isPresented: $isShowingDatePicker) {
                 NavigationView {
                     ZStack {
-                        // 2. ドラムロール画面の背景もテーマに合わせる
+                        // ドラムロールの背景もテーマカラー（クリーム色等）にする
                         Color(hex: themeBG).ignoresSafeArea()
                         
                         VStack { 
@@ -77,18 +112,79 @@ struct PostView: View {
                                 .datePickerStyle(.wheel)
                                 .labelsHidden()
                                 .environment(\.locale, Locale(identifier: "ja_JP"))
-                                .background(Color(hex: themeBG)) // 3. ドラムロール自体の背景
+                                // デフォルトの白背景を消して、後ろのテーマ色を透けさせる
+                                .background(Color.clear) 
                         }
                     }
                     .navigationTitle(isPickingTime ? "時刻の指定" : "日付の指定")
                     .navigationBarTitleDisplayMode(.inline)
-                    .navigationBarItems(leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") { withAnimation { isPickingTime.toggle() } }, trailing: Button("完了") { isShowingDatePicker = false })
-                }.presentationDetents([.height(350)])
+                    .navigationBarItems(
+                        leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") { 
+                            withAnimation { isPickingTime.toggle() } 
+                        }.foregroundColor(Color(hex: themeMain)), 
+                        trailing: Button("完了") { 
+                            isShowingDatePicker = false 
+                        }.foregroundColor(Color(hex: themeMain))
+                    )
+                }
+                // 背景がクリーム色などの明るい色の時に、文字が消えないよう自動調整
+                .preferredColorScheme(isDarkMode ? .dark : .light)
+                .presentationDetents([.height(350)])
             }
         }.onAppear { self.postDate = initialDate }
     }
-    func formatDate(_ date: Date) -> String { let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = "yyyy年MM月dd日 HH:mm"; return f.string(from: date) }
-    func updateSuggestionsForCursor() { guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }; let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""; let prefixText = String(text.prefix(cursorLoc)); let currentWord = prefixText.components(separatedBy: CharacterSet.whitespacesAndNewlines).last ?? ""; if currentWord == "#" { suggestions = Array(Set(transactions.flatMap { $0.tags })).sorted() } else if currentWord.hasPrefix("#") { suggestions = Array(Set(transactions.flatMap { $0.tags }.filter { $0.hasPrefix(currentWord) && $0 != currentWord })).sorted() } else if currentWord == "@" { suggestions = accounts.map { "@" + $0.name }.sorted() } else if currentWord.hasPrefix("@") { suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(currentWord) && $0 != currentWord }.sorted() } else { suggestions = [] } }
-    func applySuggestion(_ suggestion: String) { guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }; let cursorLoc = tv.selectedRange.location; let text = tv.text ?? ""; let prefixText = String(text.prefix(cursorLoc)); let words = prefixText.components(separatedBy: CharacterSet.whitespacesAndNewlines); if let lastWord = words.last { let rangeStart = cursorLoc - lastWord.count; let startIdx = text.index(text.startIndex, offsetBy: rangeStart); let endIdx = text.index(text.startIndex, offsetBy: cursorLoc); inputText = text.replacingCharacters(in: startIdx..<endIdx, with: suggestion + " "); DispatchQueue.main.async { tv.selectedRange = NSRange(location: rangeStart + suggestion.count + 1, length: 0); suggestions = [] } } }
-    func insertAtCursor(_ sym: String) { if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() { let sel = tv.selectedRange; let cur = tv.text ?? ""; let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil; let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "; tv.becomeFirstResponder(); tv.insertText(prefix + sym) } }
+    
+    func formatDate(_ date: Date) -> String { 
+        let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = "yyyy年MM月dd日 HH:mm"; return f.string(from: date) 
+    }
+    
+    func updateSuggestionsForCursor() { 
+        guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
+        let cursorLoc = tv.selectedRange.location
+        let text = tv.text ?? ""
+        let prefixText = String(text.prefix(cursorLoc))
+        let currentWord = prefixText.components(separatedBy: CharacterSet.whitespacesAndNewlines).last ?? ""
+        
+        if currentWord == "#" { 
+            suggestions = Array(Set(transactions.flatMap { $0.tags })).sorted() 
+        } else if currentWord.hasPrefix("#") { 
+            suggestions = Array(Set(transactions.flatMap { $0.tags }.filter { $0.hasPrefix(currentWord) && $0 != currentWord })).sorted() 
+        } else if currentWord == "@" { 
+            suggestions = accounts.map { "@" + $0.name }.sorted() 
+        } else if currentWord.hasPrefix("@") { 
+            suggestions = accounts.map { "@" + $0.name }.filter { $0.hasPrefix(currentWord) && $0 != currentWord }.sorted() 
+        } else { 
+            suggestions = [] 
+        } 
+    }
+    
+    func applySuggestion(_ suggestion: String) { 
+        guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() else { return }
+        let cursorLoc = tv.selectedRange.location
+        let text = tv.text ?? ""
+        let prefixText = String(text.prefix(cursorLoc))
+        let words = prefixText.components(separatedBy: CharacterSet.whitespacesAndNewlines)
+        
+        if let lastWord = words.last { 
+            let rangeStart = cursorLoc - lastWord.count
+            let startIdx = text.index(text.startIndex, offsetBy: rangeStart)
+            let endIdx = text.index(text.startIndex, offsetBy: cursorLoc)
+            inputText = text.replacingCharacters(in: startIdx..<endIdx, with: suggestion + " ")
+            DispatchQueue.main.async { 
+                tv.selectedRange = NSRange(location: rangeStart + suggestion.count + 1, length: 0)
+                suggestions = [] 
+            } 
+        } 
+    }
+    
+    func insertAtCursor(_ sym: String) { 
+        if let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene, let win = sc.windows.first, let tv = win.findTextView() { 
+            let sel = tv.selectedRange
+            let cur = tv.text ?? ""
+            let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
+            let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
+            tv.becomeFirstResponder()
+            tv.insertText(prefix + sym) 
+        } 
+    }
 }
