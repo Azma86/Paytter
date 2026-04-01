@@ -14,6 +14,7 @@ struct CalendarView: View {
     @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
     @State private var selectedDate = Date()
     @State private var currentMonth = Date()
@@ -37,7 +38,9 @@ struct CalendarView: View {
 
     var body: some View {
         ZStack {
+            // 画面全体の背景をテーマ色にする
             Color(hex: themeBG).ignoresSafeArea()
+            
             VStack(spacing: 0) {
                 // ヘッダー：年月表示と移動
                 VStack(spacing: 0) {
@@ -105,6 +108,7 @@ struct CalendarView: View {
                     )
                 }
                 .frame(height: 280)
+                .background(Color(hex: themeBG)) // グリッドの背景を統一
                 
                 Divider()
                 
@@ -136,35 +140,40 @@ struct CalendarView: View {
                     }.listRowSeparator(.hidden).listRowBackground(Color.clear)
                 }
                 .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+                .scrollContentBackground(.hidden) // デフォルト背景を透過
             }
         }
         .navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
         .toolbarBackground(.visible, for: .navigationBar, .tabBar)
-        // 削除アラート
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) {
             Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) { transactions.remove(at: idx) } }
         }
         // 年月選択ドラムロール
         .sheet(isPresented: $isShowingMonthPicker) {
             NavigationView {
-                HStack(spacing: 0) {
-                    Picker("年", selection: $pickerYear) {
-                        ForEach(2000...2100, id: \.self) { year in
-                            Text("\(String(year))年").tag(year)
-                        }
-                    }
-                    .pickerStyle(.wheel)
-                    .frame(maxWidth: .infinity)
+                ZStack {
+                    // ドラムロール画面の背景をテーマ色に
+                    Color(hex: themeBG).ignoresSafeArea()
                     
-                    Picker("月", selection: $pickerMonth) {
-                        ForEach(1...12, id: \.self) { month in
-                            Text("\(month)月").tag(month)
+                    HStack(spacing: 0) {
+                        Picker("年", selection: $pickerYear) {
+                            ForEach(2000...2100, id: \.self) { year in
+                                Text("\(String(year))年").tag(year)
+                            }
                         }
+                        .pickerStyle(.wheel)
+                        .frame(maxWidth: .infinity)
+                        
+                        Picker("月", selection: $pickerMonth) {
+                            ForEach(1...12, id: \.self) { month in
+                                Text("\(month)月").tag(month)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(maxWidth: .infinity)
                     }
-                    .pickerStyle(.wheel)
-                    .frame(maxWidth: .infinity)
+                    .background(Color.clear)
                 }
                 .navigationTitle("年月を選択")
                 .navigationBarTitleDisplayMode(.inline)
@@ -177,7 +186,9 @@ struct CalendarView: View {
                         isShowingMonthPicker = false
                     }.foregroundColor(Color(hex: themeMain))
                 )
-            }.presentationDetents([.height(300)])
+            }
+            .preferredColorScheme(isDarkMode ? .dark : .light) // 文字色を背景に合わせる
+            .presentationDetents([.height(300)])
         }
         .sheet(isPresented: $isShowingInputSheet) {
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts)
@@ -224,7 +235,7 @@ struct CalendarView: View {
                     else { slideToDate(date) }
                 }
             }
-        }.frame(width: width)
+        }.frame(width: width).background(Color(hex: themeBG))
     }
 
     // ヘルパー関数群
