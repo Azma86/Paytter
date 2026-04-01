@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ThemeSettingView: View {
+    @AppStorage("active_preset") var activePreset: String = "デフォルト"
+    
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
@@ -13,9 +15,18 @@ struct ThemeSettingView: View {
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
-    let defMain = "#FF007AFF"; let defInc = "#FF19B219"; let defExp = "#FFFF3B30"; let defHol = "#FFFF3B30"
-    let defBG = "#FFFFFFFF"; let defBarBG = "#F8F8F8FF"; let defBarText = "#FF000000"; let defTab = "#FF007AFF"
-    let defBody = "#FF000000"; let defSub = "#FF8E8E93"
+    // プリセットデータの構造定義
+    struct PresetData {
+        let main, bg, barBG, barText, body, sub, tab: String
+        let isDark: Bool
+    }
+    
+    let presets: [String: PresetData] = [
+        "デフォルト": PresetData(main: "#FF007AFF", bg: "#FFFFFFFF", barBG: "#F8F8F8FF", barText: "#FF000000", body: "#FF000000", sub: "#FF8E8E93", tab: "#FF007AFF", isDark: false),
+        "ダーク": PresetData(main: "#FF0A84FF", bg: "#000000FF", barBG: "#1C1C1CFF", barText: "#FFFFFFFF", body: "#FFFFFFFF", sub: "#FF8E8E93", tab: "#FF0A84FF", isDark: true),
+        "ナチュラル": PresetData(main: "#FF6B8E23", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barText: "#FF4B3621", body: "#FF4B3621", sub: "#FF999988", tab: "#FF6B8E23", isDark: false),
+        "カフェ": PresetData(main: "#FF8B4513", bg: "#FFFFF8DC", barBG: "#FFDEB887", barText: "#FF3E2723", body: "#FF3E2723", sub: "#FFA08878", tab: "#FF8B4513", isDark: false)
+    ]
 
     var body: some View {
         ZStack {
@@ -23,29 +34,28 @@ struct ThemeSettingView: View {
             VStack(spacing: 0) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 20) {
-                        presetBtn("デフォルト", defMain, defBG, defBarBG, defBarText, defBody, defSub, defMain, false)
-                        presetBtn("ダーク", "#FF0A84FF", "#000000FF", "#1C1C1EFF", "#FFFFFFFF", "#FFFFFFFF", "#FF8E8E93", "#FF0A84FF", true)
-                        presetBtn("ナチュラル", "#FF6B8E23", "#FFF5F5DC", "#FFE4E4D0", "#FF4B3621", "#FF4B3621", "#FF999988", "#FF6B8E23", false)
-                        presetBtn("カフェ", "#FF8B4513", "#FFFFF8DC", "#FFDEB887", "#FF3E2723", "#FF3E2723", "#FFA08878", "#FF8B4513", false)
+                        ForEach(["デフォルト", "ダーク", "ナチュラル", "カフェ"], id: \.self) { name in
+                            presetBtn(name)
+                        }
                     }.padding()
                 }.background(Color(hex: themeBarBG).opacity(0.3))
                 
                 Divider()
                 List {
                     Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "背景色", hex: $themeBG, def: defBG)
-                        colorRow(title: "メニュー背景", hex: $themeBarBG, def: defBarBG)
-                        colorRow(title: "メニュー文字", hex: $themeBarText, def: defBarText)
-                        colorRow(title: "タブ選択色", hex: $themeTabAccent, def: defTab)
-                        colorRow(title: "本文文字", hex: $themeBodyText, def: defBody)
-                        colorRow(title: "サブ文字", hex: $themeSubText, def: defSub)
+                        colorRow(title: "背景色", hex: $themeBG, keyPath: \.bg)
+                        colorRow(title: "メニュー背景", hex: $themeBarBG, keyPath: \.barBG)
+                        colorRow(title: "メニュー文字", hex: $themeBarText, keyPath: \.barText)
+                        colorRow(title: "タブ選択色", hex: $themeTabAccent, keyPath: \.tab)
+                        colorRow(title: "本文文字", hex: $themeBodyText, keyPath: \.body)
+                        colorRow(title: "サブ文字", hex: $themeSubText, keyPath: \.sub)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("パーツ設定").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "メインカラー", hex: $themeMain, def: defMain)
-                        colorRow(title: "収入色", hex: $themeIncome, def: defInc)
-                        colorRow(title: "支出色", hex: $themeExpense, def: defExp)
-                        colorRow(title: "祝日色", hex: $themeHoliday, def: defHol)
+                        colorRow(title: "メインカラー", hex: $themeMain, keyPath: \.main)
+                        colorRow(title: "収入色", hex: $themeIncome, keyPath: \.main) // 収入/支出/祝日はメインベースが多いので一旦main参照
+                        colorRow(title: "支出色", hex: $themeExpense, keyPath: \.main)
+                        colorRow(title: "祝日色", hex: $themeHoliday, keyPath: \.main)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
             }
@@ -53,26 +63,30 @@ struct ThemeSettingView: View {
         .navigationTitle("テーマ設定").navigationBarTitleDisplayMode(.inline)
     }
 
-    func presetBtn(_ n: String, _ m: String, _ bg: String, _ bb: String, _ bt: String, _ body: String, _ sub: String, _ tab: String, _ dark: Bool) -> some View {
-        Button(action: { 
+    func presetBtn(_ name: String) -> some View {
+        let p = presets[name]!
+        return Button(action: { 
             withAnimation {
-                themeMain = m; themeBG = bg; themeBarBG = bb; themeBarText = bt; themeBodyText = body; themeSubText = sub; themeTabAccent = tab; isDarkMode = dark
+                activePreset = name
+                themeMain = p.main; themeBG = p.bg; themeBarBG = p.barBG; themeBarText = p.barText
+                themeBodyText = p.body; themeSubText = p.sub; themeTabAccent = p.tab; isDarkMode = p.isDark
                 notify()
             }
         }) {
             VStack(spacing: 8) {
-                // ダークの場合はアイコンを黒(#000000)に。それ以外はメインカラー。
-                Circle().fill(n == "ダーク" ? Color.black : Color(hex: m)).frame(width: 44, height: 44).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
-                Text(n).font(.system(size: 10)).foregroundColor(Color(hex: themeSubText))
+                Circle().fill(name == "ダーク" ? Color.black : Color(hex: p.main)).frame(width: 44, height: 44).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
+                Text(name).font(.system(size: 10)).foregroundColor(Color(hex: themeSubText))
             }
         }.buttonStyle(.plain)
     }
     
-    func colorRow(title: String, hex: Binding<String>, def: String) -> some View {
-        HStack {
+    // 現在のプリセットのデフォルト値を取得して戻すボタンを動作させる
+    func colorRow(title: String, hex: Binding<String>, keyPath: KeyPath<PresetData, String>) -> some View {
+        let defaultVal = presets[activePreset]![keyPath: keyPath]
+        return HStack {
             ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { hex.wrappedValue = $0.toHex(); notify() })).foregroundColor(Color(hex: themeBodyText))
-            if hex.wrappedValue != def {
-                Button(action: { withAnimation { hex.wrappedValue = def; notify() } }) {
+            if hex.wrappedValue != defaultVal {
+                Button(action: { withAnimation { hex.wrappedValue = defaultVal; notify() } }) {
                     Image(systemName: "arrow.counterclockwise.circle.fill").foregroundColor(Color(hex: themeSubText).opacity(0.7))
                 }.buttonStyle(.plain)
             }
