@@ -15,7 +15,6 @@ struct ThemeSettingView: View {
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
-    // プリセットデータの構造定義
     struct PresetData {
         let main, bg, barBG, barText, body, sub, tab: String
         let isDark: Bool
@@ -23,7 +22,7 @@ struct ThemeSettingView: View {
     
     let presets: [String: PresetData] = [
         "デフォルト": PresetData(main: "#FF007AFF", bg: "#FFFFFFFF", barBG: "#F8F8F8FF", barText: "#FF000000", body: "#FF000000", sub: "#FF8E8E93", tab: "#FF007AFF", isDark: false),
-        "ダーク": PresetData(main: "#FF0A84FF", bg: "#000000FF", barBG: "#1C1C1CFF", barText: "#FFFFFFFF", body: "#FFFFFFFF", sub: "#FF8E8E93", tab: "#FF0A84FF", isDark: true),
+        "ダーク": PresetData(main: "#FF0A84FF", bg: "#111115FF", barBG: "#030305FF", barText: "#FFFFFFFF", body: "#FFFFFFFF", sub: "#FF8E8E93", tab: "#FF0A84FF", isDark: true),
         "ナチュラル": PresetData(main: "#FF6B8E23", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barText: "#FF4B3621", body: "#FF4B3621", sub: "#FF999988", tab: "#FF6B8E23", isDark: false),
         "カフェ": PresetData(main: "#FF8B4513", bg: "#FFFFF8DC", barBG: "#FFDEB887", barText: "#FF3E2723", body: "#FF3E2723", sub: "#FFA08878", tab: "#FF8B4513", isDark: false)
     ]
@@ -53,7 +52,7 @@ struct ThemeSettingView: View {
                     
                     Section(header: Text("パーツ設定").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "メインカラー", hex: $themeMain, keyPath: \.main)
-                        colorRow(title: "収入色", hex: $themeIncome, keyPath: \.main) // 収入/支出/祝日はメインベースが多いので一旦main参照
+                        colorRow(title: "収入色", hex: $themeIncome, keyPath: \.main)
                         colorRow(title: "支出色", hex: $themeExpense, keyPath: \.main)
                         colorRow(title: "祝日色", hex: $themeHoliday, keyPath: \.main)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
@@ -80,7 +79,6 @@ struct ThemeSettingView: View {
         }.buttonStyle(.plain)
     }
     
-    // 現在のプリセットのデフォルト値を取得して戻すボタンを動作させる
     func colorRow(title: String, hex: Binding<String>, keyPath: KeyPath<PresetData, String>) -> some View {
         let defaultVal = presets[activePreset]![keyPath: keyPath]
         return HStack {
