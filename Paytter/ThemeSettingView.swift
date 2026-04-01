@@ -23,20 +23,15 @@ struct ThemeSettingView: View {
             VStack(spacing: 0) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 20) {
-                        presetBtn("デフォルト", defMain, defBG, defBarBG, defBarText, defBody, defSub, false)
-                        presetBtn("ダーク", "#FF0A84FF", "#000000FF", "#1C1C1EFF", "#FFFFFFFF", "#FFFFFFFF", "#FF8E8E93", true)
-                        presetBtn("ナチュラル", "#FF6B8E23", "#FFF5F5DC", "#FFE4E4D0", "#FF4B3621", "#FF4B3621", "#FF999988", false)
-                        presetBtn("モノクロ", "#FF333333", "#FFFFFFFF", "#FFF2F2F2", "#FF000000", "#FF000000", "#FF999999", false)
-                        presetBtn("カフェ", "#FF8B4513", "#FFFFF8DC", "#FFDEB887", "#FF3E2723", "#FF3E2723", "#FFA08878", false)
+                        presetBtn("デフォルト", defMain, defBG, defBarBG, defBarText, defBody, defSub, defMain, false)
+                        presetBtn("ダーク", "#FF0A84FF", "#000000FF", "#1C1C1EFF", "#FFFFFFFF", "#FFFFFFFF", "#FF8E8E93", "#FF0A84FF", true)
+                        presetBtn("ナチュラル", "#FF6B8E23", "#FFF5F5DC", "#FFE4E4D0", "#FF4B3621", "#FF4B3621", "#FF999988", "#FF6B8E23", false)
+                        presetBtn("カフェ", "#FF8B4513", "#FFFFF8DC", "#FFDEB887", "#FF3E2723", "#FF3E2723", "#FFA08878", "#FF8B4513", false)
                     }.padding()
                 }.background(Color(hex: themeBarBG).opacity(0.3))
                 
                 Divider()
                 List {
-                    Section(header: Text("外観").foregroundColor(Color(hex: themeSubText))) {
-                        Toggle("ダークモード", isOn: $isDarkMode).onChange(of: isDarkMode) { _ in notify() }
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    
                     Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
                         colorRow(title: "背景色", hex: $themeBG, def: defBG)
                         colorRow(title: "メニュー背景", hex: $themeBarBG, def: defBarBG)
@@ -58,15 +53,16 @@ struct ThemeSettingView: View {
         .navigationTitle("テーマ設定").navigationBarTitleDisplayMode(.inline)
     }
 
-    func presetBtn(_ n: String, _ m: String, _ bg: String, _ bb: String, _ bt: String, _ body: String, _ sub: String, _ dark: Bool) -> some View {
+    func presetBtn(_ n: String, _ m: String, _ bg: String, _ bb: String, _ bt: String, _ body: String, _ sub: String, _ tab: String, _ dark: Bool) -> some View {
         Button(action: { 
             withAnimation {
-                themeMain = m; themeBG = bg; themeBarBG = bb; themeBarText = bt; themeBodyText = body; themeSubText = sub; isDarkMode = dark
+                themeMain = m; themeBG = bg; themeBarBG = bb; themeBarText = bt; themeBodyText = body; themeSubText = sub; themeTabAccent = tab; isDarkMode = dark
                 notify()
             }
         }) {
             VStack(spacing: 8) {
-                Circle().fill(Color(hex: m)).frame(width: 44, height: 44).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
+                // ダークの場合はアイコンを黒(#000000)に。それ以外はメインカラー。
+                Circle().fill(n == "ダーク" ? Color.black : Color(hex: m)).frame(width: 44, height: 44).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
                 Text(n).font(.system(size: 10)).foregroundColor(Color(hex: themeSubText))
             }
         }.buttonStyle(.plain)
@@ -83,7 +79,5 @@ struct ThemeSettingView: View {
         }
     }
 
-    func notify() {
-        NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil)
-    }
+    func notify() { NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil) }
 }
