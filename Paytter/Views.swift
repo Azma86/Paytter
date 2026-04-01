@@ -73,7 +73,7 @@ struct AccountEditView: View {
                         if let newB = Int(diffAmount) {
                             let diff = newB - account.balance
                             if diff != 0 {
-                                // 【重要】他の投稿と同じ解析ができる形式で保存
+                                // 他の投稿と同じ解析ができる形式で保存
                                 let note = "残高調整済 ¥\(abs(diff)) @\(account.name)"
                                 transactions.append(Transaction(amount: abs(diff), date: Date(), note: note, source: account.name, isIncome: diff > 0))
                                 account.balance = newB
