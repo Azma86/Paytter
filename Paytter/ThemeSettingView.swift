@@ -13,7 +13,6 @@ struct ThemeSettingView: View {
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
-    // デフォルト値
     let defMain = "#FF007AFF"; let defInc = "#FF19B219"; let defExp = "#FFFF3B30"; let defHol = "#FFFF3B30"
     let defBG = "#FFFFFFFF"; let defBarBG = "#F8F8F8FF"; let defBarText = "#FF000000"; let defTab = "#FF007AFF"
     let defBody = "#FF000000"; let defSub = "#FF8E8E93"
