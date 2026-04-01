@@ -13,6 +13,7 @@ struct ThemeSettingView: View {
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
+    // デフォルト値
     let defMain = "#FF007AFF"; let defInc = "#FF19B219"; let defExp = "#FFFF3B30"; let defHol = "#FFFF3B30"
     let defBG = "#FFFFFFFF"; let defBarBG = "#F8F8F8FF"; let defBarText = "#FF000000"; let defTab = "#FF007AFF"
     let defBody = "#FF000000"; let defSub = "#FF8E8E93"
@@ -60,7 +61,10 @@ struct ThemeSettingView: View {
 
     func presetBtn(_ n: String, _ m: String, _ bg: String, _ bb: String, _ bt: String, _ body: String, _ sub: String, _ dark: Bool) -> some View {
         Button(action: { 
-            withAnimation { themeMain = m; themeBG = bg; themeBarBG = bb; themeBarText = bt; themeBodyText = body; themeSubText = sub; isDarkMode = dark; notify() }
+            withAnimation {
+                themeMain = m; themeBG = bg; themeBarBG = bb; themeBarText = bt; themeBodyText = body; themeSubText = sub; isDarkMode = dark
+                notify()
+            }
         }) {
             VStack(spacing: 8) {
                 Circle().fill(Color(hex: m)).frame(width: 44, height: 44).overlay(Circle().stroke(Color(hex: themeBarText).opacity(0.2), lineWidth: 1))
@@ -80,5 +84,7 @@ struct ThemeSettingView: View {
         }
     }
 
-    func notify() { NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil) }
+    func notify() {
+        NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil)
+    }
 }
