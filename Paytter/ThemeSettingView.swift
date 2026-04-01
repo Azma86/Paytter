@@ -12,6 +12,9 @@ struct ThemeSettingView: View {
     @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    
+    // デフォルト値の定義（戻す用）
+    let defMain = "#FF007AFF"; let defInc = "#FF19B219"; let defExp = "#FFFF3B30"; let defHol = "#FFFF3B30"; let defBG = "#FFFFFFFF"; let defBarBG = "#F8F8F8FF"; let defBarText = "#FF000000"; let defTab = "#FF007AFF"; let defBody = "#FF000000"; let defSub = "#FF8E8E93"
 
     var body: some View {
         ZStack {
@@ -19,7 +22,7 @@ struct ThemeSettingView: View {
             VStack(spacing: 0) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 20) {
-                        presetBtn("デフォルト", "#FF007AFF", "#FFFFFFFF", "#F8F8F8FF", "#FF000000", "#FF000000", "#FF8E8E93", false)
+                        presetBtn("デフォルト", defMain, defBG, defBarBG, defBarText, defBody, defSub, false)
                         presetBtn("ダーク", "#FF0A84FF", "#FF000000", "#FF1C1C1E", "#FFFFFFFF", "#FFFFFFFF", "#FF8E8E93", true)
                         presetBtn("ナチュラル", "#FF6B8E23", "#FFF5F5DC", "#FFE4E4D0", "#FF4B3621", "#FF4B3621", "#FF999988", false)
                         presetBtn("モノクロ", "#FF333333", "#FFFFFFFF", "#FFF2F2F2", "#FF000000", "#FF000000", "#FF999999", false)
@@ -35,19 +38,19 @@ struct ThemeSettingView: View {
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("全体設定").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "背景色", hex: $themeBG)
-                        colorRow(title: "メニュー背景", hex: $themeBarBG)
-                        colorRow(title: "メニュー文字", hex: $themeBarText)
-                        colorRow(title: "タブ選択色", hex: $themeTabAccent)
-                        colorRow(title: "本文文字", hex: $themeBodyText)
-                        colorRow(title: "サブ文字", hex: $themeSubText)
+                        colorRow(title: "背景色", hex: $themeBG, def: defBG)
+                        colorRow(title: "メニュー背景", hex: $themeBarBG, def: defBarBG)
+                        colorRow(title: "メニュー文字", hex: $themeBarText, def: defBarText)
+                        colorRow(title: "タブ選択色", hex: $themeTabAccent, def: defTab)
+                        colorRow(title: "本文文字", hex: $themeBodyText, def: defBody)
+                        colorRow(title: "サブ文字", hex: $themeSubText, def: defSub)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("パーツ設定").foregroundColor(Color(hex: themeSubText))) {
-                        colorRow(title: "メインカラー", hex: $themeMain)
-                        colorRow(title: "収入色", hex: $themeIncome)
-                        colorRow(title: "支出色", hex: $themeExpense)
-                        colorRow(title: "祝日色", hex: $themeHoliday)
+                        colorRow(title: "メインカラー", hex: $themeMain, def: defMain)
+                        colorRow(title: "収入色", hex: $themeIncome, def: defInc)
+                        colorRow(title: "支出色", hex: $themeExpense, def: defExp)
+                        colorRow(title: "祝日色", hex: $themeHoliday, def: defHol)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }
                 .scrollContentBackground(.hidden)
@@ -72,11 +75,21 @@ struct ThemeSettingView: View {
         }.buttonStyle(.plain)
     }
     
-    func colorRow(title: String, hex: Binding<String>) -> some View {
-        ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { 
-            hex.wrappedValue = $0.toHex()
-            notify() 
-        })).foregroundColor(Color(hex: themeBodyText))
+    func colorRow(title: String, hex: Binding<String>, def: String) -> some View {
+        HStack {
+            ColorPicker(title, selection: Binding(get: { Color(hex: hex.wrappedValue) }, set: { 
+                hex.wrappedValue = $0.toHex()
+                notify() 
+            })).foregroundColor(Color(hex: themeBodyText))
+            
+            // デフォルトに戻すボタン
+            if hex.wrappedValue != def {
+                Button(action: { withAnimation { hex.wrappedValue = def; notify() } }) {
+                    Image(systemName: "arrow.counterclockwise.circle.fill")
+                        .foregroundColor(Color(hex: themeSubText).opacity(0.7))
+                }.buttonStyle(.plain)
+            }
+        }
     }
 
     func notify() {
