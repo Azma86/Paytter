@@ -14,7 +14,9 @@ struct ThemeSettingView: View {
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
     // デフォルト値の定義（戻す用）
-    let defMain = "#FF007AFF"; let defInc = "#FF19B219"; let defExp = "#FFFF3B30"; let defHol = "#FFFF3B30"; let defBG = "#FFFFFFFF"; let defBarBG = "#F8F8F8FF"; let defBarText = "#FF000000"; let defTab = "#FF007AFF"; let defBody = "#FF000000"; let defSub = "#FF8E8E93"
+    let defMain = "#FF007AFF"; let defInc = "#FF19B219"; let defExp = "#FFFF3B30"; let defHol = "#FFFF3B30"
+    let defBG = "#FFFFFFFF"; let defBarBG = "#F8F8F8FF"; let defBarText = "#FF000000"; let defTab = "#FF007AFF"
+    let defBody = "#FF000000"; let defSub = "#FF8E8E93"
 
     var body: some View {
         ZStack {
@@ -82,7 +84,6 @@ struct ThemeSettingView: View {
                 notify() 
             })).foregroundColor(Color(hex: themeBodyText))
             
-            // デフォルトに戻すボタン
             if hex.wrappedValue != def {
                 Button(action: { withAnimation { hex.wrappedValue = def; notify() } }) {
                     Image(systemName: "arrow.counterclockwise.circle.fill")
