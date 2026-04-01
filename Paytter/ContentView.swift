@@ -12,6 +12,7 @@ struct ContentView: View {
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
+    // --- テーマ設定データ ---
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -54,15 +55,13 @@ struct ContentView: View {
                 walletTab.tag(2).tabItem { Label("お財布", systemImage: "wallet.pass") }
                 settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
             }
-            .accentColor(Color(hex: themeTabAccent))
+            .accentColor(Color(hex: themeTabAccent)) // タブ選択色
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { recalculateBalances(); updateAppearance() }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
-        .onChange(of: themeBarText) { _ in updateAppearance() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
-        .onChange(of: themeBG) { _ in updateAppearance() }
         .sheet(isPresented: $isShowingInputSheet) { 
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
         }
@@ -141,17 +140,16 @@ struct ContentView: View {
                         Button("手動保存から復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); isShowingRestoreConfirm = true }.foregroundColor(Color(hex: themeBodyText))
                         Button("バックアップを共有 (外部に書き出す)") { exportBackup() }.foregroundColor(Color(hex: themeMain))
-                        Button("外部ファイルから読み込み") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
+                        Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { Button("全データをリセット", role: .destructive) { isShowingResetAlert = true } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("設定").navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
-            .alert("全リセット", isPresented: $isShowingResetAlert) { Button("キャンセル", role: .cancel) {}; Button("リセット", role: .destructive) { resetAll() } } message: { Text("全ての投稿とお財布設定を初期化します。") }
-            .alert("バックアップの上書き", isPresented: $isShowingSaveConfirm) { Button("キャンセル", role: .cancel) {}; Button("保存") { BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); completionMessage = "保存完了"; isShowingCompletionAlert = true } } message: { Text("前回の手動保存日時: \(backupDateString)\n現在のデータでお財布設定と投稿を上書きしますか？") }
-            .alert("バックアップの復元", isPresented: $isShowingRestoreConfirm) { Button("キャンセル", role: .cancel) {}; Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元完了"; isShowingCompletionAlert = true } } } message: { Text("\(isRestoringManual ? "手動":"自動")保存日時: \(backupDateString)\n現在のデータを上書きしますか？") }
-            .alert("外部読込", isPresented: $isShowingImportConfirm) { Button("キャンセル", role: .cancel) { pendingImportData = nil }; Button("復元", role: .destructive) { if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true }; pendingImportData = nil } } message: { if let d = pendingImportData { Text("保存日時: \(d.2)\nデータを上書きしますか？") } }
+            .alert("全リセット", isPresented: $isShowingResetAlert) { Button("キャンセル", role: .cancel) {}; Button("リセット", role: .destructive) { resetAll() } } message: { Text("全ての投稿とお財布設定を初期状態に戻します。") }
+            .alert("復元", isPresented: $isShowingRestoreConfirm) { Button("キャンセル", role: .cancel) {}; Button("復元", role: .destructive) { if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); completionMessage = "復元完了"; isShowingCompletionAlert = true } } } message: { Text("\(isRestoringManual ? "手動":"自動")保存日時: \(backupDateString)") }
+            .alert("外部読込", isPresented: $isShowingImportConfirm) { Button("キャンセル", role: .cancel) { pendingImportData = nil }; Button("復元", role: .destructive) { if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); completionMessage = "読込完了"; isShowingCompletionAlert = true }; pendingImportData = nil } } message: { if let d = pendingImportData { Text("保存日時: \(d.2)") } }
             .alert("完了", isPresented: $isShowingCompletionAlert) { Button("OK"){} } message: { Text(completionMessage) }
             .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { r in if case .success(let u) = r { if u.startAccessingSecurityScopedResource() { handleImport(from: u); u.stopAccessingSecurityScopedResource() } } }
         } 
@@ -167,19 +165,12 @@ struct ContentView: View {
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
     
-    // 【データ本体（Data）を直接ファイルとしてパッケージングして共有】
     func exportBackup() {
         let encoder = JSONEncoder(); encoder.outputFormatting = .prettyPrinted
-        let dict: [String: Any] = [
-            "transactions": String(data: (try? encoder.encode(transactions)) ?? Data(), encoding: .utf8) ?? "",
-            "accounts": String(data: (try? encoder.encode(accounts)) ?? Data(), encoding: .utf8) ?? "",
-            "date": BackupManager.getBackupDate(isManual: true)
-        ]
+        let dict: [String: Any] = ["transactions": String(data: (try? encoder.encode(transactions)) ?? Data(), encoding: .utf8) ?? "", "accounts": String(data: (try? encoder.encode(accounts)) ?? Data(), encoding: .utf8) ?? "", "date": BackupManager.getBackupDate(isManual: true)]
         guard let finalData = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) else { return }
-        
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("Paytter_Backup.json")
         try? finalData.write(to: tempURL)
-        
         let av = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController {
             av.popoverPresentationController?.sourceView = rootVC.view
