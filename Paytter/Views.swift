@@ -34,7 +34,7 @@ struct AccountCreateView: View {
                     Button("作成") {
                         let b = Int(balance) ?? 0
                         accounts.append(Account(name: name, balance: b, type: type))
-                        if b != 0 { transactions.append(Transaction(amount: abs(b), date: Date(), note: "初期残高設定 ¥\(b) @\(name)", source: name, isIncome: b > 0)) }
+                        if b != 0 { transactions.append(Transaction(amount: abs(b), date: Date(), note: "初期残高設定 ¥\(abs(b)) @\(name)", source: name, isIncome: b > 0)) }
                         dismiss()
                     }.disabled(name.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold)
                 }
@@ -64,21 +64,21 @@ struct AccountEditView: View {
                     Toggle("ホームに表示", isOn: $account.isVisible)
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 
-                Section(header: Text("残高調整").foregroundColor(Color(hex: themeSubText)), footer: Text("現在の残高: ¥\(account.balance)").foregroundColor(Color(hex: themeSubText))) {
+                Section(header: Text("残高調整").foregroundColor(Color(hex: themeSubText)), footer: Text("現在のアプリ内残高: ¥\(account.balance)").foregroundColor(Color(hex: themeSubText))) {
                     HStack {
-                        Text("実残高:").foregroundColor(Color(hex: themeBodyText))
+                        Text("実際のお金:").foregroundColor(Color(hex: themeBodyText))
                         TextField("¥\(account.balance)", text: $diffAmount).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing).foregroundColor(Color(hex: themeBodyText))
                     }
                     Button(action: {
                         if let newB = Int(diffAmount) {
                             let diff = newB - account.balance
                             if diff != 0 {
-                                // 他の投稿と同じ解析ができる形式で保存
-                                let note = "残高調整済 ¥\(abs(diff)) @\(account.name)"
+                                // 【修正】「残高調整」に変更
+                                let note = "残高調整 ¥\(abs(diff)) @\(account.name)"
+                                // 投稿を追加。ContentView側のonChangeがこれを検知して再計算します
                                 transactions.append(Transaction(amount: abs(diff), date: Date(), note: note, source: account.name, isIncome: diff > 0))
-                                account.balance = newB
                             }
-                            // ホームタブ（Index 0）に戻る通知を送る
+                            // ホームに戻る通知
                             NotificationCenter.default.post(name: NSNotification.Name("SwitchToHomeTab"), object: nil)
                             dismiss()
                         }
@@ -103,7 +103,13 @@ struct BalanceView: View {
                 Text("¥").font(.system(size: 10, weight: .bold)).foregroundColor(color).padding(.bottom, 2)
                 Text("\(amount)").font(.system(size: 16, weight: .black, design: .rounded)).foregroundColor(color)
             }
-            if diff != 0 { Text(diff > 0 ? "+\(diff)" : "\(diff)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? .green : .red) }
+            // 差分があるときだけエフェクト付きで表示される
+            if diff != 0 {
+                Text(diff > 0 ? "+\(diff)" : "\(diff)")
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .foregroundColor(diff > 0 ? .green : .red)
+                    .transition(.opacity.combined(with: .scale))
+            }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
