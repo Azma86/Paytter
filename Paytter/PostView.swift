@@ -20,7 +20,9 @@ struct PostView: View {
     var body: some View {
         NavigationView {
             ZStack {
+                // 1. シート全体の背景をテーマに合わせる
                 Color(hex: themeBG).ignoresSafeArea()
+                
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
                         Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
@@ -66,8 +68,20 @@ struct PostView: View {
             })
             .sheet(isPresented: $isShowingDatePicker) {
                 NavigationView {
-                    VStack { DatePicker("日時を選択", selection: $postDate, displayedComponents: isPickingTime ? .hourAndMinute : .date).datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP")) }
+                    ZStack {
+                        // 2. ドラムロール画面の背景もテーマに合わせる
+                        Color(hex: themeBG).ignoresSafeArea()
+                        
+                        VStack { 
+                            DatePicker("日時を選択", selection: $postDate, displayedComponents: isPickingTime ? .hourAndMinute : .date)
+                                .datePickerStyle(.wheel)
+                                .labelsHidden()
+                                .environment(\.locale, Locale(identifier: "ja_JP"))
+                                .background(Color(hex: themeBG)) // 3. ドラムロール自体の背景
+                        }
+                    }
                     .navigationTitle(isPickingTime ? "時刻の指定" : "日付の指定")
+                    .navigationBarTitleDisplayMode(.inline)
                     .navigationBarItems(leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") { withAnimation { isPickingTime.toggle() } }, trailing: Button("完了") { isShowingDatePicker = false })
                 }.presentationDetents([.height(350)])
             }
