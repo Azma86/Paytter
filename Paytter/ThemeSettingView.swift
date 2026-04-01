@@ -20,7 +20,7 @@ struct ThemeSettingView: View {
         let isDark: Bool
     }
     
-    // ダークのbgとbarBGを指定の色に更新しました
+    // ダークのbgとbarBGの末尾をFFに修正し、指定の色に固定しました
     let presets: [String: PresetData] = [
         "デフォルト": PresetData(main: "#FF007AFF", bg: "#FFFFFFFF", barBG: "#F8F8F8FF", barText: "#FF000000", body: "#FF000000", sub: "#FF8E8E93", tab: "#FF007AFF", isDark: false),
         "ダーク": PresetData(main: "#FF0A84FF", bg: "#111115FF", barBG: "#030305FF", barText: "#FFFFFFFF", body: "#FFFFFFFF", sub: "#FF8E8E93", tab: "#FF0A84FF", isDark: true),
