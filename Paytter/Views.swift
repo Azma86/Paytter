@@ -74,7 +74,21 @@ struct AccountEditView: View {
     var body: some View {
         Form {
             Section(header: Text("基本設定")) { TextField("名前", text: $account.name); Picker(selection: $account.type) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }; Toggle("ホーム上部に表示", isOn: $account.isVisible) }
-            Section(header: Text("残高の調整")) { HStack { TextField("新しい残高を入力", text: $editBalance).keyboardType(.numberPad); Button("調整投稿") { if let newVal = Int(editBalance) { let diff = newVal - account.balance; if diff != 0 { transactions.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff))", source: account.name, isIncome: diff > 0)) }; editBalance = ""; dismiss() } }.buttonStyle(.borderedProminent) } }
+            Section(header: Text("残高の調整")) { 
+                HStack { 
+                    TextField("新しい残高を入力", text: $editBalance).keyboardType(.numberPad)
+                    Button("調整投稿") { 
+                        if let newVal = Int(editBalance) { 
+                            let diff = newVal - account.balance
+                            if diff != 0 { 
+                                // 文言を「残額調整」に統一。account.balanceを直接更新せず、transactionsへの追加に絞ることで不整合を解消
+                                transactions.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff))", source: account.name, isIncome: diff > 0)) 
+                            }
+                            editBalance = ""; NotificationCenter.default.post(name: NSNotification.Name("SwitchToHomeTab"), object: nil); dismiss() 
+                        } 
+                    }.buttonStyle(.borderedProminent) 
+                } 
+            }
         }.navigationTitle(account.name)
     }
 }
@@ -102,8 +116,22 @@ struct BalanceView: View {
             Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
             ZStack(alignment: .topTrailing) {
                 Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
-                if diff != 0 { Text(diff > 0 ? "+\(diff)" : "\(diff)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense)).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) }
+                if diff != 0 { 
+                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense))
+                        .offset(x: 20, y: showDiff ? -15 : 0)
+                        .opacity(showDiff ? 0 : 1) 
+                }
             }
-        }.frame(maxWidth: .infinity).onChange(of: amount) { newValue in if newValue != lastAmount { showDiff = false; withAnimation(.easeOut(duration: 1.5)) { showDiff = true }; lastAmount = newValue } }.onAppear { lastAmount = amount }
+        }
+        .frame(maxWidth: .infinity)
+        .onChange(of: amount) { newValue in 
+            if newValue != lastAmount { 
+                showDiff = false; withAnimation(.easeOut(duration: 1.5)) { showDiff = true }
+                lastAmount = newValue 
+            } 
+        }
+        .onAppear { lastAmount = amount }
     }
 }
