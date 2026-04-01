@@ -26,9 +26,6 @@ struct ContentView: View {
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
-    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
@@ -63,7 +60,7 @@ struct ContentView: View {
                 settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
             }
             .accentColor(Color(hex: themeTabAccent))
-            // 【修正】手動タップ時と同じ、アニメーションなしの自然なタブ切り替え
+            // 【修正】タブをタップした時と同じ、自然な瞬間切り替え
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in
                 self.selection = 0
             }
@@ -71,7 +68,7 @@ struct ContentView: View {
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { recalculateBalances(); updateAppearance() }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
-        // 【修正】投稿（transactions）に変更があったら確実に再計算とエフェクトを走らせる
+        // 【修正】投稿データが追加・変更されたら、自動で計算＆エフェクト発動
         .onChange(of: transactions) { _ in recalculateBalances() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: themeBarText) { _ in updateAppearance() }
@@ -195,28 +192,31 @@ struct ContentView: View {
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000; activeAlert = .completion("リセット完了") }
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     
-    // 【修正】エフェクトを正しく出し、数秒後に消すロジック
+    // 【修正】計算とエフェクトの確実な発火
     func recalculateBalances() { 
-        withAnimation(.spring()) {
-            for i in 0..<accounts.count { 
-                var cur = 0; 
-                for tx in transactions where tx.source == accounts[i].name { 
-                    cur += (tx.isIncome ? tx.amount : -tx.amount) 
-                }
-                let diff = cur - accounts[i].balance
-                if diff != 0 {
+        var hasChanges = false
+        for i in 0..<accounts.count { 
+            var cur = 0; 
+            for tx in transactions where tx.source == accounts[i].name { 
+                cur += (tx.isIncome ? tx.amount : -tx.amount) 
+            }
+            let diff = cur - accounts[i].balance
+            if diff != 0 {
+                withAnimation(.spring()) {
                     accounts[i].diffAmount = diff
+                    accounts[i].balance = cur
                 }
-                accounts[i].balance = cur 
+                hasChanges = true
             }
         }
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false)
         
-        // 3秒後に増減エフェクト（+1000など）を消す
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            withAnimation {
-                for i in 0..<accounts.count {
-                    accounts[i].diffAmount = 0
+        if hasChanges {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                withAnimation {
+                    for i in 0..<accounts.count {
+                        accounts[i].diffAmount = 0
+                    }
                 }
             }
         }
