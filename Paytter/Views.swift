@@ -2,150 +2,101 @@ import SwiftUI
 
 // --- お財布作成画面 ---
 struct AccountCreateView: View {
-    @Binding var accounts: [Account]
-    @Binding var transactions: [Transaction]
+    @Binding var accounts: [Account]; @Binding var transactions: [Transaction]
     @Environment(\.dismiss) var dismiss
-    
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
-    
-    @State private var name = ""
-    @State private var balance = ""
-    @State private var type = AccountType.wallet
+    @State private var name = ""; @State private var balance = ""; @State private var type = AccountType.wallet
     
     var body: some View {
         NavigationView {
             ZStack {
                 Color(hex: themeBG).ignoresSafeArea()
-                
                 Form {
-                    Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
-                        TextField("名前", text: $name).foregroundColor(Color(hex: themeBodyText))
-                        Picker("種類", selection: $type) {
-                            ForEach(AccountType.allCases, id: \.self) { t in
-                                Label(t.rawValue, systemImage: t.icon).tag(t)
-                            }
-                        }.foregroundColor(Color(hex: themeBodyText))
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    
-                    Section(header: Text("初期残高").foregroundColor(Color(hex: themeSubText))) {
-                        TextField("¥0", text: $balance)
-                            .keyboardType(.numbersAndPunctuation)
-                            .foregroundColor(Color(hex: themeBodyText))
-                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                }
-                .scrollContentBackground(.hidden) 
+                    Section(header: Text("基本情報")) {
+                        TextField("名前", text: $name)
+                        Picker("種類", selection: $type) { ForEach(AccountType.allCases, id: \.self) { t in Label(t.rawValue, systemImage: t.icon).tag(t) } }
+                    }
+                    Section(header: Text("初期残高")) {
+                        TextField("¥0", text: $balance).keyboardType(.numbersAndPunctuation)
+                    }
+                }.scrollContentBackground(.hidden)
             }
-            .navigationTitle("新しいお財布")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("新しいお財布").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)) }
+                ToolbarItem(placement: .navigationBarLeading) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("作成") {
-                        let newAcc = Account(name: name, balance: Int(balance) ?? 0, type: type)
-                        accounts.append(newAcc)
-                        if let b = Int(balance), b != 0 {
-                            let tx = Transaction(amount: abs(b), date: Date(), note: "初期残高調整 ¥\(abs(b)) @\(name)", source: name, isIncome: b > 0)
-                            transactions.append(tx)
-                        }
+                        let b = Int(balance) ?? 0
+                        accounts.append(Account(name: name, balance: b, type: type))
+                        if b != 0 { transactions.append(Transaction(amount: abs(b), date: Date(), note: "初期残高調整 ¥\(abs(b)) @\(name)", source: name, isIncome: b > 0)) }
                         dismiss()
-                    }.disabled(name.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold)
+                    }.disabled(name.isEmpty)
                 }
-            }
-            .preferredColorScheme(isDarkMode ? .dark : .light)
+            }.preferredColorScheme(isDarkMode ? .dark : .light)
         }
     }
 }
 
 // --- お財布編集画面 ---
 struct AccountEditView: View {
-    @Binding var account: Account
-    @Binding var transactions: [Transaction]
-    var allAccounts: [Account]
+    @Binding var account: Account; @Binding var transactions: [Transaction]; var allAccounts: [Account]
     @Environment(\.dismiss) var dismiss
-    
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
-    
     @State private var diffAmount = ""
     
     var body: some View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
-            
             Form {
-                Section(header: Text("お財布の設定").foregroundColor(Color(hex: themeSubText))) {
-                    TextField("名前", text: $account.name).foregroundColor(Color(hex: themeBodyText))
-                    Picker("種類", selection: $account.type) {
-                        ForEach(AccountType.allCases, id: \.self) { t in
-                            Text(t.rawValue).tag(t).foregroundColor(Color(hex: themeBodyText))
-                        }
-                    }
-                    Toggle("ホームに表示", isOn: $account.isVisible).foregroundColor(Color(hex: themeBodyText))
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                
-                Section(header: Text("残高調整").foregroundColor(Color(hex: themeSubText)), footer: Text("現在の残高: ¥\(account.balance)\n数値を入力すると、差額が自動的に投稿されます。").foregroundColor(Color(hex: themeSubText))) {
+                Section(header: Text("お財布の設定")) {
+                    TextField("名前", text: $account.name)
+                    Picker("種類", selection: $account.type) { ForEach(AccountType.allCases, id: \.self) { t in Text(t.rawValue).tag(t) } }
+                    Toggle("ホームに表示", isOn: $account.isVisible)
+                }
+                Section(header: Text("残高調整"), footer: Text("現在の残高: ¥\(account.balance)\n金額を入力すると差額が自動投稿されます。")) {
                     HStack {
-                        Text("実残高:").foregroundColor(Color(hex: themeBodyText))
-                        TextField("¥\(account.balance)", text: $diffAmount)
-                            .keyboardType(.numbersAndPunctuation)
-                            .multilineTextAlignment(.trailing)
-                            .foregroundColor(Color(hex: themeBodyText))
+                        Text("実残高:")
+                        TextField("¥\(account.balance)", text: $diffAmount).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing)
                     }
-                    
                     Button("残高を確定する") {
-                        if let newBalance = Int(diffAmount) {
-                            let diff = newBalance - account.balance
+                        if let newB = Int(diffAmount) {
+                            let diff = newB - account.balance
                             if diff != 0 {
-                                let tx = Transaction(
-                                    amount: abs(diff),
-                                    date: Date(),
-                                    note: "残額調整 ¥\(abs(diff)) @\(account.name)",
-                                    source: account.name,
-                                    isIncome: diff > 0
-                                )
-                                transactions.append(tx)
+                                transactions.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 ¥\(abs(diff)) @\(account.name)", source: account.name, isIncome: diff > 0))
                             }
-                            diffAmount = ""
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             NotificationCenter.default.post(name: NSNotification.Name("SwitchToHomeTab"), object: nil)
                             dismiss()
                         }
-                    }.disabled(diffAmount.isEmpty).foregroundColor(Color(hex: themeMain))
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-            }
-            .scrollContentBackground(.hidden)
+                    }.disabled(diffAmount.isEmpty)
+                }
+            }.scrollContentBackground(.hidden)
         }
-        .navigationTitle(account.name)
-        .preferredColorScheme(isDarkMode ? .dark : .light)
+        .navigationTitle(account.name).preferredColorScheme(isDarkMode ? .dark : .light)
     }
 }
 
-// --- 残高表示（ホームで使用） ---
+// --- 残高表示（エフェクト修正版） ---
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.system(size: 10, weight: .bold)).foregroundColor(color.opacity(0.6))
-            
             HStack(alignment: .bottom, spacing: 2) {
                 Text("¥").font(.system(size: 10, weight: .bold)).foregroundColor(color).padding(.bottom, 2)
                 Text("\(amount)").font(.system(size: 16, weight: .black, design: .rounded)).foregroundColor(color)
             }
-            // 【修正】エフェクトを「金額の右上」に浮かび上がるように配置
             .overlay(
                 Group {
                     if diff != 0 { 
                         Text(diff > 0 ? "+\(diff)" : "\(diff)")
                             .font(.system(size: 11, weight: .bold, design: .rounded))
                             .foregroundColor(diff > 0 ? .green : .red)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            // 【修正】下から上へフェードアウト
+                            .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .move(edge: .top).combined(with: .opacity)))
                             .offset(x: 25, y: -14) 
                     }
                 },
@@ -155,64 +106,41 @@ struct BalanceView: View {
     }
 }
 
-// --- 投稿詳細・編集画面 ---
+// --- 投稿詳細画面（ボタン復元版） ---
 struct TransactionDetailView: View {
-    @State var item: Transaction
-    @Binding var transactions: [Transaction]
-    @Binding var accounts: [Account]
+    @State var item: Transaction; @Binding var transactions: [Transaction]; @Binding var accounts: [Account]
     @Environment(\.dismiss) var dismiss
-    
-    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
     var body: some View {
-        ZStack {
-            Color(hex: themeBG).ignoresSafeArea()
-            
-            Form {
-                Section(header: Text("内容").foregroundColor(Color(hex: themeSubText))) {
-                    TextField("メモ", text: $item.note, axis: .vertical)
-                        .foregroundColor(Color(hex: themeBodyText))
-                    HStack {
-                        Text("金額").foregroundColor(Color(hex: themeBodyText))
-                        Spacer()
-                        TextField("金額", value: $item.amount, format: .number)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .foregroundColor(Color(hex: themeBodyText))
-                    }
-                    Toggle("収入として記録", isOn: $item.isIncome)
-                        .foregroundColor(Color(hex: themeBodyText))
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+        Form {
+            Section(header: Text("内容")) {
+                TextField("メモ", text: $item.note, axis: .vertical)
+                HStack {
+                    Text("金額")
+                    TextField("金額", value: $item.amount, format: .number).keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                }
+                Toggle("収入", isOn: $item.isIncome)
             }
-            .scrollContentBackground(.hidden)
         }
         .navigationTitle("投稿の詳細")
-        .navigationBarTitleDisplayMode(.inline)
-        // 【復元】右上に削除と保存のボタンを配置し、元の画面構造に戻しました
+        // 【復元】右上の「削除」と「編集（保存）」ボタン
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 16) {
                     Button("削除") {
                         transactions.removeAll(where: { $0.id == item.id })
                         dismiss()
-                    }
-                    .foregroundColor(.red)
+                    }.foregroundColor(.red)
                     
-                    Button("保存") {
+                    Button("編集") { // ここを「編集（保存）」に
                         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
                             transactions[idx] = item
                         }
                         dismiss()
-                    }
-                    .foregroundColor(Color(hex: themeMain))
-                    .fontWeight(.bold)
+                    }.foregroundColor(Color(hex: themeMain)).fontWeight(.bold)
                 }
             }
         }
-        .preferredColorScheme(isDarkMode ? .dark : .light)
     }
 }
