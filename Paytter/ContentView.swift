@@ -22,8 +22,13 @@ struct ContentView: View {
         Account(name: "口座", balance: 0, type: .bank),
         Account(name: "ポイント", balance: 0, type: .point)
     ]
+    @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
+    
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
@@ -39,9 +44,14 @@ struct ContentView: View {
     @State private var isShowingAccountCreator = false
     @State private var isShowingAccountDeleteAlert = false
     @State private var accountToDeleteIndex: IndexSet?
+    
     @State private var activeAlert: ActiveAlert?
+    @State private var isRestoringManual = false
+    @State private var backupDateString = ""
     @State private var isShowingImporter = false
     @State private var pendingImportData: ([Transaction], [Account], String)?
+
+    let appearancePublisher = NotificationCenter.default.publisher(for: NSNotification.Name("UpdateAppearance"))
 
     var body: some View {
         ZStack {
@@ -53,19 +63,45 @@ struct ContentView: View {
                 settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
             }
             .accentColor(Color(hex: themeTabAccent))
+            // 【修正】手動タップ時と同じ、アニメーションなしの自然なタブ切り替え
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in
-                // アニメーション付きでタブを切り替え、その後に計算を走らせてエフェクトを出す
-                withAnimation(.easeInOut) {
-                    self.selection = 0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    recalculateBalances()
-                }
+                self.selection = 0
             }
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { recalculateBalances(); updateAppearance() }
-        .onChange(of: transactions) { _ in recalculateBalances() } // 投稿の変化を監視
+        .onReceive(appearancePublisher) { _ in updateAppearance() }
+        // 【修正】投稿（transactions）に変更があったら確実に再計算とエフェクトを走らせる
+        .onChange(of: transactions) { _ in recalculateBalances() }
+        .onChange(of: themeBarBG) { _ in updateAppearance() }
+        .onChange(of: themeBarText) { _ in updateAppearance() }
+        .onChange(of: isDarkMode) { _ in updateAppearance() }
+        .onChange(of: themeBG) { _ in updateAppearance() }
+        .alert(item: $activeAlert) { type in
+            switch type {
+            case .reset:
+                return Alert(title: Text("全リセット"), message: Text("全ての投稿とお財布設定を初期化します。"), primaryButton: .destructive(Text("リセット")) { resetAll() }, secondaryButton: .cancel(Text("キャンセル")))
+            case .restore:
+                return Alert(title: Text("バックアップの復元"), message: Text("\(isRestoringManual ? "手動":"自動")保存日時: \(backupDateString)\nデータを復元しますか？"), primaryButton: .destructive(Text("復元")) {
+                    if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) {
+                        transactions = t; accounts = a; recalculateBalances(); activeAlert = .completion("復元完了")
+                    }
+                }, secondaryButton: .cancel(Text("キャンセル")))
+            case .save:
+                return Alert(title: Text("バックアップの保存"), message: Text("現在の手動保存日時: \(backupDateString)\n現在のデータで上書きしますか？"), primaryButton: .default(Text("保存")) {
+                    BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: true); activeAlert = .completion("保存完了")
+                }, secondaryButton: .cancel(Text("キャンセル")))
+            case .importConfirm:
+                return Alert(title: Text("外部データの読込"), message: Text("保存日時: \(pendingImportData?.2 ?? "")\nデータを上書きしますか？"), primaryButton: .destructive(Text("読み込む")) {
+                    if let d = pendingImportData { transactions = d.0; accounts = d.1; recalculateBalances(); activeAlert = .completion("読込完了") }; pendingImportData = nil
+                }, secondaryButton: .cancel(Text("キャンセル")) { pendingImportData = nil })
+            case .completion(let msg):
+                return Alert(title: Text("完了"), message: Text(msg), dismissButton: .default(Text("OK")))
+            }
+        }
+        .sheet(isPresented: $isShowingInputSheet) { 
+            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
+        }
     }
 
     private var homeTab: some View {
@@ -86,6 +122,9 @@ struct ContentView: View {
                                 TwitterRow(item: item)
                             }
                             .listRowInsets(EdgeInsets()).listRowBackground(Color(hex: themeBG))
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
+                            }
                         }
                     }.listStyle(.plain).scrollContentBackground(.hidden)
                 }
@@ -94,10 +133,14 @@ struct ContentView: View {
                 }.padding(20).padding(.bottom, 10)
             }
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
+                Button("キャンセル", role: .cancel) {}; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } }
+            } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
         }
     }
     
-    private var calendarTab: some View { NavigationView { CalendarView(transactions: $transactions, accounts: $accounts).navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline) } }
+    private var calendarTab: some View { NavigationView { CalendarView(transactions: $transactions, accounts: $accounts).navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline).toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar) } }
 
     private var walletTab: some View { 
         NavigationView { 
@@ -108,14 +151,18 @@ struct ContentView: View {
                         ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in 
                             NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { 
                                 HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } 
-                            }
+                            }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) }
                         }
                         Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("お財布").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) {
+                Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
+            } message: { Text("金額計算に影響する可能性があります。") }
         } 
     }
 
@@ -124,36 +171,88 @@ struct ContentView: View {
             ZStack { 
                 Color(hex: themeBG).ignoresSafeArea()
                 List { 
-                    Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette") } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { Button("全データをリセット", role: .destructive) { resetAll() } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { 
+                        Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); activeAlert = .save }.foregroundColor(Color(hex: themeBodyText))
+                        Button("手動保存から復元") { isRestoringManual = true; backupDateString = BackupManager.getBackupDate(isManual: true); activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText))
+                        Button("自動保存から復元") { isRestoringManual = false; backupDateString = BackupManager.getBackupDate(isManual: false); activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText))
+                        Button("バックアップを共有 (外部に書き出す)") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { Button("全データをリセット", role: .destructive) { activeAlert = .reset } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("設定").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { r in if case .success(let u) = r { if u.startAccessingSecurityScopedResource() { handleImport(from: u); u.stopAccessingSecurityScopedResource() } } }
         } 
     }
 
-    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; recalculateBalances() }
+    func handleImport(from url: URL) {
+        guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dateStr = json["date"] as? String else { return }
+        let dec = JSONDecoder(); if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!), let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) { self.pendingImportData = (t, a, dateStr); self.activeAlert = .importConfirm }
+    }
+    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000; activeAlert = .completion("リセット完了") }
+    func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     
-    func recalculateBalances() {
+    // 【修正】エフェクトを正しく出し、数秒後に消すロジック
+    func recalculateBalances() { 
         withAnimation(.spring()) {
-            for i in 0..<accounts.count {
-                var cur = 0
-                for tx in transactions where tx.source == accounts[i].name {
-                    cur += (tx.isIncome ? tx.amount : -tx.amount)
+            for i in 0..<accounts.count { 
+                var cur = 0; 
+                for tx in transactions where tx.source == accounts[i].name { 
+                    cur += (tx.isIncome ? tx.amount : -tx.amount) 
                 }
-                accounts[i].diffAmount = cur - accounts[i].balance
-                accounts[i].balance = cur
+                let diff = cur - accounts[i].balance
+                if diff != 0 {
+                    accounts[i].diffAmount = diff
+                }
+                accounts[i].balance = cur 
             }
         }
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false)
+        
+        // 3秒後に増減エフェクト（+1000など）を消す
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            withAnimation {
+                for i in 0..<accounts.count {
+                    accounts[i].diffAmount = 0
+                }
+            }
+        }
+    }
+    
+    func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
+    func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
+    
+    func exportBackup() {
+        let encoder = JSONEncoder(); encoder.outputFormatting = .prettyPrinted
+        let dict: [String: Any] = ["transactions": String(data: (try? encoder.encode(transactions)) ?? Data(), encoding: .utf8) ?? "", "accounts": String(data: (try? encoder.encode(accounts)) ?? Data(), encoding: .utf8) ?? "", "date": BackupManager.getBackupDate(isManual: true)]
+        guard let finalData = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) else { return }
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("Paytter_Backup.json")
+        try? finalData.write(to: tempURL)
+        let av = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController {
+            av.popoverPresentationController?.sourceView = rootVC.view
+            rootVC.present(av, animated: true)
+        }
     }
 
     func updateAppearance() {
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(Color(hex: themeBarBG))
-        appearance.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: themeBarText))]
-        UINavigationBar.appearance().standardAppearance = appearance
-        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+        let bgColor = UIColor(Color(hex: themeBarBG)); let textColor = UIColor(Color(hex: themeBarText))
+        let appearance = UINavigationBarAppearance(); appearance.configureWithOpaqueBackground(); appearance.backgroundColor = bgColor; appearance.titleTextAttributes = [.foregroundColor: textColor]; appearance.largeTitleTextAttributes = [.foregroundColor: textColor]
+        UINavigationBar.appearance().standardAppearance = appearance; UINavigationBar.appearance().scrollEdgeAppearance = appearance; UINavigationBar.appearance().compactAppearance = appearance
+        let tabAppearance = UITabBarAppearance(); tabAppearance.configureWithOpaqueBackground(); tabAppearance.backgroundColor = bgColor
+        UITabBar.appearance().standardAppearance = tabAppearance; UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            windowScene.windows.forEach { window in updateViewHierarchy(window.rootViewController); window.setNeedsLayout(); window.layoutIfNeeded() }
+        }
+    }
+
+    private func updateViewHierarchy(_ vc: UIViewController?) {
+        guard let vc = vc else { return }
+        if let nav = vc as? UINavigationController { nav.navigationBar.standardAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.scrollEdgeAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.setNeedsLayout(); nav.navigationBar.layoutIfNeeded() }
+        if let tab = vc as? UITabBarController { tab.tabBar.standardAppearance = UITabBar.appearance().standardAppearance; if #available(iOS 15.0, *) { tab.tabBar.scrollEdgeAppearance = UITabBar.appearance().scrollEdgeAppearance } }
+        vc.children.forEach { updateViewHierarchy($0) }
     }
 }
