@@ -90,7 +90,6 @@ struct AccountEditView: View {
                         if let newB = Int(diffAmount) {
                             let diff = newB - account.balance
                             if diff != 0 {
-                                // 【修正】「残額調整」の文言のみで投稿。残高の書き換えは行わない（ContentViewの再計算に任せる）
                                 let tx = Transaction(amount: abs(diff), date: Date(), note: "残額調整", source: account.name, isIncome: diff > 0)
                                 transactions.append(tx)
                             }
@@ -115,16 +114,24 @@ struct BalanceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.system(size: 10, weight: .bold)).foregroundColor(color.opacity(0.6))
+            
             HStack(alignment: .bottom, spacing: 2) {
                 Text("¥").font(.system(size: 10, weight: .bold)).foregroundColor(color).padding(.bottom, 2)
                 Text("\(amount)").font(.system(size: 16, weight: .black, design: .rounded)).foregroundColor(color)
             }
-            if diff != 0 { 
-                Text(diff > 0 ? "+\(diff)" : "\(diff)")
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                    .foregroundColor(diff > 0 ? .green : .red)
-                    .transition(.opacity.combined(with: .scale)) 
-            }
+            // 【修正】金額の「右上」にふわっと浮かび上がるように配置
+            .overlay(
+                Group {
+                    if diff != 0 { 
+                        Text(diff > 0 ? "+\(diff)" : "\(diff)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(diff > 0 ? .green : .red)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .offset(x: 25, y: -14) // 右上に押し上げる調整
+                    }
+                },
+                alignment: .topTrailing
+            )
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -133,6 +140,7 @@ struct BalanceView: View {
 struct TransactionDetailView: View {
     @State var item: Transaction; @Binding var transactions: [Transaction]; @Binding var accounts: [Account]
     @Environment(\.dismiss) var dismiss
+    
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
@@ -140,6 +148,7 @@ struct TransactionDetailView: View {
     var body: some View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
+            
             Form {
                 Section(header: Text("内容")) {
                     TextField("メモ", text: $item.note, axis: .vertical)
@@ -147,18 +156,37 @@ struct TransactionDetailView: View {
                         Text("金額")
                         Spacer()
                         TextField("金額", value: $item.amount, format: .number)
-                            .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
                     }
                     Toggle("収入として記録", isOn: $item.isIncome)
-                }
-                Section {
-                    Button("変更を保存") { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions[idx] = item; dismiss() } }.foregroundColor(Color(hex: themeMain)).fontWeight(.bold)
-                    Button("削除", role: .destructive) { transactions.removeAll(where: { $0.id == item.id }); dismiss() }
                 }
             }
             .scrollContentBackground(.hidden)
         }
-        .navigationTitle("投稿の詳細").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("投稿の詳細")
+        .navigationBarTitleDisplayMode(.inline)
+        // 【修正】右上に削除と保存のボタンを配置
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack(spacing: 16) {
+                    Button("削除") {
+                        transactions.removeAll(where: { $0.id == item.id })
+                        dismiss()
+                    }
+                    .foregroundColor(.red)
+                    
+                    Button("保存") {
+                        if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
+                            transactions[idx] = item
+                        }
+                        dismiss()
+                    }
+                    .foregroundColor(Color(hex: themeMain))
+                    .fontWeight(.bold)
+                }
+            }
+        }
         .preferredColorScheme(isDarkMode ? .dark : .light)
     }
 }
