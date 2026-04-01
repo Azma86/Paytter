@@ -38,12 +38,26 @@ struct TransactionDetailView: View {
                 }.foregroundColor(Color(hex: themeMain))
             }
         }
-        .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions.remove(at: idx); dismiss() } } }
+        .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { 
+            Button("キャンセル", role: .cancel) { }; 
+            // 【修正】確実に削除を反映させるための記述
+            Button("削除", role: .destructive) { 
+                if let idx = transactions.firstIndex(where: { $0.id == item.id }) { 
+                    var copy = transactions
+                    copy.remove(at: idx)
+                    transactions = copy
+                    dismiss() 
+                } 
+            } 
+        }
         .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, initialDate: item.date, onPost: { isInc, nDate in
             if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
                 let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
                 var nSrc = item.source; for acc in accounts { if editLineText.contains("@\(acc.name)") { nSrc = acc.name } }
-                transactions[idx] = Transaction(id: item.id, amount: nAmt, date: nDate, note: editLineText, source: nSrc, isIncome: isInc)
+                // 【修正】確実に編集を反映させるための記述
+                var copy = transactions
+                copy[idx] = Transaction(id: item.id, amount: nAmt, date: nDate, note: editLineText, source: nSrc, isIncome: isInc)
+                transactions = copy
             }
         }, transactions: transactions, accounts: accounts) }
     }
@@ -62,7 +76,13 @@ struct AccountCreateView: View {
                 }
             }.navigationTitle("新しいお財布").navigationBarItems(leading: Button("キャンセル"){ dismiss() }, trailing: Button("追加") {
                 let val = Int(initial) ?? 0; let newAcc = Account(name: name, balance: val, type: selectedType)
-                accounts.append(newAcc); if val != 0 { transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val)", source: name, isIncome: true)) }; dismiss()
+                // 【修正】確実な追加
+                var accCopy = accounts; accCopy.append(newAcc); accounts = accCopy
+                if val != 0 { 
+                    var txCopy = transactions
+                    txCopy.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val)", source: name, isIncome: true))
+                    transactions = txCopy
+                }; dismiss()
             }.disabled(name.isEmpty))
         }
     }
@@ -81,10 +101,14 @@ struct AccountEditView: View {
                         if let newVal = Int(editBalance) { 
                             let diff = newVal - account.balance
                             if diff != 0 { 
-                                // 文言を「残額調整」に統一。account.balanceを直接更新せず、transactionsへの追加に絞ることで不整合を解消
-                                transactions.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff))", source: account.name, isIncome: diff > 0)) 
+                                // 【修正】確実な追加とホーム画面への通知
+                                var copy = transactions
+                                copy.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff))", source: account.name, isIncome: diff > 0))
+                                transactions = copy 
                             }
-                            editBalance = ""; NotificationCenter.default.post(name: NSNotification.Name("SwitchToHomeTab"), object: nil); dismiss() 
+                            editBalance = ""
+                            NotificationCenter.default.post(name: NSNotification.Name("SwitchToHomeTab"), object: nil)
+                            dismiss() 
                         } 
                     }.buttonStyle(.borderedProminent) 
                 } 
@@ -128,7 +152,9 @@ struct BalanceView: View {
         .frame(maxWidth: .infinity)
         .onChange(of: amount) { newValue in 
             if newValue != lastAmount { 
-                showDiff = false; withAnimation(.easeOut(duration: 1.5)) { showDiff = true }
+                showDiff = false
+                // 【修正】1.5秒から0.6秒へ変更し、前のような「ふわっとすぐ消える」動きに
+                withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
                 lastAmount = newValue 
             } 
         }
