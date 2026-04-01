@@ -47,7 +47,6 @@ struct ContentView: View {
     @State private var isShowingAccountDeleteAlert = false
     @State private var accountToDeleteIndex: IndexSet?
     
-    // アラート管理用
     @State private var activeAlert: ActiveAlert?
     @State private var isRestoringManual = false
     @State private var backupDateString = ""
@@ -66,13 +65,18 @@ struct ContentView: View {
                 settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
             }
             .accentColor(Color(hex: themeTabAccent))
+            // 【追加】お財布画面からの「ホームに戻る」通知を受け取る
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in
+                self.selection = 0
+            }
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { recalculateBalances(); updateAppearance() }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
+        .onChange(of: themeBarText) { _ in updateAppearance() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
-        // メインのアラート制御（これひとつにまとめました）
+        .onChange(of: themeBG) { _ in updateAppearance() }
         .alert(item: $activeAlert) { type in
             switch type {
             case .reset:
@@ -132,7 +136,7 @@ struct ContentView: View {
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                 Button("キャンセル", role: .cancel) {}; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } }
-            }
+            } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
         }
     }
     
@@ -158,7 +162,7 @@ struct ContentView: View {
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
             .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) {
                 Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
-            }
+            } message: { Text("金額計算に影響する可能性があります。") }
         } 
     }
 
