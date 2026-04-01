@@ -20,10 +20,10 @@ struct ThemeSettingView: View {
         let isDark: Bool
     }
     
-    // ダークのbgとbarBGの末尾をFFに修正し、指定の色に固定しました
+    // 【修正】先頭2文字をFF（不透明）にし、その後にRGBを続けるARGB形式に統一しました
     let presets: [String: PresetData] = [
-        "デフォルト": PresetData(main: "#FF007AFF", bg: "#FFFFFFFF", barBG: "#F8F8F8FF", barText: "#FF000000", body: "#FF000000", sub: "#FF8E8E93", tab: "#FF007AFF", isDark: false),
-        "ダーク": PresetData(main: "#FF0A84FF", bg: "#111115FF", barBG: "#030305FF", barText: "#FFFFFFFF", body: "#FFFFFFFF", sub: "#FF8E8E93", tab: "#FF0A84FF", isDark: true),
+        "デフォルト": PresetData(main: "#FF007AFF", bg: "#FFFFFFFF", barBG: "#FFF8F8F8", barText: "#FF000000", body: "#FF000000", sub: "#FF8E8E93", tab: "#FF007AFF", isDark: false),
+        "ダーク": PresetData(main: "#FF0A84FF", bg: "#FF111115", barBG: "#FF030305", barText: "#FFFFFFFF", body: "#FFFFFFFF", sub: "#FF8E8E93", tab: "#FF0A84FF", isDark: true),
         "ナチュラル": PresetData(main: "#FF6B8E23", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barText: "#FF4B3621", body: "#FF4B3621", sub: "#FF999988", tab: "#FF6B8E23", isDark: false),
         "カフェ": PresetData(main: "#FF8B4513", bg: "#FFFFF8DC", barBG: "#FFDEB887", barText: "#FF3E2723", body: "#FF3E2723", sub: "#FFA08878", tab: "#FF8B4513", isDark: false)
     ]
