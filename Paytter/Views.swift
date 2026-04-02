@@ -124,7 +124,21 @@ struct AccountEditView: View {
     }
 }
 
-// 【新規】お財布グループ編集画面 (チェックボックス式選択)
+// 【新規】総資産グループの編集（表示切り替えのみ）
+struct TotalAssetEditView: View {
+    @Binding var isVisible: Bool
+    var body: some View {
+        Form {
+            Section(header: Text("グループ設定")) {
+                Toggle("ホーム上部に表示", isOn: $isVisible)
+            }
+            Section(footer: Text("「総資産」グループは自動的にすべてのお財布を合算します。")) {
+                EmptyView()
+            }
+        }.navigationTitle("総資産")
+    }
+}
+
 struct AccountGroupEditView: View {
     @Binding var group: AccountGroup
     @Binding var accounts: [Account]
@@ -164,7 +178,6 @@ struct AccountGroupEditView: View {
     }
 }
 
-// 【新規】お財布グループ作成画面
 struct AccountGroupCreateView: View {
     @Binding var groups: [AccountGroup]
     @Binding var accounts: [Account]
@@ -177,7 +190,7 @@ struct AccountGroupCreateView: View {
         NavigationView {
             Form {
                 Section(header: Text("基本情報")) {
-                    TextField("グループ名（例：銀行まとめ、サブ財布など）", text: $name)
+                    TextField("グループ名", text: $name)
                 }
                 
                 Section(header: Text("お財布を紐付ける")) {
@@ -209,7 +222,6 @@ struct AccountGroupCreateView: View {
                 trailing: Button("追加") {
                     let newGroup = AccountGroup(name: name)
                     groups.append(newGroup)
-                    // 選択されたお財布にグループIDを割り当てる
                     for i in 0..<accounts.count {
                         if selectedAccountIds.contains(accounts[i].id) {
                             accounts[i].groupId = newGroup.id
