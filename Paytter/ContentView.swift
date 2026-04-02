@@ -54,6 +54,9 @@ struct ContentView: View {
     
     // ホーム並べ替えモード
     @State private var isHomeEditMode = false
+    // ドラッグ中のアイテム保持用
+    @State private var draggedAccount: Account?
+    @State private var draggedGroup: AccountGroup?
     
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
     
@@ -117,38 +120,12 @@ struct ContentView: View {
             ZStack(alignment: .bottomTrailing) {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
-                    if isHomeEditMode {
-                        // 並べ替えモード：お財布一覧と同じ操作感のリストを表示
-                        List {
-                            Section(header: Text("ホーム表示順の変更").font(.caption)) {
-                                ForEach(accounts) { acc in
-                                    HStack {
-                                        Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
-                                        Text(acc.name).foregroundColor(Color(hex: themeBodyText))
-                                        Spacer()
-                                        if !acc.isVisible { Text("非表示").font(.caption2).foregroundColor(.red) }
-                                    }
-                                }.onMove(perform: moveAccount)
-                                
-                                ForEach(groups) { group in
-                                    HStack {
-                                        Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
-                                        Text(group.name).foregroundColor(Color(hex: themeBodyText))
-                                        Spacer()
-                                        if !group.isVisible { Text("非表示").font(.caption2).foregroundColor(.red) }
-                                    }
-                                }.onMove(perform: moveGroup)
-                            }
-                        }
-                        .listStyle(.insetGrouped)
-                        .frame(maxHeight: 300) // ホーム画面上部に収まるサイズ
-                        .environment(\.editMode, .constant(.active)) // 常に並べ替えアイコンを表示
-                    } else {
-                        // 通常モード：グリッド表示
-                        let visibleAccounts = accounts.filter { $0.isVisible }
-                        let visibleGroups = groups.filter { $0.isVisible }
-                        let totalItems = (showTotalAssets ? 1 : 0) + visibleAccounts.count + visibleGroups.count
-                        
+                    // --- ホーム上部の一覧（ドラッグ並べ替え対応） ---
+                    let visibleAccounts = accounts.filter { $0.isVisible }
+                    let visibleGroups = groups.filter { $0.isVisible }
+                    let totalItems = (showTotalAssets ? 1 : 0) + visibleAccounts.count + visibleGroups.count
+                    
+                    VStack(spacing: 8) {
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: min(max(totalItems, 1), 4)), spacing: 10) {
                             if showTotalAssets {
                                 let totalB = accounts.reduce(0) { $0 + $1.balance }
@@ -156,20 +133,51 @@ struct ContentView: View {
                                 BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
                             }
                             
-                            ForEach(visibleAccounts) { acc in
-                                BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
+                            // お財布カード
+                            ForEach(accounts) { acc in
+                                if acc.isVisible {
+                                    BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
+                                        .background(isHomeEditMode ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+                                        .cornerRadius(8)
+                                        .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
+                                        .onDrag {
+                                            if !isHomeEditMode { return NSItemProvider() }
+                                            self.draggedAccount = acc
+                                            return NSItemProvider(object: acc.id.uuidString as NSString)
+                                        }
+                                        .onDrop(of: [.text], delegate: AccountDropDelegate(item: acc, accounts: $accounts, draggedItem: $draggedAccount))
+                                }
                             }
                             
-                            ForEach(visibleGroups) { group in
-                                let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
-                                let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
-                                let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
-                                BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
+                            // グループカード
+                            ForEach(groups) { group in
+                                if group.isVisible {
+                                    let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
+                                    let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
+                                    let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
+                                    BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
+                                        .background(isHomeEditMode ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+                                        .cornerRadius(8)
+                                        .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
+                                        .onDrag {
+                                            if !isHomeEditMode { return NSItemProvider() }
+                                            self.draggedGroup = group
+                                            return NSItemProvider(object: group.id.uuidString as NSString)
+                                        }
+                                        .onDrop(of: [.text], delegate: GroupDropDelegate(item: group, groups: $groups, draggedItem: $draggedGroup))
+                                }
                             }
                         }
                         .padding()
-                        .background(Color(hex: themeBarBG).opacity(0.8))
+                        
+                        if isHomeEditMode {
+                            Text("ドラッグしてお財布を並べ替え")
+                                .font(.caption2)
+                                .foregroundColor(Color(hex: themeMain))
+                                .padding(.bottom, 4)
+                        }
                     }
+                    .background(Color(hex: themeBarBG).opacity(0.8))
                     
                     Divider()
                     List {
@@ -195,7 +203,7 @@ struct ContentView: View {
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { withAnimation { isHomeEditMode.toggle() } }) {
+                    Button(action: { withAnimation(.spring()) { isHomeEditMode.toggle() } }) {
                         Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.up.arrow.down.circle")
                             .foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain))
                     }
@@ -345,5 +353,53 @@ struct ContentView: View {
         if let nav = vc as? UINavigationController { nav.navigationBar.standardAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.scrollEdgeAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.setNeedsLayout(); nav.navigationBar.layoutIfNeeded() }
         if let tab = vc as? UITabBarController { tab.tabBar.standardAppearance = UITabBar.appearance().standardAppearance; if #available(iOS 15.0, *) { tab.tabBar.scrollEdgeAppearance = UITabBar.appearance().scrollEdgeAppearance } }
         vc.children.forEach { updateViewHierarchy($0) }
+    }
+}
+
+// --- ホーム並べ替え用デリゲート (Account) ---
+struct AccountDropDelegate: DropDelegate {
+    let item: Account
+    @Binding var accounts: [Account]
+    @Binding var draggedItem: Account?
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedItem = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedItem = draggedItem, draggedItem.id != item.id else { return }
+        let from = accounts.firstIndex(where: { $0.id == draggedItem.id })!
+        let to = accounts.firstIndex(where: { $0.id == item.id })!
+        
+        if accounts[to].id != draggedItem.id {
+            withAnimation(.spring()) {
+                accounts.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+            }
+        }
+    }
+}
+
+// --- ホーム並べ替え用デリゲート (Group) ---
+struct GroupDropDelegate: DropDelegate {
+    let item: AccountGroup
+    @Binding var groups: [AccountGroup]
+    @Binding var draggedItem: AccountGroup?
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedItem = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedItem = draggedItem, draggedItem.id != item.id else { return }
+        let from = groups.firstIndex(where: { $0.id == draggedItem.id })!
+        let to = groups.firstIndex(where: { $0.id == item.id })!
+        
+        if groups[to].id != draggedItem.id {
+            withAnimation(.spring()) {
+                groups.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+            }
+        }
     }
 }
