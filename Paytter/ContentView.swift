@@ -52,11 +52,9 @@ struct ContentView: View {
     @State private var accountToDeleteIndex: IndexSet?
     @State private var groupToDeleteIndex: IndexSet?
     
-    // ホーム並べ替えモード
+    // ホーム即時並べ替え用
     @State private var isHomeEditMode = false
-    // ドラッグ中のアイテム保持用
-    @State private var draggedAccount: Account?
-    @State private var draggedGroup: AccountGroup?
+    @State private var draggedId: UUID? // ドラッグ中のアイテムID
     
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
     
@@ -120,58 +118,61 @@ struct ContentView: View {
             ZStack(alignment: .bottomTrailing) {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
-                    // --- ホーム上部の一覧（ドラッグ並べ替え対応） ---
+                    // --- ホーム上部の一覧（即時スライド並べ替え対応） ---
                     let visibleAccounts = accounts.filter { $0.isVisible }
                     let visibleGroups = groups.filter { $0.isVisible }
-                    let totalItems = (showTotalAssets ? 1 : 0) + visibleAccounts.count + visibleGroups.count
+                    let totalItemsCount = (showTotalAssets ? 1 : 0) + visibleAccounts.count + visibleGroups.count
                     
                     VStack(spacing: 8) {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: min(max(totalItems, 1), 4)), spacing: 10) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: min(max(totalItemsCount, 1), 4)), spacing: 10) {
                             if showTotalAssets {
                                 let totalB = accounts.reduce(0) { $0 + $1.balance }
                                 let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
                                 BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
                             }
                             
-                            // お財布カード
+                            // お財布
                             ForEach(accounts) { acc in
                                 if acc.isVisible {
                                     BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
-                                        .background(isHomeEditMode ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+                                        .background(draggedId == acc.id ? Color(hex: themeMain).opacity(0.2) : Color.clear)
                                         .cornerRadius(8)
                                         .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
+                                        // 【変更】長押し不要の即時ドラッグ・スライド処理
                                         .onDrag {
                                             if !isHomeEditMode { return NSItemProvider() }
-                                            self.draggedAccount = acc
+                                            self.draggedId = acc.id
                                             return NSItemProvider(object: acc.id.uuidString as NSString)
                                         }
-                                        .onDrop(of: [.text], delegate: AccountDropDelegate(item: acc, accounts: $accounts, draggedItem: $draggedAccount))
+                                        .onDrop(of: [.text], delegate: InstantDropDelegate(itemIdentifiable: acc, list: $accounts, draggedId: $draggedId))
                                 }
                             }
                             
-                            // グループカード
+                            // グループ
                             ForEach(groups) { group in
                                 if group.isVisible {
                                     let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
                                     let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
                                     let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
                                     BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
-                                        .background(isHomeEditMode ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+                                        .background(draggedId == group.id ? Color(hex: themeMain).opacity(0.2) : Color.clear)
                                         .cornerRadius(8)
                                         .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
                                         .onDrag {
                                             if !isHomeEditMode { return NSItemProvider() }
-                                            self.draggedGroup = group
+                                            self.draggedId = group.id
                                             return NSItemProvider(object: group.id.uuidString as NSString)
                                         }
-                                        .onDrop(of: [.text], delegate: GroupDropDelegate(item: group, groups: $groups, draggedItem: $draggedGroup))
+                                        .onDrop(of: [.text], delegate: InstantDropDelegate(itemIdentifiable: group, list: $groups, draggedId: $draggedId))
                                 }
                             }
                         }
                         .padding()
+                        .animation(.easeInOut, value: accounts)
+                        .animation(.easeInOut, value: groups)
                         
                         if isHomeEditMode {
-                            Text("ドラッグしてお財布を並べ替え")
+                            Text("スライドしてお財布を並べ替え")
                                 .font(.caption2)
                                 .foregroundColor(Color(hex: themeMain))
                                 .padding(.bottom, 4)
@@ -356,50 +357,22 @@ struct ContentView: View {
     }
 }
 
-// --- ホーム並べ替え用デリゲート (Account) ---
-struct AccountDropDelegate: DropDelegate {
-    let item: Account
-    @Binding var accounts: [Account]
-    @Binding var draggedItem: Account?
+// --- ホーム並べ替え用：瞬時に反応するDropDelegate ---
+struct InstantDropDelegate<T: Identifiable>: DropDelegate {
+    let itemIdentifiable: T
+    @Binding var list: [T]
+    @Binding var draggedId: UUID?
 
     func performDrop(info: DropInfo) -> Bool {
-        draggedItem = nil
+        draggedId = nil
         return true
     }
 
     func dropEntered(info: DropInfo) {
-        guard let draggedItem = draggedItem, draggedItem.id != item.id else { return }
-        let from = accounts.firstIndex(where: { $0.id == draggedItem.id })!
-        let to = accounts.firstIndex(where: { $0.id == item.id })!
+        guard let draggedId = draggedId, let draggedIndex = list.firstIndex(where: { ($0.id as? UUID) == draggedId }), let targetIndex = list.firstIndex(where: { $0.id == itemIdentifiable.id }), draggedIndex != targetIndex else { return }
         
-        if accounts[to].id != draggedItem.id {
-            withAnimation(.spring()) {
-                accounts.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-            }
-        }
-    }
-}
-
-// --- ホーム並べ替え用デリゲート (Group) ---
-struct GroupDropDelegate: DropDelegate {
-    let item: AccountGroup
-    @Binding var groups: [AccountGroup]
-    @Binding var draggedItem: AccountGroup?
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggedItem = nil
-        return true
-    }
-
-    func dropEntered(info: DropInfo) {
-        guard let draggedItem = draggedItem, draggedItem.id != item.id else { return }
-        let from = groups.firstIndex(where: { $0.id == draggedItem.id })!
-        let to = groups.firstIndex(where: { $0.id == item.id })!
-        
-        if groups[to].id != draggedItem.id {
-            withAnimation(.spring()) {
-                groups.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-            }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            list.move(fromOffsets: IndexSet(integer: draggedIndex), toOffset: targetIndex > draggedIndex ? targetIndex + 1 : targetIndex)
         }
     }
 }
