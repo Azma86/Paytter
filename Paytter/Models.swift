@@ -37,9 +37,18 @@ enum AccountType: String, Codable, CaseIterable {
     }
 }
 
+// 【新規】グループ自体のモデル
+struct AccountGroup: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var name: String
+    var isVisible: Bool = true
+}
+
 struct Account: Identifiable, Codable {
     var id = UUID(); var name: String; var balance: Int; var type: AccountType
     var isVisible: Bool = true; var payday: Int? = nil; var withdrawalAccountId: UUID? = nil; var diffAmount: Int = 0
+    // 【新規】所属グループを管理するID
+    var groupId: UUID? = nil
 }
 
 struct Transaction: Identifiable, Codable, Equatable {
