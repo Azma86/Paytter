@@ -40,7 +40,6 @@ struct TransactionDetailView: View {
         }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { 
             Button("キャンセル", role: .cancel) { }; 
-            // 【修正】確実に削除を反映させるための記述
             Button("削除", role: .destructive) { 
                 if let idx = transactions.firstIndex(where: { $0.id == item.id }) { 
                     var copy = transactions
@@ -54,7 +53,6 @@ struct TransactionDetailView: View {
             if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
                 let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
                 var nSrc = item.source; for acc in accounts { if editLineText.contains("@\(acc.name)") { nSrc = acc.name } }
-                // 【修正】確実に編集を反映させるための記述
                 var copy = transactions
                 copy[idx] = Transaction(id: item.id, amount: nAmt, date: nDate, note: editLineText, source: nSrc, isIncome: isInc)
                 transactions = copy
@@ -76,7 +74,6 @@ struct AccountCreateView: View {
                 }
             }.navigationTitle("新しいお財布").navigationBarItems(leading: Button("キャンセル"){ dismiss() }, trailing: Button("追加") {
                 let val = Int(initial) ?? 0; let newAcc = Account(name: name, balance: val, type: selectedType)
-                // 【修正】確実な追加
                 var accCopy = accounts; accCopy.append(newAcc); accounts = accCopy
                 if val != 0 { 
                     var txCopy = transactions
@@ -90,10 +87,23 @@ struct AccountCreateView: View {
 
 struct AccountEditView: View {
     @Binding var account: Account; @Binding var transactions: [Transaction]; var allAccounts: [Account]
+    // 【修正】ContentViewからグループ一覧を受け取れるように
+    @AppStorage("account_groups") var groups: [AccountGroup] = []
     @State private var editBalance: String = ""; @Environment(\.dismiss) var dismiss
     var body: some View {
         Form {
-            Section(header: Text("基本設定")) { TextField("名前", text: $account.name); Picker(selection: $account.type) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }; Toggle("ホーム上部に表示", isOn: $account.isVisible) }
+            Section(header: Text("基本設定")) { 
+                TextField("名前", text: $account.name)
+                Picker(selection: $account.type) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }
+                // 【新規】所属グループの選択
+                Picker("所属グループ", selection: $account.groupId) {
+                    Text("なし").tag(UUID?.none)
+                    ForEach(groups) { group in
+                        Text(group.name).tag(UUID?.some(group.id))
+                    }
+                }
+                Toggle("ホーム上部に表示", isOn: $account.isVisible) 
+            }
             Section(header: Text("残高の調整")) { 
                 HStack { 
                     TextField("新しい残高を入力", text: $editBalance).keyboardType(.numberPad)
@@ -101,7 +111,6 @@ struct AccountEditView: View {
                         if let newVal = Int(editBalance) { 
                             let diff = newVal - account.balance
                             if diff != 0 { 
-                                // 【修正】確実な追加とホーム画面への通知
                                 var copy = transactions
                                 copy.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff))", source: account.name, isIncome: diff > 0))
                                 transactions = copy 
@@ -114,6 +123,29 @@ struct AccountEditView: View {
                 } 
             }
         }.navigationTitle(account.name)
+    }
+}
+
+// 【新規】お財布グループ作成画面
+struct AccountGroupCreateView: View {
+    @Binding var groups: [AccountGroup]
+    @Environment(\.dismiss) var dismiss
+    @State private var name = ""
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                TextField("グループ名（例：銀行まとめ、サブ財布など）", text: $name)
+            }
+            .navigationTitle("新しいグループ")
+            .navigationBarItems(
+                leading: Button("キャンセル") { dismiss() },
+                trailing: Button("追加") {
+                    groups.append(AccountGroup(name: name))
+                    dismiss()
+                }.disabled(name.isEmpty)
+            )
+        }
     }
 }
 
@@ -153,7 +185,6 @@ struct BalanceView: View {
         .onChange(of: amount) { newValue in 
             if newValue != lastAmount { 
                 showDiff = false
-                // 【修正】1.5秒から0.6秒へ変更し、前のような「ふわっとすぐ消える」動きに
                 withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
                 lastAmount = newValue 
             } 
