@@ -23,7 +23,6 @@ struct ContentView: View {
         Account(name: "口座", balance: 0, type: .bank),
         Account(name: "ポイント", balance: 0, type: .point)
     ]
-    // 【新規】お財布グループのデータ保持
     @AppStorage("account_groups") var groups: [AccountGroup] = []
     
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
@@ -47,10 +46,12 @@ struct ContentView: View {
     @State private var isShowingSwipeDeleteAlert = false
     @State private var transactionToDelete: Transaction?
     @State private var isShowingAccountCreator = false
+    @State private var isShowingGroupCreator = false // グループ作成用
     @State private var isShowingAccountDeleteAlert = false
+    @State private var isShowingGroupDeleteAlert = false // グループ削除用
     @State private var accountToDeleteIndex: IndexSet?
+    @State private var groupToDeleteIndex: IndexSet?
     
-    // アラート管理用
     @State private var activeAlert: ActiveAlert?
     @State private var isRestoringManual = false
     @State private var backupDateString = ""
@@ -112,8 +113,16 @@ struct ContentView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
                     HStack(spacing: 15) {
+                        // お財布の表示
                         ForEach(accounts.filter { $0.isVisible }) { acc in
                             BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
+                        }
+                        // 【新規】ホーム設定されたグループの表示
+                        ForEach(groups.filter { $0.isVisible }) { group in
+                            let groupAccounts = accounts.filter { $0.groupId == group.id }
+                            let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
+                            let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
+                            BalanceView(title: "📁 " + group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
                         }
                     }.padding().background(Color(hex: themeBarBG).opacity(0.8))
                     Divider()
@@ -158,11 +167,20 @@ struct ContentView: View {
                         Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
 
-                    // 【追加】グループ設定セクション
+                    // 【修正】グループ設定を直接一覧・追加できるように変更
                     Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) {
-                        NavigationLink(destination: AccountGroupListView(groups: $groups)) {
-                            Label("グループを管理", systemImage: "folder.badge.plus").foregroundColor(Color(hex: themeBodyText))
+                        ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                            NavigationLink(destination: AccountGroupEditView(group: $groups[index], accounts: $accounts)) {
+                                HStack { 
+                                    Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                    Text(group.name).foregroundColor(Color(hex: themeBodyText))
+                                    Spacer()
+                                    let count = accounts.filter { $0.groupId == group.id }.count
+                                    Text("\(count)個のお財布").font(.caption).foregroundColor(Color(hex: themeSubText))
+                                }
+                            }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { groupToDeleteIndex = IndexSet(integer: index); isShowingGroupDeleteAlert = true } label: { Text("削除") }.tint(.red) }
                         }
+                        Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
 
                     Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
@@ -171,9 +189,19 @@ struct ContentView: View {
             .navigationTitle("お財布").navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }
             .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) {
                 Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
             }
+            .alert("グループの削除", isPresented: $isShowingGroupDeleteAlert) {
+                Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ 
+                    if let o = groupToDeleteIndex { 
+                        let groupToDelete = groups[o.first!]
+                        for i in 0..<accounts.count { if accounts[i].groupId == groupToDelete.id { accounts[i].groupId = nil } }
+                        withAnimation { groups.remove(atOffsets: o) } 
+                    } 
+                }
+            } message: { Text("グループを削除しても、中のお財布は削除されません。") }
         } 
     }
 
