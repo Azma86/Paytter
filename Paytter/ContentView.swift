@@ -16,7 +16,7 @@ enum ActiveAlert: Identifiable {
     }
 }
 
-// 【新規】ホーム画面の並び順を統合して管理するためのモデル
+// ホーム画面の並び順を統合して管理するためのモデル
 enum HomeItem: Identifiable, Equatable {
     case totalAssets
     case account(Account)
@@ -70,11 +70,11 @@ struct ContentView: View {
     // ホーム並べ替えモードとドラッグ状態
     @State private var isHomeEditMode = false
     @State private var draggedItemId: String?
-    @State private var dragOffset: CGFloat = 0 // 【変更】左右(X方向)の移動量のみを保持
+    @State private var dragOffset: CGFloat = 0 
     @State private var dragLastX: CGFloat?
     
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
-    // 【新規】並べ替えた結果の順番を保存
+    // 並べ替えた結果の順番を保存
     @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
     @State private var homeItems: [HomeItem] = []
     
@@ -104,7 +104,6 @@ struct ContentView: View {
         .onAppear { recalculateBalances(); updateAppearance(); syncHomeItems() }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances() }
-        // 【新規】お財布やグループの表示設定が変わった時にホームの配列を更新
         .onChange(of: accounts) { _ in syncHomeItems() }
         .onChange(of: groups) { _ in syncHomeItems() }
         .onChange(of: showTotalAssets) { _ in syncHomeItems() }
@@ -143,10 +142,8 @@ struct ContentView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
                     VStack(spacing: 8) {
-                        let totalItemsCount = homeItems.count
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: min(max(totalItemsCount, 1), 4)), spacing: 10) {
-                            
-                            // 【修正】総資産・お財布・グループを混在して並べる
+                        // 【修正】LazyVGridを廃止し、絶対に均等に横幅を分割するHStackに変更
+                        HStack(spacing: 10) {
                             ForEach(homeItems) { item in
                                 Group {
                                     switch item {
@@ -172,13 +169,13 @@ struct ContentView: View {
                                 .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.2) : Color.clear)
                                 .cornerRadius(8)
                                 .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
-                                // 【修正】Y方向(上下)は0に固定し、X方向(左右)のみ動かす
                                 .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
                                 .zIndex(draggedItemId == item.id ? 100 : 0)
                                 .scaleEffect(draggedItemId == item.id ? 1.05 : 1.0)
                                 .opacity(draggedItemId == item.id ? 0.8 : 1.0)
                                 .gesture(
-                                    isHomeEditMode ? DragGesture(minimumDistance: 0)
+                                    // 【重要修正】coordinateSpace: .global を指定してガクガク現象を完全に防止
+                                    isHomeEditMode ? DragGesture(minimumDistance: 0, coordinateSpace: .global)
                                         .onChanged { value in
                                             if draggedItemId != item.id {
                                                 draggedItemId = item.id
@@ -190,17 +187,22 @@ struct ContentView: View {
                                             dragOffset += dx
                                             dragLastX = value.location.x
                                             
-                                            // アイテム幅の半分を超えたら隣と入れ替える
                                             if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
-                                                let itemWidth = (UIScreen.main.bounds.width - 32) / CGFloat(max(homeItems.count, 1))
-                                                let threshold = itemWidth * 0.5
+                                                // HStackの余白とPaddingから正確な移動距離（jumpDistance）を算出
+                                                let spacing: CGFloat = 10
+                                                let padding: CGFloat = 32 // 左右の余白合計16+16
+                                                let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing
+                                                let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal
+                                                let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1))
+                                                let jumpDistance = itemWidth + spacing
+                                                let threshold = jumpDistance * 0.5
                                                 
                                                 if dragOffset > threshold && idx < homeItems.count - 1 {
                                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { homeItems.swapAt(idx, idx + 1) }
-                                                    dragOffset -= itemWidth
+                                                    dragOffset -= jumpDistance
                                                 } else if dragOffset < -threshold && idx > 0 {
                                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { homeItems.swapAt(idx, idx - 1) }
-                                                    dragOffset += itemWidth
+                                                    dragOffset += jumpDistance
                                                 }
                                             }
                                         }
@@ -210,7 +212,6 @@ struct ContentView: View {
                                                 dragOffset = 0
                                                 dragLastX = nil
                                             }
-                                            // 入れ替え終わったら保存する
                                             homeDisplayOrder = homeItems.map { $0.id }
                                         }
                                     : nil
@@ -362,7 +363,6 @@ struct ContentView: View {
     func moveAccount(from source: IndexSet, to destination: Int) { accounts.move(fromOffsets: source, toOffset: destination) }
     func moveGroup(from source: IndexSet, to destination: Int) { groups.move(fromOffsets: source, toOffset: destination) }
 
-    // 【新規】データ更新時に表示配列を同期する
     func syncHomeItems() {
         if draggedItemId != nil { return } // ドラッグ中は更新しない
         var items: [HomeItem] = []
