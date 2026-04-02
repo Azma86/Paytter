@@ -124,58 +124,97 @@ struct AccountEditView: View {
     }
 }
 
-// 【新規】グループ一覧画面
-struct AccountGroupListView: View {
-    @Binding var groups: [AccountGroup]
-    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
-    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @State private var isShowingCreator = false
+// 【新規】お財布グループ編集画面 (チェックボックス式選択)
+struct AccountGroupEditView: View {
+    @Binding var group: AccountGroup
+    @Binding var accounts: [Account]
+    @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        ZStack {
-            Color(hex: themeBG).ignoresSafeArea()
-            List {
-                Section(header: Text("グループの一覧").foregroundColor(Color(hex: themeSubText))) {
-                    ForEach(groups) { group in
+        Form {
+            Section(header: Text("グループ設定")) {
+                TextField("グループ名", text: $group.name)
+                Toggle("ホーム上部に表示", isOn: $group.isVisible)
+            }
+            
+            Section(header: Text("対象のお財布を選択")) {
+                ForEach($accounts) { $acc in
+                    Button(action: {
+                        if acc.groupId == group.id {
+                            acc.groupId = nil
+                        } else {
+                            acc.groupId = group.id
+                        }
+                    }) {
                         HStack {
-                            Text(group.name).foregroundColor(Color(hex: themeBodyText))
+                            Image(systemName: acc.type.icon).foregroundColor(.secondary)
+                            Text(acc.name).foregroundColor(.primary)
                             Spacer()
+                            if acc.groupId == group.id {
+                                Image(systemName: "checkmark.circle.fill").foregroundColor(.blue)
+                            } else {
+                                Image(systemName: "circle").foregroundColor(.secondary)
+                            }
                         }
                     }
-                    .onDelete { groups.remove(atOffsets: $0) }
-                    
-                    Button(action: { isShowingCreator = true }) {
-                        Label("新しいグループを追加", systemImage: "plus.circle")
-                    }.foregroundColor(Color(hex: themeMain))
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-            }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
+                }
+            }
         }
-        .navigationTitle("グループ設定")
-        .sheet(isPresented: $isShowingCreator) {
-            AccountGroupCreateView(groups: $groups)
-        }
+        .navigationTitle(group.name)
     }
 }
 
-// 【新規】グループ作成画面
+// 【新規】お財布グループ作成画面
 struct AccountGroupCreateView: View {
     @Binding var groups: [AccountGroup]
+    @Binding var accounts: [Account]
     @Environment(\.dismiss) var dismiss
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @State private var name = ""
+    @State private var selectedAccountIds: Set<UUID> = []
     
     var body: some View {
         NavigationView {
             Form {
-                TextField("グループ名（例：銀行まとめ、サブ財布など）", text: $name)
+                Section(header: Text("基本情報")) {
+                    TextField("グループ名（例：銀行まとめ、サブ財布など）", text: $name)
+                }
+                
+                Section(header: Text("お財布を紐付ける")) {
+                    ForEach(accounts) { acc in
+                        Button(action: {
+                            if selectedAccountIds.contains(acc.id) {
+                                selectedAccountIds.remove(acc.id)
+                            } else {
+                                selectedAccountIds.insert(acc.id)
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: acc.type.icon).foregroundColor(.secondary)
+                                Text(acc.name).foregroundColor(.primary)
+                                Spacer()
+                                if selectedAccountIds.contains(acc.id) {
+                                    Image(systemName: "checkmark.circle.fill").foregroundColor(.blue)
+                                } else {
+                                    Image(systemName: "circle").foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
             }
             .navigationTitle("新しいグループ")
             .navigationBarItems(
                 leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)),
                 trailing: Button("追加") {
-                    groups.append(AccountGroup(name: name))
+                    let newGroup = AccountGroup(name: name)
+                    groups.append(newGroup)
+                    // 選択されたお財布にグループIDを割り当てる
+                    for i in 0..<accounts.count {
+                        if selectedAccountIds.contains(accounts[i].id) {
+                            accounts[i].groupId = newGroup.id
+                        }
+                    }
                     dismiss()
                 }.disabled(name.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold)
             )
