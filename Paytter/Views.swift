@@ -136,9 +136,9 @@ struct AccountEditView: View {
                     } 
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
 
-                // 【修正】所属グループの一覧表示（Pickerから変更）
                 Section(header: Text("所属グループ").foregroundColor(Color(hex: themeSubText))) {
-                    let belongedGroups = groups.filter { $0.id == account.groupId }
+                    // 【修正】多対多に対応（グループ側のaccountIdsに含まれているものを表示）
+                    let belongedGroups = groups.filter { $0.accountIds.contains(account.id) }
                     if belongedGroups.isEmpty {
                         Text("未設定").foregroundColor(Color(hex: themeSubText)).font(.subheadline)
                     } else {
@@ -200,19 +200,20 @@ struct AccountGroupEditView: View {
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 
                 Section(header: Text("対象のお財布を選択").foregroundColor(Color(hex: themeSubText))) {
-                    ForEach($accounts) { $acc in
+                    ForEach(accounts) { acc in
                         Button(action: {
-                            if acc.groupId == group.id {
-                                acc.groupId = nil
+                            // 【修正】accountIds リストに対して追加・削除を行う
+                            if group.accountIds.contains(acc.id) {
+                                group.accountIds.removeAll(where: { $0 == acc.id })
                             } else {
-                                acc.groupId = group.id
+                                group.accountIds.append(acc.id)
                             }
                         }) {
                             HStack {
                                 Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                                 Text(acc.name).foregroundColor(Color(hex: themeBodyText))
                                 Spacer()
-                                if acc.groupId == group.id {
+                                if group.accountIds.contains(acc.id) {
                                     Image(systemName: "checkmark.circle.fill").foregroundColor(Color(hex: themeMain))
                                 } else {
                                     Image(systemName: "circle").foregroundColor(Color(hex: themeSubText))
@@ -239,7 +240,7 @@ struct AccountGroupCreateView: View {
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @State private var name = ""
-    @State private var selectedAccountIds: Set<UUID> = []
+    @State private var selectedAccountIds: [UUID] = [] // 【修正】複数保持
     var body: some View {
         NavigationView {
             ZStack {
@@ -253,9 +254,9 @@ struct AccountGroupCreateView: View {
                         ForEach(accounts) { acc in
                             Button(action: {
                                 if selectedAccountIds.contains(acc.id) {
-                                    selectedAccountIds.remove(acc.id)
+                                    selectedAccountIds.removeAll(where: { $0 == acc.id })
                                 } else {
-                                    selectedAccountIds.insert(acc.id)
+                                    selectedAccountIds.append(acc.id)
                                 }
                             }) {
                                  HStack {
@@ -278,13 +279,8 @@ struct AccountGroupCreateView: View {
             .navigationBarItems(
                 leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)),
                 trailing: Button("追加") {
-                    let newGroup = AccountGroup(name: name)
+                    let newGroup = AccountGroup(name: name, accountIds: selectedAccountIds)
                     groups.append(newGroup)
-                    for i in 0..<accounts.count {
-                        if selectedAccountIds.contains(accounts[i].id) {
-                            accounts[i].groupId = newGroup.id
-                        }
-                    }
                     dismiss()
                 }.disabled(name.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold)
             )
