@@ -52,9 +52,16 @@ struct ContentView: View {
     @State private var accountToDeleteIndex: IndexSet?
     @State private var groupToDeleteIndex: IndexSet?
     
-    // ホーム即時並べ替え用
+    // ホーム即時並べ替え用（長押し不要のカスタムドラッグ）
     @State private var isHomeEditMode = false
-    @State private var draggedId: UUID? // ドラッグ中のアイテムID
+    
+    @State private var draggedAccountId: UUID?
+    @State private var accountDragOffset: CGSize = .zero
+    @State private var accountLastLoc: CGPoint?
+    
+    @State private var draggedGroupId: UUID?
+    @State private var groupDragOffset: CGSize = .zero
+    @State private var groupLastLoc: CGPoint?
     
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
     
@@ -118,7 +125,6 @@ struct ContentView: View {
             ZStack(alignment: .bottomTrailing) {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
-                    // --- ホーム上部の一覧（即時スライド並べ替え対応） ---
                     let visibleAccounts = accounts.filter { $0.isVisible }
                     let visibleGroups = groups.filter { $0.isVisible }
                     let totalItemsCount = (showTotalAssets ? 1 : 0) + visibleAccounts.count + visibleGroups.count
@@ -131,48 +137,127 @@ struct ContentView: View {
                                 BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
                             }
                             
-                            // お財布
+                            // お財布（触った瞬間にスライドするカスタムドラッグ）
                             ForEach(accounts) { acc in
                                 if acc.isVisible {
                                     BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
-                                        .background(draggedId == acc.id ? Color(hex: themeMain).opacity(0.2) : Color.clear)
+                                        .background(isHomeEditMode ? Color(hex: themeMain).opacity(0.1) : Color.clear)
                                         .cornerRadius(8)
                                         .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
-                                        // 【変更】長押し不要の即時ドラッグ・スライド処理
-                                        .onDrag {
-                                            if !isHomeEditMode { return NSItemProvider() }
-                                            self.draggedId = acc.id
-                                            return NSItemProvider(object: acc.id.uuidString as NSString)
-                                        }
-                                        .onDrop(of: [.text], delegate: InstantDropDelegate(itemIdentifiable: acc, list: $accounts, draggedId: $draggedId))
+                                        .offset(draggedAccountId == acc.id ? accountDragOffset : .zero)
+                                        .zIndex(draggedAccountId == acc.id ? 100 : 0)
+                                        .scaleEffect(draggedAccountId == acc.id ? 1.05 : 1.0)
+                                        .opacity(draggedAccountId == acc.id ? 0.8 : 1.0)
+                                        .gesture(
+                                            isHomeEditMode ? DragGesture(minimumDistance: 0)
+                                                .onChanged { value in
+                                                    if draggedAccountId != acc.id {
+                                                        draggedAccountId = acc.id
+                                                        accountLastLoc = value.location
+                                                        accountDragOffset = .zero
+                                                    }
+                                                    guard let last = accountLastLoc else { return }
+                                                    let dx = value.location.x - last.x
+                                                    let dy = value.location.y - last.y
+                                                    accountDragOffset.width += dx
+                                                    accountDragOffset.height += dy
+                                                    accountLastLoc = value.location
+                                                    
+                                                    if let idx = accounts.firstIndex(where: { $0.id == acc.id }) {
+                                                        let threshold: CGFloat = 70
+                                                        if accountDragOffset.width > threshold && idx < accounts.count - 1 {
+                                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { accounts.swapAt(idx, idx + 1) }
+                                                            accountDragOffset.width -= threshold
+                                                        } else if accountDragOffset.width < -threshold && idx > 0 {
+                                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { accounts.swapAt(idx, idx - 1) }
+                                                            accountDragOffset.width += threshold
+                                                        }
+                                                        if accountDragOffset.height > threshold && idx < accounts.count - 1 {
+                                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { accounts.swapAt(idx, idx + 1) }
+                                                            accountDragOffset.height -= threshold
+                                                        } else if accountDragOffset.height < -threshold && idx > 0 {
+                                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { accounts.swapAt(idx, idx - 1) }
+                                                            accountDragOffset.height += threshold
+                                                        }
+                                                    }
+                                                }
+                                                .onEnded { _ in
+                                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                                        draggedAccountId = nil
+                                                        accountDragOffset = .zero
+                                                        accountLastLoc = nil
+                                                    }
+                                                    recalculateBalances()
+                                                }
+                                            : nil
+                                        )
                                 }
                             }
                             
-                            // グループ
+                            // グループ（触った瞬間にスライドするカスタムドラッグ）
                             ForEach(groups) { group in
                                 if group.isVisible {
                                     let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
                                     let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
                                     let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
                                     BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
-                                        .background(draggedId == group.id ? Color(hex: themeMain).opacity(0.2) : Color.clear)
+                                        .background(isHomeEditMode ? Color(hex: themeMain).opacity(0.1) : Color.clear)
                                         .cornerRadius(8)
                                         .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
-                                        .onDrag {
-                                            if !isHomeEditMode { return NSItemProvider() }
-                                            self.draggedId = group.id
-                                            return NSItemProvider(object: group.id.uuidString as NSString)
-                                        }
-                                        .onDrop(of: [.text], delegate: InstantDropDelegate(itemIdentifiable: group, list: $groups, draggedId: $draggedId))
+                                        .offset(draggedGroupId == group.id ? groupDragOffset : .zero)
+                                        .zIndex(draggedGroupId == group.id ? 100 : 0)
+                                        .scaleEffect(draggedGroupId == group.id ? 1.05 : 1.0)
+                                        .opacity(draggedGroupId == group.id ? 0.8 : 1.0)
+                                        .gesture(
+                                            isHomeEditMode ? DragGesture(minimumDistance: 0)
+                                                .onChanged { value in
+                                                    if draggedGroupId != group.id {
+                                                        draggedGroupId = group.id
+                                                        groupLastLoc = value.location
+                                                        groupDragOffset = .zero
+                                                    }
+                                                    guard let last = groupLastLoc else { return }
+                                                    let dx = value.location.x - last.x
+                                                    let dy = value.location.y - last.y
+                                                    groupDragOffset.width += dx
+                                                    groupDragOffset.height += dy
+                                                    groupLastLoc = value.location
+                                                    
+                                                    if let idx = groups.firstIndex(where: { $0.id == group.id }) {
+                                                        let threshold: CGFloat = 70
+                                                        if groupDragOffset.width > threshold && idx < groups.count - 1 {
+                                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { groups.swapAt(idx, idx + 1) }
+                                                            groupDragOffset.width -= threshold
+                                                        } else if groupDragOffset.width < -threshold && idx > 0 {
+                                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { groups.swapAt(idx, idx - 1) }
+                                                            groupDragOffset.width += threshold
+                                                        }
+                                                        if groupDragOffset.height > threshold && idx < groups.count - 1 {
+                                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { groups.swapAt(idx, idx + 1) }
+                                                            groupDragOffset.height -= threshold
+                                                        } else if groupDragOffset.height < -threshold && idx > 0 {
+                                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { groups.swapAt(idx, idx - 1) }
+                                                            groupDragOffset.height += threshold
+                                                        }
+                                                    }
+                                                }
+                                                .onEnded { _ in
+                                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                                        draggedGroupId = nil
+                                                        groupDragOffset = .zero
+                                                        groupLastLoc = nil
+                                                    }
+                                                    recalculateBalances()
+                                                }
+                                            : nil
+                                        )
                                 }
                             }
                         }
                         .padding()
-                        .animation(.easeInOut, value: accounts)
-                        .animation(.easeInOut, value: groups)
                         
                         if isHomeEditMode {
-                            Text("スライドしてお財布を並べ替え")
+                            Text("カードに触れてそのままスライドで並び替えられます")
                                 .font(.caption2)
                                 .foregroundColor(Color(hex: themeMain))
                                 .padding(.bottom, 4)
@@ -354,25 +439,5 @@ struct ContentView: View {
         if let nav = vc as? UINavigationController { nav.navigationBar.standardAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.scrollEdgeAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.setNeedsLayout(); nav.navigationBar.layoutIfNeeded() }
         if let tab = vc as? UITabBarController { tab.tabBar.standardAppearance = UITabBar.appearance().standardAppearance; if #available(iOS 15.0, *) { tab.tabBar.scrollEdgeAppearance = UITabBar.appearance().scrollEdgeAppearance } }
         vc.children.forEach { updateViewHierarchy($0) }
-    }
-}
-
-// --- ホーム並べ替え用：瞬時に反応するDropDelegate ---
-struct InstantDropDelegate<T: Identifiable>: DropDelegate {
-    let itemIdentifiable: T
-    @Binding var list: [T]
-    @Binding var draggedId: UUID?
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggedId = nil
-        return true
-    }
-
-    func dropEntered(info: DropInfo) {
-        guard let draggedId = draggedId, let draggedIndex = list.firstIndex(where: { ($0.id as? UUID) == draggedId }), let targetIndex = list.firstIndex(where: { $0.id == itemIdentifiable.id }), draggedIndex != targetIndex else { return }
-        
-        withAnimation(.easeInOut(duration: 0.2)) {
-            list.move(fromOffsets: IndexSet(integer: draggedIndex), toOffset: targetIndex > draggedIndex ? targetIndex + 1 : targetIndex)
-        }
     }
 }
