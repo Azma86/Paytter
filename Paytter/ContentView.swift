@@ -2,6 +2,7 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
+// アラートの種類を定義
 enum ActiveAlert: Identifiable {
     case reset, restore, save, importConfirm, completion(String)
     var id: String {
@@ -27,6 +28,7 @@ struct ContentView: View {
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
+    // --- テーマ設定データ ---
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -78,6 +80,8 @@ struct ContentView: View {
         .onAppear { recalculateBalances(); updateAppearance() }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances() }
+        .onChange(of: themeBarBG) { _ in updateAppearance() }
+        .onChange(of: isDarkMode) { _ in updateAppearance() }
         .alert(item: $activeAlert) { type in
             switch type {
             case .reset:
@@ -110,25 +114,28 @@ struct ContentView: View {
             ZStack(alignment: .bottomTrailing) {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
-                    HStack(spacing: 15) {
-                        if showTotalAssets {
-                            let totalB = accounts.reduce(0) { $0 + $1.balance }
-                            let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
-                            BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
-                        }
-                        
-                        ForEach(accounts.filter { $0.isVisible }) { acc in
-                            BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
-                        }
-                        
-                        ForEach(groups.filter { $0.isVisible }) { group in
-                            // 【修正】accountIds を参照して合算するように変更
-                            let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
-                            let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
-                            let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
-                            BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
-                        }
-                    }.padding().background(Color(hex: themeBarBG).opacity(0.8))
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 15) {
+                            if showTotalAssets {
+                                let totalB = accounts.reduce(0) { $0 + $1.balance }
+                                let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
+                                BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
+                            }
+                            
+                            // 並び替え順を反映
+                            ForEach(accounts.filter { $0.isVisible }) { acc in
+                                BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
+                            }
+                            
+                            ForEach(groups.filter { $0.isVisible }) { group in
+                                let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
+                                let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
+                                let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
+                                BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
+                            }
+                        }.padding()
+                    }.background(Color(hex: themeBarBG).opacity(0.8))
+                    
                     Divider()
                     List {
                         ForEach(transactions.sorted(by: { $0.date > $1.date })) { item in
@@ -166,8 +173,11 @@ struct ContentView: View {
                         ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in 
                             NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { 
                                 HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } 
-                            }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) }
+                            }
                         }
+                        .onMove(perform: moveAccount) // 並べ替え機能
+                        .onDelete { accountToDeleteIndex = $0; isShowingAccountDeleteAlert = true }
+                        
                         Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
 
@@ -188,12 +198,14 @@ struct ContentView: View {
                                     Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                                     Text(group.name).foregroundColor(Color(hex: themeBodyText))
                                     Spacer()
-                                    // 【修正】accountIds に含まれるお財布の残高を合算
                                     let groupTotal = accounts.filter { group.accountIds.contains($0.id) }.reduce(0) { $0 + $1.balance }
                                     Text("¥\(groupTotal)").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                                 }
-                            }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { groupToDeleteIndex = IndexSet(integer: index); isShowingGroupDeleteAlert = true } label: { Text("削除") }.tint(.red) }
+                            }
                         }
+                        .onMove(perform: moveGroup) // 並べ替え機能
+                        .onDelete { groupToDeleteIndex = $0; isShowingGroupDeleteAlert = true }
+                        
                         Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
 
@@ -201,6 +213,7 @@ struct ContentView: View {
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("お財布").navigationBarTitleDisplayMode(.inline)
+            .toolbar { EditButton().foregroundColor(Color(hex: themeMain)) } // 編集ボタン追加
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
             .sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }
@@ -209,7 +222,6 @@ struct ContentView: View {
                 Button("削除", role: .destructive){ 
                     if let o = accountToDeleteIndex { 
                         let accToDelete = accounts[o.first!]
-                        // グループ側の accountIds からも削除
                         for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == accToDelete.id }) }
                         withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } 
                     }; accountToDeleteIndex = nil 
@@ -243,6 +255,9 @@ struct ContentView: View {
             .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { r in if case .success(let u) = r { if u.startAccessingSecurityScopedResource() { handleImport(from: u); u.stopAccessingSecurityScopedResource() } } }
         } 
     }
+
+    func moveAccount(from source: IndexSet, to destination: Int) { accounts.move(fromOffsets: source, toOffset: destination) }
+    func moveGroup(from source: IndexSet, to destination: Int) { groups.move(fromOffsets: source, toOffset: destination) }
 
     func handleImport(from url: URL) {
         guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dateStr = json["date"] as? String else { return }
