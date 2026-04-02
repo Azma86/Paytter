@@ -52,6 +52,9 @@ struct ContentView: View {
     @State private var accountToDeleteIndex: IndexSet?
     @State private var groupToDeleteIndex: IndexSet?
     
+    // ホーム並べ替えモード
+    @State private var isHomeEditMode = false
+    
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
     
     @State private var activeAlert: ActiveAlert?
@@ -114,27 +117,59 @@ struct ContentView: View {
             ZStack(alignment: .bottomTrailing) {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 15) {
-                            if showTotalAssets {
-                                let totalB = accounts.reduce(0) { $0 + $1.balance }
-                                let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
-                                BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
+                    // --- ホーム上部の一覧（等分・中央揃え） ---
+                    let visibleAccounts = accounts.filter { $0.isVisible }
+                    let visibleGroups = groups.filter { $0.isVisible }
+                    let totalItems = (showTotalAssets ? 1 : 0) + visibleAccounts.count + visibleGroups.count
+                    
+                    VStack {
+                        if isHomeEditMode {
+                            // 並べ替えモード時のUI
+                            List {
+                                if showTotalAssets { Text("総資産").foregroundColor(Color(hex: themeSubText)) }
+                                ForEach(accounts) { acc in
+                                    HStack {
+                                        Image(systemName: acc.type.icon)
+                                        Text(acc.name)
+                                        Spacer()
+                                        if !acc.isVisible { Text("非表示中").font(.caption).foregroundColor(.red) }
+                                    }
+                                }.onMove(perform: moveAccount)
+                                ForEach(groups) { group in
+                                    HStack {
+                                        Image(systemName: "folder")
+                                        Text(group.name)
+                                        Spacer()
+                                        if !group.isVisible { Text("非表示中").font(.caption).foregroundColor(.red) }
+                                    }
+                                }.onMove(perform: moveGroup)
                             }
-                            
-                            // 並び替え順を反映
-                            ForEach(accounts.filter { $0.isVisible }) { acc in
-                                BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
+                            .listStyle(.plain)
+                            .frame(height: 200)
+                        } else {
+                            // 通常時の等分グリッド表示
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: min(max(totalItems, 1), 4)), spacing: 10) {
+                                if showTotalAssets {
+                                    let totalB = accounts.reduce(0) { $0 + $1.balance }
+                                    let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
+                                    BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
+                                }
+                                
+                                ForEach(visibleAccounts) { acc in
+                                    BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
+                                }
+                                
+                                ForEach(visibleGroups) { group in
+                                    let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
+                                    let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
+                                    let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
+                                    BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
+                                }
                             }
-                            
-                            ForEach(groups.filter { $0.isVisible }) { group in
-                                let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
-                                let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
-                                let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
-                                BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
-                            }
-                        }.padding()
-                    }.background(Color(hex: themeBarBG).opacity(0.8))
+                            .padding()
+                        }
+                    }
+                    .background(Color(hex: themeBarBG).opacity(0.8))
                     
                     Divider()
                     List {
@@ -155,6 +190,14 @@ struct ContentView: View {
                 }.padding(20).padding(.bottom, 10)
             }
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { withAnimation { isHomeEditMode.toggle() } }) {
+                        Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.up.arrow.down.circle")
+                            .foregroundColor(Color(hex: themeMain))
+                    }
+                }
+            }
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                 Button("キャンセル", role: .cancel) {}; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }); recalculateBalances() } }
@@ -175,7 +218,7 @@ struct ContentView: View {
                                 HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } 
                             }
                         }
-                        .onMove(perform: moveAccount) // 並べ替え機能
+                        .onMove(perform: moveAccount)
                         .onDelete { accountToDeleteIndex = $0; isShowingAccountDeleteAlert = true }
                         
                         Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
@@ -203,7 +246,7 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        .onMove(perform: moveGroup) // 並べ替え機能
+                        .onMove(perform: moveGroup)
                         .onDelete { groupToDeleteIndex = $0; isShowingGroupDeleteAlert = true }
                         
                         Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
@@ -213,7 +256,7 @@ struct ContentView: View {
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("お財布").navigationBarTitleDisplayMode(.inline)
-            .toolbar { EditButton().foregroundColor(Color(hex: themeMain)) } // 編集ボタン追加
+            .toolbar { EditButton().foregroundColor(Color(hex: themeMain)) }
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
             .sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }
