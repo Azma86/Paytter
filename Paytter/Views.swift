@@ -67,6 +67,7 @@ struct AccountCreateView: View {
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @State private var name = ""; @State private var initial = ""; @State private var selectedType: AccountType = .wallet
+    @State private var isVisible = true // 【新規】
     var body: some View {
         NavigationView {
             ZStack {
@@ -76,6 +77,7 @@ struct AccountCreateView: View {
                         TextField("お財布の名前", text: $name)
                         Picker(selection: $selectedType) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }
                         TextField("現在の金額", text: $initial).keyboardType(.numbersAndPunctuation)
+                        Toggle("ホーム上部に表示", isOn: $isVisible) // 【新規】
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -84,7 +86,7 @@ struct AccountCreateView: View {
             .navigationBarItems(
                 leading: Button("キャンセル"){ dismiss() }.foregroundColor(Color(hex: themeMain)), 
                 trailing: Button("追加") {
-                    let val = Int(initial) ?? 0; let newAcc = Account(name: name, balance: val, type: selectedType)
+                    let val = Int(initial) ?? 0; let newAcc = Account(name: name, balance: val, type: selectedType, isVisible: isVisible)
                     var accCopy = accounts; accCopy.append(newAcc); accounts = accCopy
                     if val != 0 { 
                         var txCopy = transactions
@@ -137,7 +139,6 @@ struct AccountEditView: View {
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
 
                 Section(header: Text("所属グループ").foregroundColor(Color(hex: themeSubText))) {
-                    // 【修正】多対多に対応（グループ側のaccountIdsに含まれているものを表示）
                     let belongedGroups = groups.filter { $0.accountIds.contains(account.id) }
                     if belongedGroups.isEmpty {
                         Text("未設定").foregroundColor(Color(hex: themeSubText)).font(.subheadline)
@@ -202,7 +203,6 @@ struct AccountGroupEditView: View {
                 Section(header: Text("対象のお財布を選択").foregroundColor(Color(hex: themeSubText))) {
                     ForEach(accounts) { acc in
                         Button(action: {
-                            // 【修正】accountIds リストに対して追加・削除を行う
                             if group.accountIds.contains(acc.id) {
                                 group.accountIds.removeAll(where: { $0 == acc.id })
                             } else {
@@ -240,7 +240,8 @@ struct AccountGroupCreateView: View {
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @State private var name = ""
-    @State private var selectedAccountIds: [UUID] = [] // 【修正】複数保持
+    @State private var isVisible = true // 【新規】
+    @State private var selectedAccountIds: [UUID] = []
     var body: some View {
         NavigationView {
             ZStack {
@@ -248,6 +249,7 @@ struct AccountGroupCreateView: View {
                 Form {
                     Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
                         TextField("グループ名（例：銀行まとめなど）", text: $name).foregroundColor(Color(hex: themeBodyText))
+                        Toggle("ホーム上部に表示", isOn: $isVisible) // 【新規】
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("お財布を紐付ける").foregroundColor(Color(hex: themeSubText))) {
@@ -279,7 +281,7 @@ struct AccountGroupCreateView: View {
             .navigationBarItems(
                 leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)),
                 trailing: Button("追加") {
-                    let newGroup = AccountGroup(name: name, accountIds: selectedAccountIds)
+                    let newGroup = AccountGroup(name: name, isVisible: isVisible, accountIds: selectedAccountIds)
                     groups.append(newGroup)
                     dismiss()
                 }.disabled(name.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold)
