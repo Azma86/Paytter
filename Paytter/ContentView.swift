@@ -52,10 +52,8 @@ struct ContentView: View {
     @State private var accountToDeleteIndex: IndexSet?
     @State private var groupToDeleteIndex: IndexSet?
     
-    // 並べ替えのためのドラッグ状態
-    @State private var draggingAccount: Account?
-    @State private var draggingGroup: AccountGroup?
-    @State private var isEditModeActive = false // 並べ替え有効フラグ
+    // ホーム並べ替えモード
+    @State private var isHomeEditMode = false
     
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
     
@@ -119,11 +117,38 @@ struct ContentView: View {
             ZStack(alignment: .bottomTrailing) {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
-                    let visibleAccounts = accounts.filter { $0.isVisible }
-                    let visibleGroups = groups.filter { $0.isVisible }
-                    let totalItems = (showTotalAssets ? 1 : 0) + visibleAccounts.count + visibleGroups.count
-                    
-                    VStack {
+                    if isHomeEditMode {
+                        // 並べ替えモード：お財布一覧と同じ操作感のリストを表示
+                        List {
+                            Section(header: Text("ホーム表示順の変更").font(.caption)) {
+                                ForEach(accounts) { acc in
+                                    HStack {
+                                        Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                        Text(acc.name).foregroundColor(Color(hex: themeBodyText))
+                                        Spacer()
+                                        if !acc.isVisible { Text("非表示").font(.caption2).foregroundColor(.red) }
+                                    }
+                                }.onMove(perform: moveAccount)
+                                
+                                ForEach(groups) { group in
+                                    HStack {
+                                        Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                        Text(group.name).foregroundColor(Color(hex: themeBodyText))
+                                        Spacer()
+                                        if !group.isVisible { Text("非表示").font(.caption2).foregroundColor(.red) }
+                                    }
+                                }.onMove(perform: moveGroup)
+                            }
+                        }
+                        .listStyle(.insetGrouped)
+                        .frame(maxHeight: 300) // ホーム画面上部に収まるサイズ
+                        .environment(\.editMode, .constant(.active)) // 常に並べ替えアイコンを表示
+                    } else {
+                        // 通常モード：グリッド表示
+                        let visibleAccounts = accounts.filter { $0.isVisible }
+                        let visibleGroups = groups.filter { $0.isVisible }
+                        let totalItems = (showTotalAssets ? 1 : 0) + visibleAccounts.count + visibleGroups.count
+                        
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: min(max(totalItems, 1), 4)), spacing: 10) {
                             if showTotalAssets {
                                 let totalB = accounts.reduce(0) { $0 + $1.balance }
@@ -131,51 +156,20 @@ struct ContentView: View {
                                 BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
                             }
                             
-                            // お財布の並べ替え対応表示
-                            ForEach(accounts) { acc in
-                                if acc.isVisible {
-                                    BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
-                                        .scaleEffect(draggingAccount?.id == acc.id ? 1.05 : 1.0)
-                                        .opacity(draggingAccount?.id == acc.id ? 0.6 : 1.0)
-                                        .onDrag {
-                                            if !isEditModeActive { return NSItemProvider() }
-                                            self.draggingAccount = acc
-                                            return NSItemProvider(object: acc.name as NSString)
-                                        }
-                                        .onDrop(of: [.text], delegate: AccountDropDelegate(item: acc, accounts: $accounts, draggingItem: $draggingAccount))
-                                }
+                            ForEach(visibleAccounts) { acc in
+                                BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
                             }
                             
-                            // グループの並べ替え対応表示
-                            ForEach(groups) { group in
-                                if group.isVisible {
-                                    let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
-                                    let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
-                                    let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
-                                    BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
-                                        .scaleEffect(draggingGroup?.id == group.id ? 1.05 : 1.0)
-                                        .opacity(draggingGroup?.id == group.id ? 0.6 : 1.0)
-                                        .onDrag {
-                                            if !isEditModeActive { return NSItemProvider() }
-                                            self.draggingGroup = group
-                                            return NSItemProvider(object: group.name as NSString)
-                                        }
-                                        .onDrop(of: [.text], delegate: GroupDropDelegate(item: group, groups: $groups, draggingItem: $draggingGroup))
-                                }
+                            ForEach(visibleGroups) { group in
+                                let groupAccounts = accounts.filter { group.accountIds.contains($0.id) }
+                                let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
+                                let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
+                                BalanceView(title: group.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
                             }
                         }
                         .padding()
-                        .animation(.spring(), value: accounts)
-                        .animation(.spring(), value: groups)
-                        
-                        if isEditModeActive {
-                            Text("長押しして並び替えが可能です")
-                                .font(.caption2)
-                                .foregroundColor(Color(hex: themeMain))
-                                .padding(.bottom, 5)
-                        }
+                        .background(Color(hex: themeBarBG).opacity(0.8))
                     }
-                    .background(Color(hex: themeBarBG).opacity(0.8))
                     
                     Divider()
                     List {
@@ -191,16 +185,19 @@ struct ContentView: View {
                         }
                     }.listStyle(.plain).scrollContentBackground(.hidden)
                 }
-                Button(action: { inputText = ""; isShowingInputSheet = true }) {
-                    Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle())
-                }.padding(20).padding(.bottom, 10)
+                
+                if !isHomeEditMode {
+                    Button(action: { inputText = ""; isShowingInputSheet = true }) {
+                        Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle())
+                    }.padding(20).padding(.bottom, 10)
+                }
             }
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { withAnimation { isEditModeActive.toggle() } }) {
-                        Image(systemName: isEditModeActive ? "checkmark.circle.fill" : "arrow.up.arrow.down.circle")
-                            .foregroundColor(isEditModeActive ? .green : Color(hex: themeMain))
+                    Button(action: { withAnimation { isHomeEditMode.toggle() } }) {
+                        Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.up.arrow.down.circle")
+                            .foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain))
                     }
                 }
             }
@@ -224,7 +221,7 @@ struct ContentView: View {
                                 HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } 
                             }
                         }
-                        .onMove { accounts.move(fromOffsets: $0, toOffset: $1) }
+                        .onMove(perform: moveAccount)
                         .onDelete { accountToDeleteIndex = $0; isShowingAccountDeleteAlert = true }
                         
                         Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
@@ -252,7 +249,7 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        .onMove { groups.move(fromOffsets: $0, toOffset: $1) }
+                        .onMove(perform: moveGroup)
                         .onDelete { groupToDeleteIndex = $0; isShowingGroupDeleteAlert = true }
                         
                         Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
@@ -305,6 +302,9 @@ struct ContentView: View {
         } 
     }
 
+    func moveAccount(from source: IndexSet, to destination: Int) { accounts.move(fromOffsets: source, toOffset: destination) }
+    func moveGroup(from source: IndexSet, to destination: Int) { groups.move(fromOffsets: source, toOffset: destination) }
+
     func handleImport(from url: URL) {
         guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dateStr = json["date"] as? String else { return }
         let dec = JSONDecoder(); if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!), let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) { self.pendingImportData = (t, a, dateStr); self.activeAlert = .importConfirm }
@@ -345,51 +345,5 @@ struct ContentView: View {
         if let nav = vc as? UINavigationController { nav.navigationBar.standardAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.scrollEdgeAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.setNeedsLayout(); nav.navigationBar.layoutIfNeeded() }
         if let tab = vc as? UITabBarController { tab.tabBar.standardAppearance = UITabBar.appearance().standardAppearance; if #available(iOS 15.0, *) { tab.tabBar.scrollEdgeAppearance = UITabBar.appearance().scrollEdgeAppearance } }
         vc.children.forEach { updateViewHierarchy($0) }
-    }
-}
-
-// --- 並べ替え用デリゲート (Account) ---
-struct AccountDropDelegate: DropDelegate {
-    let item: Account
-    @Binding var accounts: [Account]
-    @Binding var draggingItem: Account?
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingItem = nil
-        return true
-    }
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingItem = draggingItem, draggingItem.id != item.id else { return }
-        let from = accounts.firstIndex(where: { $0.id == draggingItem.id })!
-        let to = accounts.firstIndex(where: { $0.id == item.id })!
-        if accounts[to].id != draggingItem.id {
-            withAnimation(.default) {
-                accounts.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-            }
-        }
-    }
-}
-
-// --- 並べ替え用デリゲート (Group) ---
-struct GroupDropDelegate: DropDelegate {
-    let item: AccountGroup
-    @Binding var groups: [AccountGroup]
-    @Binding var draggingItem: AccountGroup?
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingItem = nil
-        return true
-    }
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingItem = draggingItem, draggingItem.id != item.id else { return }
-        let from = groups.firstIndex(where: { $0.id == draggingItem.id })!
-        let to = groups.firstIndex(where: { $0.id == item.id })!
-        if groups[to].id != draggingItem.id {
-            withAnimation(.default) {
-                groups.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-            }
-        }
     }
 }
