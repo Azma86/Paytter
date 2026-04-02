@@ -23,6 +23,9 @@ struct ContentView: View {
         Account(name: "口座", balance: 0, type: .bank),
         Account(name: "ポイント", balance: 0, type: .point)
     ]
+    // 【新規】お財布グループのデータ保持
+    @AppStorage("account_groups") var groups: [AccountGroup] = []
+    
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
@@ -66,7 +69,6 @@ struct ContentView: View {
                 settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
             }
             .accentColor(Color(hex: themeTabAccent))
-            // お財布画面からホームに戻る通知を受け取る
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in
                 self.selection = 0
             }
@@ -74,11 +76,9 @@ struct ContentView: View {
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { recalculateBalances(); updateAppearance() }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
-        // 【重要】ここで1回だけ計算を走らせることで、エフェクトが確実に表示されます
         .onChange(of: transactions) { _ in recalculateBalances() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
-        .onChange(of: themeBG) { _ in updateAppearance() }
         .alert(item: $activeAlert) { type in
             switch type {
             case .reset:
@@ -137,17 +137,8 @@ struct ContentView: View {
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
-                Button("キャンセル", role: .cancel) { transactionToDelete = nil }
-                // 【修正】投稿がふわっと自然に消えるように withAnimation を復元
-                Button("削除", role: .destructive) { 
-                    if let t = transactionToDelete { 
-                        withAnimation(.easeOut(duration: 0.2)) { 
-                            deleteSpecificTransaction(t) 
-                        } 
-                    }
-                    transactionToDelete = nil
-                }
-            } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
+                Button("キャンセル", role: .cancel) {}; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }); recalculateBalances() } }
+            }
         }
     }
     
@@ -166,6 +157,14 @@ struct ContentView: View {
                         }
                         Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+
+                    // 【追加】グループ設定セクション
+                    Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) {
+                        NavigationLink(destination: AccountGroupListView(groups: $groups)) {
+                            Label("グループを管理", systemImage: "folder.badge.plus").foregroundColor(Color(hex: themeBodyText))
+                        }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+
                     Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
@@ -173,9 +172,8 @@ struct ContentView: View {
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
             .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) {
-                Button("キャンセル", role: .cancel){ accountToDeleteIndex = nil }
-                Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } }; accountToDeleteIndex = nil }
-            } message: { Text("金額計算に影響する可能性があります。") }
+                Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } } }
+            }
         } 
     }
 
@@ -207,24 +205,9 @@ struct ContentView: View {
         let dec = JSONDecoder(); if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!), let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) { self.pendingImportData = (t, a, dateStr); self.activeAlert = .importConfirm }
     }
     
-    // 【修正】無駄な再計算を削除
-    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000; activeAlert = .completion("リセット完了") }
-    
-    // 【修正】無駄な再計算を削除。onChangeに任せる
-    func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
-    
-    func deleteSpecificTransaction(_ target: Transaction) { if let index = transactions.firstIndex(where: { $0.id == target.id }) { transactions.remove(at: index) } }
-    
-    func recalculateBalances() { 
-        for i in 0..<accounts.count { 
-            var cur = 0; 
-            for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; 
-            accounts[i].diffAmount = cur - accounts[i].balance; 
-            accounts[i].balance = cur 
-        }; 
-        BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) 
-    }
-    
+    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; groups = []; monthlyBudget = 50000; recalculateBalances(); activeAlert = .completion("リセット完了") }
+    func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)); recalculateBalances() }
+    func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
     

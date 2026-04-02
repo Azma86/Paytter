@@ -87,7 +87,6 @@ struct AccountCreateView: View {
 
 struct AccountEditView: View {
     @Binding var account: Account; @Binding var transactions: [Transaction]; var allAccounts: [Account]
-    // 【修正】ContentViewからグループ一覧を受け取れるように
     @AppStorage("account_groups") var groups: [AccountGroup] = []
     @State private var editBalance: String = ""; @Environment(\.dismiss) var dismiss
     var body: some View {
@@ -95,7 +94,6 @@ struct AccountEditView: View {
             Section(header: Text("基本設定")) { 
                 TextField("名前", text: $account.name)
                 Picker(selection: $account.type) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }
-                // 【新規】所属グループの選択
                 Picker("所属グループ", selection: $account.groupId) {
                     Text("なし").tag(UUID?.none)
                     ForEach(groups) { group in
@@ -126,10 +124,46 @@ struct AccountEditView: View {
     }
 }
 
-// 【新規】お財布グループ作成画面
+// 【新規】グループ一覧画面
+struct AccountGroupListView: View {
+    @Binding var groups: [AccountGroup]
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @State private var isShowingCreator = false
+    
+    var body: some View {
+        ZStack {
+            Color(hex: themeBG).ignoresSafeArea()
+            List {
+                Section(header: Text("グループの一覧").foregroundColor(Color(hex: themeSubText))) {
+                    ForEach(groups) { group in
+                        HStack {
+                            Text(group.name).foregroundColor(Color(hex: themeBodyText))
+                            Spacer()
+                        }
+                    }
+                    .onDelete { groups.remove(atOffsets: $0) }
+                    
+                    Button(action: { isShowingCreator = true }) {
+                        Label("新しいグループを追加", systemImage: "plus.circle")
+                    }.foregroundColor(Color(hex: themeMain))
+                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+            }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
+        }
+        .navigationTitle("グループ設定")
+        .sheet(isPresented: $isShowingCreator) {
+            AccountGroupCreateView(groups: $groups)
+        }
+    }
+}
+
+// 【新規】グループ作成画面
 struct AccountGroupCreateView: View {
     @Binding var groups: [AccountGroup]
     @Environment(\.dismiss) var dismiss
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @State private var name = ""
     
     var body: some View {
@@ -139,11 +173,11 @@ struct AccountGroupCreateView: View {
             }
             .navigationTitle("新しいグループ")
             .navigationBarItems(
-                leading: Button("キャンセル") { dismiss() },
+                leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)),
                 trailing: Button("追加") {
                     groups.append(AccountGroup(name: name))
                     dismiss()
-                }.disabled(name.isEmpty)
+                }.disabled(name.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold)
             )
         }
     }
@@ -184,8 +218,7 @@ struct BalanceView: View {
         .frame(maxWidth: .infinity)
         .onChange(of: amount) { newValue in 
             if newValue != lastAmount { 
-                showDiff = false
-                withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
+                showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
                 lastAmount = newValue 
             } 
         }
