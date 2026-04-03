@@ -168,13 +168,11 @@ struct ContentView: View {
                                 .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
                                 .cornerRadius(8)
                                 .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
-                                // 【修正】Y（上下）方向は0に固定、スケール（拡大）や透明度変化などの不要なエフェクトを完全排除
                                 .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
                                 .zIndex(draggedItemId == item.id ? 100 : 0)
                                 .gesture(
                                     isHomeEditMode ? DragGesture(minimumDistance: 0, coordinateSpace: .global)
                                         .onChanged { value in
-                                            // 触れた瞬間に長押し不要でドラッグ開始
                                             if draggedItemId != item.id {
                                                 draggedItemId = item.id
                                                 dragLastX = value.location.x
@@ -194,7 +192,6 @@ struct ContentView: View {
                                                 let jumpDistance = itemWidth + spacing
                                                 let threshold = jumpDistance * 0.5
                                                 
-                                                // 【修正】淡々とした等速アニメーション（easeInOut）でスッと入れ替わる
                                                 if dragOffset > threshold && idx < homeItems.count - 1 {
                                                     withAnimation(.easeInOut(duration: 0.2)) { 
                                                         homeItems.swapAt(idx, idx + 1)
@@ -344,7 +341,11 @@ struct ContentView: View {
             ZStack { 
                 Color(hex: themeBG).ignoresSafeArea()
                 List { 
-                    Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { 
+                        // 【新規】表示ユーザー設定画面へのリンク
+                        NavigationLink(destination: UserProfileSettingView()) { Label("表示ユーザー設定", systemImage: "person.crop.circle").foregroundColor(Color(hex: themeBodyText)) }
+                        NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } 
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("予算設定").foregroundColor(Color(hex: themeSubText))) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000).foregroundColor(Color(hex: themeBodyText)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { 
                         Button("手動保存") { backupDateString = BackupManager.getBackupDate(isManual: true); activeAlert = .save }.foregroundColor(Color(hex: themeBodyText))
