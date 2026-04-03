@@ -1,11 +1,41 @@
 import SwiftUI
 import UIKit
 
+struct BalanceView: View {
+    let title: String; let amount: Int; let color: Color; let diff: Int
+    @State private var showDiff = false; @State private var lastAmount: Int = 0 
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    var body: some View {
+        VStack {
+            Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
+            ZStack(alignment: .topTrailing) {
+                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
+                if diff != 0 { 
+                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense))
+                        .offset(x: 20, y: showDiff ? -15 : 0)
+                        .opacity(showDiff ? 0 : 1) 
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .onChange(of: amount) { newValue in 
+            if newValue != lastAmount { 
+                showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
+                lastAmount = newValue 
+            } 
+        }
+        .onAppear { lastAmount = amount }
+    }
+}
+
 struct TwitterRow: View {
     let item: Transaction
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    
     @AppStorage("userName") var userName: String = "むつき"
     @AppStorage("userId") var userId: String = "Mutsuki_dev"
     @AppStorage("userIconData") var userIconData: Data = Data()
@@ -24,7 +54,7 @@ struct TwitterRow: View {
                     Text("@\(userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
                     
-                    // 【新規】計算除外アイコンの表示
+                    // 計算除外アイコン
                     if item.isExcludedFromBalance {
                         Image(systemName: "calculator.badge.minus")
                             .font(.system(size: 8))
