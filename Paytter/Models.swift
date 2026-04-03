@@ -1,6 +1,20 @@
 import Foundation
 import SwiftUI
 
+// アラートの種類を定義
+enum ActiveAlert: Identifiable {
+    case reset, restore, save, importConfirm, completion(String)
+    var id: String {
+        switch self {
+        case .reset: return "reset"
+        case .restore: return "restore"
+        case .save: return "save"
+        case .importConfirm: return "import"
+        case .completion(let m): return m
+        }
+    }
+}
+
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -38,7 +52,10 @@ enum AccountType: String, Codable, CaseIterable {
 }
 
 struct AccountGroup: Identifiable, Codable, Equatable {
-    var id = UUID(); var name: String; var isVisible: Bool = true; var accountIds: [UUID] = []
+    var id = UUID()
+    var name: String
+    var isVisible: Bool = true
+    var accountIds: [UUID] = []
 }
 
 struct Account: Identifiable, Codable, Equatable {
