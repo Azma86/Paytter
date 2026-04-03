@@ -1,7 +1,7 @@
 import SwiftUI
 import PhotosUI
 
-// 【修正】ContentViewから見えるようにここに定義を戻しました
+// 【修正】ContentViewから見えるように、ファイル先頭に定義を追加
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false; @State private var lastAmount: Int = 0 
@@ -42,6 +42,7 @@ struct TransactionDetailView: View {
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
+    // 【新規】ユーザー情報
     @AppStorage("userName") var userName: String = "むつき"
     @AppStorage("userId") var userId: String = "Mutsuki_dev"
     @AppStorage("userIconData") var userIconData: Data = Data()
@@ -53,6 +54,7 @@ struct TransactionDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 12) {
+                        // 保存されたアイコン、またはデフォルトのアイコンを表示
                         if let uiImage = UIImage(data: userIconData) {
                             Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 56, height: 56).clipShape(Circle())
                         } else {
@@ -68,6 +70,7 @@ struct TransactionDetailView: View {
                     HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3).foregroundColor(Color(hex: themeBodyText))
                     if !item.tags.isEmpty { HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(Color(hex: themeMain)) } } }
                     
+                    // 【追加】詳細画面にも計算除外であることを表示
                     if item.isExcludedFromBalance {
                         Label("この投稿は残高計算から除外されています", systemImage: "calculator.badge.minus")
                             .font(.caption)
@@ -102,6 +105,7 @@ struct TransactionDetailView: View {
                 } 
             } 
         }
+        // 【修正】PostView 呼び出しに isExcludedInitial と closure 引数を追加
         .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, initialDate: item.date, isExcludedInitial: item.isExcludedFromBalance, onPost: { isInc, nDate, isExc in
             if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
                 let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
