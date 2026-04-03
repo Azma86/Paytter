@@ -233,9 +233,10 @@ struct ContentView: View {
                             ZStack {
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
                                 TwitterRow(item: item)
+                                    .opacity(item.date > Date() ? 0.6 : 1.0) // 【修正】未来の投稿の文字色（表示全体）を薄くする
                             }
                             .listRowInsets(EdgeInsets())
-                            // 【修正】未来の投稿の背景を少し暗くする（6%の黒を重ねる）
+                            // 未来の投稿の背景を少し暗くする（6%の黒を重ねる）
                             .listRowBackground(item.date > Date() ? Color.black.opacity(0.06) : Color(hex: themeBG))
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
