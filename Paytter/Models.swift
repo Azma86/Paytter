@@ -1,20 +1,6 @@
 import Foundation
 import SwiftUI
 
-// アラートの種類を定義
-enum ActiveAlert: Identifiable {
-    case reset, restore, save, importConfirm, completion(String)
-    var id: String {
-        switch self {
-        case .reset: return "reset"
-        case .restore: return "restore"
-        case .save: return "save"
-        case .importConfirm: return "import"
-        case .completion(let m): return m
-        }
-    }
-}
-
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -65,6 +51,7 @@ struct Account: Identifiable, Codable, Equatable {
 
 struct Transaction: Identifiable, Codable, Equatable {
     var id = UUID(); var amount: Int; var date: Date; var note: String; var source: String; var isIncome: Bool
+    
     // 【新規】残高計算から除外するかどうかのフラグ
     var isExcludedFromBalance: Bool = false
     
