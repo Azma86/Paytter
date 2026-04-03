@@ -15,7 +15,7 @@ struct TwitterRow: View {
             Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    // 【変更】設定値を参照
+                    // 【変更】設定値を参照するように修正
                     Text(userName).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
                     Text("@\(userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()

@@ -16,6 +16,21 @@ enum ActiveAlert: Identifiable {
     }
 }
 
+// ホーム画面の並び順を統合して管理するためのモデル
+enum HomeItem: Identifiable, Equatable {
+    case totalAssets
+    case account(Account)
+    case group(AccountGroup)
+    
+    var id: String {
+        switch self {
+        case .totalAssets: return "TOTAL_ASSETS"
+        case .account(let a): return "ACCOUNT_\(a.id.uuidString)"
+        case .group(let g): return "GROUP_\(g.id.uuidString)"
+        }
+    }
+}
+
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
     @AppStorage("accounts_v2") var accounts: [Account] = [
@@ -23,6 +38,8 @@ struct ContentView: View {
         Account(name: "口座", balance: 0, type: .bank),
         Account(name: "ポイント", balance: 0, type: .point)
     ]
+    @AppStorage("account_groups") var groups: [AccountGroup] = []
+    
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
@@ -44,10 +61,22 @@ struct ContentView: View {
     @State private var isShowingSwipeDeleteAlert = false
     @State private var transactionToDelete: Transaction?
     @State private var isShowingAccountCreator = false
+    @State private var isShowingGroupCreator = false
     @State private var isShowingAccountDeleteAlert = false
+    @State private var isShowingGroupDeleteAlert = false
     @State private var accountToDeleteIndex: IndexSet?
+    @State private var groupToDeleteIndex: IndexSet?
     
-    // アラート管理用
+    // ホーム並べ替えモードとドラッグ状態
+    @State private var isHomeEditMode = false
+    @State private var draggedItemId: String?
+    @State private var dragOffset: CGFloat = 0 
+    @State private var dragLastX: CGFloat?
+    
+    @AppStorage("show_total_assets") var showTotalAssets: Bool = true
+    @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
+    @State private var homeItems: [HomeItem] = []
+    
     @State private var activeAlert: ActiveAlert?
     @State private var isRestoringManual = false
     @State private var backupDateString = ""
@@ -71,12 +100,14 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
-        .onAppear { recalculateBalances(); updateAppearance() }
+        .onAppear { recalculateBalances(); updateAppearance(); syncHomeItems() }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances() }
+        .onChange(of: accounts) { _ in syncHomeItems() }
+        .onChange(of: groups) { _ in syncHomeItems() }
+        .onChange(of: showTotalAssets) { _ in syncHomeItems() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
-        .onChange(of: themeBG) { _ in updateAppearance() }
         .alert(item: $activeAlert) { type in
             switch type {
             case .reset:
@@ -109,11 +140,86 @@ struct ContentView: View {
             ZStack(alignment: .bottomTrailing) {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
-                    HStack(spacing: 15) {
-                        ForEach(accounts.filter { $0.isVisible }) { acc in
-                            BalanceView(title: acc.name, amount: acc.balance, color: Color(hex: themeBodyText), diff: acc.diffAmount)
+                    VStack(spacing: 8) {
+                        HStack(spacing: 10) {
+                            ForEach(homeItems) { item in
+                                Group {
+                                    switch item {
+                                    case .totalAssets:
+                                        let totalB = accounts.reduce(0) { $0 + $1.balance }
+                                        let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
+                                        BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
+                                        
+                                    case .account(let acc):
+                                        if let currentAcc = accounts.first(where: { $0.id == acc.id }) {
+                                            BalanceView(title: currentAcc.name, amount: currentAcc.balance, color: Color(hex: themeBodyText), diff: currentAcc.diffAmount)
+                                        }
+                                        
+                                    case .group(let group):
+                                        if let currentGroup = groups.first(where: { $0.id == group.id }) {
+                                            let groupAccounts = accounts.filter { currentGroup.accountIds.contains($0.id) }
+                                            let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
+                                            let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
+                                            BalanceView(title: currentGroup.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
+                                        }
+                                    }
+                                }
+                                .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+                                .cornerRadius(8)
+                                .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
+                                .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
+                                .zIndex(draggedItemId == item.id ? 100 : 0)
+                                .gesture(
+                                    isHomeEditMode ? DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                        .onChanged { value in
+                                            if draggedItemId != item.id {
+                                                draggedItemId = item.id
+                                                dragLastX = value.location.x
+                                                dragOffset = 0
+                                            }
+                                            guard let lastX = dragLastX else { return }
+                                            let dx = value.location.x - lastX
+                                            dragOffset += dx
+                                            dragLastX = value.location.x
+                                            
+                                            if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
+                                                let spacing: CGFloat = 10
+                                                let padding: CGFloat = 32
+                                                let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing
+                                                let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal
+                                                let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1))
+                                                let jumpDistance = itemWidth + spacing
+                                                let threshold = jumpDistance * 0.5
+                                                
+                                                if dragOffset > threshold && idx < homeItems.count - 1 {
+                                                    withAnimation(.easeInOut(duration: 0.2)) { 
+                                                        homeItems.swapAt(idx, idx + 1)
+                                                        dragOffset -= jumpDistance
+                                                    }
+                                                } else if dragOffset < -threshold && idx > 0 {
+                                                    withAnimation(.easeInOut(duration: 0.2)) { 
+                                                        homeItems.swapAt(idx, idx - 1)
+                                                        dragOffset += jumpDistance
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        .onEnded { _ in
+                                            withAnimation(.easeInOut(duration: 0.2)) {
+                                                draggedItemId = nil
+                                                dragOffset = 0
+                                                dragLastX = nil
+                                            }
+                                            homeDisplayOrder = homeItems.map { $0.id }
+                                        }
+                                    : nil
+                                )
+                            }
                         }
-                    }.padding().background(Color(hex: themeBarBG).opacity(0.8))
+                        .padding()
+                    }
+                    .background(Color(hex: themeBarBG).opacity(0.8))
+                    
                     Divider()
                     List {
                         ForEach(transactions.sorted(by: { $0.date > $1.date })) { item in
@@ -131,19 +237,26 @@ struct ContentView: View {
                     // 【追加】引っ張って更新
                     .refreshable { recalculateBalances() }
                 }
-                Button(action: { inputText = ""; isShowingInputSheet = true }) {
-                    Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle())
-                }.padding(20).padding(.bottom, 10)
+                
+                if !isHomeEditMode {
+                    Button(action: { inputText = ""; isShowingInputSheet = true }) {
+                        Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle())
+                    }.padding(20).padding(.bottom, 10)
+                }
             }
             .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { withAnimation(.spring()) { isHomeEditMode.toggle() } }) {
+                        Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.left.and.right.circle")
+                            .foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain))
+                    }
+                }
+            }
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
-                Button("キャンセル", role: .cancel) { transactionToDelete = nil }
-                Button("削除", role: .destructive) { 
-                    if let t = transactionToDelete { withAnimation(.easeOut(duration: 0.2)) { deleteSpecificTransaction(t) } }
-                    transactionToDelete = nil
-                }
-            } message: { if let t = transactionToDelete { Text(t.cleanNote) } }
+                Button("キャンセル", role: .cancel) {}; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }); recalculateBalances() } }
+            }
         }
     }
     
@@ -158,20 +271,63 @@ struct ContentView: View {
                         ForEach(Array(accounts.enumerated()), id: \.element.id) { index, acc in 
                             NavigationLink(destination: AccountEditView(account: $accounts[index], transactions: $transactions, allAccounts: accounts)) { 
                                 HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } 
-                            }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { accountToDeleteIndex = IndexSet(integer: index); isShowingAccountDeleteAlert = true } label: { Text("削除") }.tint(.red) }
+                            }
                         }
+                        .onMove(perform: moveAccount)
+                        .onDelete { accountToDeleteIndex = $0; isShowingAccountDeleteAlert = true }
+                        
                         Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+
+                    Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) {
+                        NavigationLink(destination: TotalAssetEditView(isVisible: $showTotalAssets)) {
+                            HStack {
+                                Image(systemName: "sum").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                Text("総資産").foregroundColor(Color(hex: themeBodyText))
+                                Spacer()
+                                let totalB = accounts.reduce(0) { $0 + $1.balance }
+                                Text("¥\(totalB)").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                            }
+                        }
+                        
+                        ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                            NavigationLink(destination: AccountGroupEditView(group: $groups[index], accounts: $accounts)) {
+                                HStack { 
+                                    Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                    Text(group.name).foregroundColor(Color(hex: themeBodyText))
+                                    Spacer()
+                                    let groupTotal = accounts.filter { group.accountIds.contains($0.id) }.reduce(0) { $0 + $1.balance }
+                                    Text("¥\(groupTotal)").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                }
+                            }
+                        }
+                        .onMove(perform: moveGroup)
+                        .onDelete { groupToDeleteIndex = $0; isShowingGroupDeleteAlert = true }
+                        
+                        Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+
                     Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }
             .navigationTitle("お財布").navigationBarTitleDisplayMode(.inline)
+            .toolbar { EditButton().foregroundColor(Color(hex: themeMain)) }
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }
             .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) {
                 Button("キャンセル", role: .cancel){ accountToDeleteIndex = nil }
-                Button("削除", role: .destructive){ if let o = accountToDeleteIndex { withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } }; accountToDeleteIndex = nil }
-            } message: { Text("金額計算に影響する可能性があります。") }
+                Button("削除", role: .destructive){ 
+                    if let o = accountToDeleteIndex { 
+                        let accToDelete = accounts[o.first!]
+                        for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == accToDelete.id }) }
+                        withAnimation { accounts.remove(atOffsets: o); recalculateBalances() } 
+                    }; accountToDeleteIndex = nil 
+                }
+            }
+            .alert("グループの削除", isPresented: $isShowingGroupDeleteAlert) {
+                Button("キャンセル", role: .cancel){}; Button("削除", role: .destructive){ if let o = groupToDeleteIndex { withAnimation { groups.remove(atOffsets: o) } } }
+            }
         } 
     }
 
@@ -181,7 +337,7 @@ struct ContentView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 List { 
                     Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { 
-                        // 【新規】表示ユーザー設定画面へのリンク
+                        // 【新規】ユーザー設定画面へのリンク
                         NavigationLink(destination: UserProfileSettingView()) { Label("表示ユーザー設定", systemImage: "person.crop.circle").foregroundColor(Color(hex: themeBodyText)) }
                         NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
@@ -202,14 +358,31 @@ struct ContentView: View {
         } 
     }
 
+    func moveAccount(from source: IndexSet, to destination: Int) { accounts.move(fromOffsets: source, toOffset: destination) }
+    func moveGroup(from source: IndexSet, to destination: Int) { groups.move(fromOffsets: source, toOffset: destination) }
+
+    func syncHomeItems() {
+        if draggedItemId != nil { return } 
+        var items: [HomeItem] = []
+        if showTotalAssets { items.append(.totalAssets) }
+        items.append(contentsOf: accounts.filter({ $0.isVisible }).map { .account($0) })
+        items.append(contentsOf: groups.filter({ $0.isVisible }).map { .group($0) })
+        
+        items.sort { item1, item2 in
+            let idx1 = homeDisplayOrder.firstIndex(of: item1.id) ?? Int.max
+            let idx2 = homeDisplayOrder.firstIndex(of: item2.id) ?? Int.max
+            return idx1 < idx2
+        }
+        homeItems = items
+    }
+
     func handleImport(from url: URL) {
         guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dateStr = json["date"] as? String else { return }
         let dec = JSONDecoder(); if let t = try? dec.decode([Transaction].self, from: txStr.data(using: .utf8)!), let a = try? dec.decode([Account].self, from: accStr.data(using: .utf8)!) { self.pendingImportData = (t, a, dateStr); self.activeAlert = .importConfirm }
     }
     
-    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; monthlyBudget = 50000; recalculateBalances(); activeAlert = .completion("リセット完了") }
+    func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; groups = []; monthlyBudget = 50000; recalculateBalances(); activeAlert = .completion("リセット完了") }
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)); recalculateBalances() }
-    func deleteSpecificTransaction(_ target: Transaction) { if let index = transactions.firstIndex(where: { $0.id == target.id }) { transactions.remove(at: index); recalculateBalances() } }
     func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
