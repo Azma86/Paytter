@@ -67,6 +67,7 @@ struct ContentView: View {
     @State private var accountToDeleteIndex: IndexSet?
     @State private var groupToDeleteIndex: IndexSet?
     
+    // ホーム並べ替えモードとドラッグ状態
     @State private var isHomeEditMode = false
     @State private var draggedItemId: String?
     @State private var dragOffset: CGFloat = 0 
@@ -234,10 +235,7 @@ struct ContentView: View {
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
-                    // 【新規】引っ張ってタイムラインを更新
-                    .refreshable {
-                        recalculateBalances()
-                    }
+                    .refreshable { recalculateBalances() }
                 }
                 
                 if !isHomeEditMode {
@@ -368,7 +366,6 @@ struct ContentView: View {
         if showTotalAssets { items.append(.totalAssets) }
         items.append(contentsOf: accounts.filter({ $0.isVisible }).map { .account($0) })
         items.append(contentsOf: groups.filter({ $0.isVisible }).map { .group($0) })
-        
         items.sort { item1, item2 in
             let idx1 = homeDisplayOrder.firstIndex(of: item1.id) ?? Int.max
             let idx2 = homeDisplayOrder.firstIndex(of: item2.id) ?? Int.max
