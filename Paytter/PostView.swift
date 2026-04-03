@@ -3,10 +3,7 @@ import SwiftUI
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool
     var initialDate: Date = Date()
-    // 【変更】isExcluded 初期値用
-    var isExcludedInitial: Bool = false
-    // 【変更】onPost に Bool (isExcluded) を追加
-    var onPost: (Bool, Date, Bool) -> Void
+    var onPost: (Bool, Date) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
@@ -20,12 +17,11 @@ struct PostView: View {
     @State private var isShowingDatePicker = false
     @State private var isPickingTime = false
     @State private var suggestions: [String] = []
-    // 【追加】計算除外のローカル状態
-    @State private var isExcluded = false
     
     var body: some View {
         NavigationView {
             ZStack {
+                // シート全体の背景色をテーマ設定に合わせる（クリーム色等も反映）
                 Color(hex: themeBG).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
@@ -82,12 +78,6 @@ struct PostView: View {
                             .cornerRadius(12)
                         }
                         Spacer()
-                        // 【追加】計算除外トグル
-                        Toggle("残高計算から除外", isOn: $isExcluded)
-                            .labelsHidden()
-                        Text("計算除外")
-                            .font(.footnote)
-                            .foregroundColor(isExcluded ? Color(hex: themeMain) : .gray)
                     }.padding(.horizontal)
                     Spacer()
                 }
@@ -96,14 +86,13 @@ struct PostView: View {
                 leading: Button("キャンセル") { isPresented = false }
                     .foregroundColor(Color(hex: themeBarText)), 
                 trailing: HStack(spacing: 12) {
-                    // 【変更】isExcluded を渡すように修正
-                    Button(action: { onPost(false, postDate, isExcluded); isPresented = false }) {
+                    Button(action: { onPost(false, postDate); isPresented = false }) {
                         Text("支出").font(.subheadline).fontWeight(.bold)
                             .frame(width: 60, height: 34)
                             .background(Color(hex: themeExpense).opacity(0.8))
                             .foregroundColor(.white).cornerRadius(17)
                     }
-                    Button(action: { onPost(true, postDate, isExcluded); isPresented = false }) {
+                    Button(action: { onPost(true, postDate); isPresented = false }) {
                         Text("収入").font(.subheadline).fontWeight(.bold)
                             .frame(width: 60, height: 34)
                             .background(Color(hex: themeIncome))
@@ -111,15 +100,19 @@ struct PostView: View {
                     }
                 }
             )
+            // ドラムロール（DatePicker）を表示するシート
             .sheet(isPresented: $isShowingDatePicker) {
                 NavigationView {
                     ZStack {
+                        // ドラムロールの背景もテーマカラー（クリーム色等）にする
                         Color(hex: themeBG).ignoresSafeArea()
+                        
                         VStack { 
                             DatePicker("日時を選択", selection: $postDate, displayedComponents: isPickingTime ? .hourAndMinute : .date)
                                 .datePickerStyle(.wheel)
                                 .labelsHidden()
                                 .environment(\.locale, Locale(identifier: "ja_JP"))
+                                // デフォルトの白背景を消して、後ろのテーマ色を透けさせる
                                 .background(Color.clear) 
                         }
                     }
@@ -134,13 +127,11 @@ struct PostView: View {
                         }.foregroundColor(Color(hex: themeMain))
                     )
                 }
+                // 背景がクリーム色などの明るい色の時に、文字が消えないよう自動調整
                 .preferredColorScheme(isDarkMode ? .dark : .light)
                 .presentationDetents([.height(350)])
             }
-        }.onAppear { 
-            self.postDate = initialDate 
-            self.isExcluded = isExcludedInitial // 初期値をセット
-        }
+        }.onAppear { self.postDate = initialDate }
     }
     
     func formatDate(_ date: Date) -> String { 
