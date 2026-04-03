@@ -29,6 +29,9 @@ struct CalendarView: View {
     @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
     @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
 
+    // 【新規】祝日データ保持用
+    @State private var holidaySet: Set<String> = []
+
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
 
@@ -193,6 +196,8 @@ struct CalendarView: View {
         .sheet(isPresented: $isShowingInputSheet) {
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts)
         }
+        // 【新規】起動時に祝日データを読み込む
+        .onAppear { loadHolidays() }
     }
 
     // --- カレンダー描画ロジック ---
@@ -247,28 +252,42 @@ struct CalendarView: View {
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     func parseAmount(from t: String) -> Int { t.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
+    
+    // 【新規】内閣府のCSVデータを読み込んでパースする
+    func loadHolidays() {
+        guard let url = URL(string: "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv") else { return }
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            guard let data = data, error == nil else { return }
+            // 内閣府のCSVはShift_JIS形式のため、文字コードを指定してデコード
+            guard let csvString = String(data: data, encoding: .shiftJIS) else { return }
+            
+            var holidays: Set<String> = []
+            let lines = csvString.components(separatedBy: .newlines)
+            for line in lines {
+                let columns = line.components(separatedBy: ",")
+                if columns.count >= 1 {
+                    let dateStr = columns[0]
+                    if dateStr.contains("/") {
+                        holidays.insert(dateStr)
+                    }
+                }
+            }
+            DispatchQueue.main.async {
+                self.holidaySet = holidays
+            }
+        }.resume()
+    }
+    
+    // 【変更】取得した祝日リストと照合して判定する
     func checkIsHoliday(_ date: Date) -> Bool {
-        let comps = calendar.dateComponents([.month, .day, .year, .weekday], from: date)
-        guard let month = comps.month, let day = comps.day, let year = comps.year, let weekday = comps.weekday else { return false }
-        if month == 1 && day == 1 { return true }
-        if month == 2 && day == 11 { return true }
-        if month == 2 && day == 23 { return true }
-        if month == 4 && day == 29 { return true }
-        if month == 5 && day == 3 { return true }
-        if month == 5 && day == 4 { return true }
-        if month == 5 && day == 5 { return true }
-        if month == 8 && day == 11 { return true }
-        if month == 11 && day == 3 { return true }
-        if month == 11 && day == 23 { return true }
-        let weekOfMonth = (day - 1) / 7 + 1
-        if weekday == 2 {
-            if month == 1 && weekOfMonth == 2 { return true }
-            if month == 7 && weekOfMonth == 3 { return true }
-            if month == 9 && weekOfMonth == 3 { return true }
-            if month == 10 && weekOfMonth == 2 { return true }
-        }
-        if month == 3 && day == (year % 4 == 0 || year % 4 == 1 ? 20 : 21) { return true }
-        if month == 9 && day == (year % 4 == 0 ? 22 : 23) { return true }
-        return false
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy/MM/dd"
+        let dateStr1 = f.string(from: date)
+        
+        f.dateFormat = "yyyy/M/d"
+        let dateStr2 = f.string(from: date)
+        
+        return holidaySet.contains(dateStr1) || holidaySet.contains(dateStr2)
     }
 }
