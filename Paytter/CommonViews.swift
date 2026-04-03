@@ -6,13 +6,19 @@ struct TwitterRow: View {
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     
-    // 【新規】ユーザー情報の即時反映用
+    // 【追加】ユーザー情報の即時反映用
     @AppStorage("userName") var userName: String = "むつき"
     @AppStorage("userId") var userId: String = "Mutsuki_dev"
+    @AppStorage("userIconData") var userIconData: Data = Data()
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
+            if let uiImage = UIImage(data: userIconData) {
+                Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(Circle())
+            } else {
+                Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
+            }
+            
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     // 【変更】設定値を参照するように修正
