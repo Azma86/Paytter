@@ -109,13 +109,22 @@ struct CalendarView: View {
                 
                 Divider()
 
-                // 日付表示ヘッダー（サイズ縮小、祝日名表示、曜日色分け対応）
+                // 日付表示ヘッダー（カッコはそのまま、中身だけ色分け）
                 HStack(spacing: 4) {
                     let holidayName = getHolidayName(selectedDate)
                     Text(formatDate(selectedDate, format: "yyyy年M月d日"))
                         .foregroundColor(Color(hex: themeBodyText))
-                    Text(formatDate(selectedDate, format: "(EEE)"))
-                        .foregroundColor(holidayName != nil ? Color(hex: themeHoliday) : Color(hex: themeBodyText))
+                    
+                    // 【修正】カッコ内のみを色付けするロジック
+                    (
+                        Text("(")
+                            .foregroundColor(Color(hex: themeBodyText))
+                        + Text(formatDate(selectedDate, format: "EEE"))
+                            .foregroundColor(holidayName != nil ? Color(hex: themeHoliday) : Color(hex: themeBodyText))
+                        + Text(")")
+                            .foregroundColor(Color(hex: themeBodyText))
+                    )
+                    
                     if let name = holidayName {
                         Text(name)
                             .foregroundColor(Color(hex: themeBodyText))
@@ -123,10 +132,10 @@ struct CalendarView: View {
                     }
                     Spacer()
                 }
-                .font(.footnote) // 文字サイズを小さく
+                .font(.footnote)
                 .fontWeight(.bold)
                 .padding(.horizontal)
-                .padding(.vertical, 6) // 縦（高さ）を短く
+                .padding(.vertical, 6)
                 .background(Color(hex: themeBarBG).opacity(0.2))
                 
                 // タイムライン
