@@ -139,7 +139,7 @@ struct TransactionDetailView: View {
     }
 }
 
-// 【新規】複数ユーザーの管理に対応した表示ユーザー設定画面
+// 【重要】ユーザーの削除を「ボタン式」にし、確認ダイアログを出るようにしました
 struct UserProfileSettingView: View {
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
@@ -150,6 +150,9 @@ struct UserProfileSettingView: View {
     
     @State private var selectedItem: PhotosPickerItem? = nil
     @State private var editingProfileId: UUID? = nil
+    
+    @State private var profileToDelete: UserProfile?
+    @State private var isShowingDeleteAlert = false
     
     var body: some View {
         ZStack {
@@ -195,10 +198,21 @@ struct UserProfileSettingView: View {
                         
                         Toggle("タイムラインに表示", isOn: $profile.isVisible)
                             .foregroundColor(Color(hex: themeBodyText))
+                        
+                        // 【新規】削除ボタン
+                        Button(action: {
+                            profileToDelete = profile
+                            isShowingDeleteAlert = true
+                        }) {
+                            HStack {
+                                Spacer()
+                                Text("このユーザーを削除").foregroundColor(.red)
+                                Spacer()
+                            }
+                        }
                     }
                     .listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }
-                .onDelete(perform: deleteProfile)
                 
                 Button(action: {
                     profiles.append(UserProfile(name: "新規ユーザー", userId: "new_user"))
@@ -218,12 +232,20 @@ struct UserProfileSettingView: View {
                 profiles.append(UserProfile(name: "むつき", userId: "Mutsuki_dev"))
             }
         }
-    }
-    
-    func deleteProfile(at offsets: IndexSet) {
-        profiles.remove(atOffsets: offsets)
-        if profiles.isEmpty {
-            profiles.append(UserProfile(name: "新規ユーザー", userId: "new_user"))
+        // 【新規】確認ダイアログ
+        .alert("ユーザーの削除", isPresented: $isShowingDeleteAlert) {
+            Button("キャンセル", role: .cancel) { profileToDelete = nil }
+            Button("削除", role: .destructive) {
+                if let p = profileToDelete {
+                    profiles.removeAll(where: { $0.id == p.id })
+                    if profiles.isEmpty {
+                        profiles.append(UserProfile(name: "新規ユーザー", userId: "new_user"))
+                    }
+                    profileToDelete = nil
+                }
+            }
+        } message: {
+            Text("このユーザーを削除してもよろしいですか？")
         }
     }
 }
