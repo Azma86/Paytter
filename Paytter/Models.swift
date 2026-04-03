@@ -52,7 +52,7 @@ struct Account: Identifiable, Codable, Equatable {
 struct Transaction: Identifiable, Codable, Equatable {
     var id = UUID(); var amount: Int; var date: Date; var note: String; var source: String; var isIncome: Bool
     
-    // 【重要】過去データを消さないようオプショナル型(?)で追加
+    // 【重要】過去データでもエラーにならないよう、オプショナル型(?)で追加
     var isExcludedFromBalance: Bool?
     
     var tags: [String] { note.components(separatedBy: .whitespacesAndNewlines).filter { $0.hasPrefix("#") } }
