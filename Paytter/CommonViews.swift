@@ -5,13 +5,20 @@ struct TwitterRow: View {
     let item: Transaction
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    
+    // 【新規】ユーザー情報の即時反映用
+    @AppStorage("userName") var userName: String = "むつき"
+    @AppStorage("userId") var userId: String = "Mutsuki_dev"
+    
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("むつき").font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
-                    Text("@Mutsuki_dev · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                    // 【変更】userName を参照
+                    Text(userName).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
+                    // 【変更】userId を参照
+                    Text("@\(userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
                     Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText))
                 }
