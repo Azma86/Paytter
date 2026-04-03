@@ -142,7 +142,6 @@ struct ContentView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
                     VStack(spacing: 8) {
-                        // 【修正】LazyVGridを廃止し、絶対に均等に横幅を分割するHStackに変更
                         HStack(spacing: 10) {
                             ForEach(homeItems) { item in
                                 Group {
@@ -172,9 +171,8 @@ struct ContentView: View {
                                 .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
                                 .zIndex(draggedItemId == item.id ? 100 : 0)
                                 .scaleEffect(draggedItemId == item.id ? 1.05 : 1.0)
-                                .opacity(draggedItemId == item.id ? 0.8 : 1.0)
+                                .opacity(draggedItemId == item.id ? 0.9 : 1.0)
                                 .gesture(
-                                    // 【重要修正】coordinateSpace: .global を指定してガクガク現象を完全に防止
                                     isHomeEditMode ? DragGesture(minimumDistance: 0, coordinateSpace: .global)
                                         .onChanged { value in
                                             if draggedItemId != item.id {
@@ -188,26 +186,31 @@ struct ContentView: View {
                                             dragLastX = value.location.x
                                             
                                             if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
-                                                // HStackの余白とPaddingから正確な移動距離（jumpDistance）を算出
                                                 let spacing: CGFloat = 10
-                                                let padding: CGFloat = 32 // 左右の余白合計16+16
+                                                let padding: CGFloat = 32
                                                 let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing
                                                 let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal
                                                 let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1))
                                                 let jumpDistance = itemWidth + spacing
                                                 let threshold = jumpDistance * 0.5
                                                 
+                                                // 【修正】withAnimationの中に dragOffset -= jumpDistance も入れることで、指への吸い付きを完全同期
                                                 if dragOffset > threshold && idx < homeItems.count - 1 {
-                                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { homeItems.swapAt(idx, idx + 1) }
-                                                    dragOffset -= jumpDistance
+                                                    withAnimation(.easeOut(duration: 0.2)) { 
+                                                        homeItems.swapAt(idx, idx + 1)
+                                                        dragOffset -= jumpDistance
+                                                    }
                                                 } else if dragOffset < -threshold && idx > 0 {
-                                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { homeItems.swapAt(idx, idx - 1) }
-                                                    dragOffset += jumpDistance
+                                                    withAnimation(.easeOut(duration: 0.2)) { 
+                                                        homeItems.swapAt(idx, idx - 1)
+                                                        dragOffset += jumpDistance
+                                                    }
                                                 }
                                             }
                                         }
                                         .onEnded { _ in
-                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                            // 【修正】ドロップ時も余韻のないスッとした動きで着地
+                                            withAnimation(.easeOut(duration: 0.2)) {
                                                 draggedItemId = nil
                                                 dragOffset = 0
                                                 dragLastX = nil
@@ -279,7 +282,7 @@ struct ContentView: View {
                                 HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } 
                             }
                         }
-                        .onMove(perform: moveAccount)
+                        .onMove { accounts.move(fromOffsets: $0, toOffset: $1) }
                         .onDelete { accountToDeleteIndex = $0; isShowingAccountDeleteAlert = true }
                         
                         Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
@@ -307,7 +310,7 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        .onMove(perform: moveGroup)
+                        .onMove { groups.move(fromOffsets: $0, toOffset: $1) }
                         .onDelete { groupToDeleteIndex = $0; isShowingGroupDeleteAlert = true }
                         
                         Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
@@ -359,9 +362,6 @@ struct ContentView: View {
             .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { r in if case .success(let u) = r { if u.startAccessingSecurityScopedResource() { handleImport(from: u); u.stopAccessingSecurityScopedResource() } } }
         } 
     }
-
-    func moveAccount(from source: IndexSet, to destination: Int) { accounts.move(fromOffsets: source, toOffset: destination) }
-    func moveGroup(from source: IndexSet, to destination: Int) { groups.move(fromOffsets: source, toOffset: destination) }
 
     func syncHomeItems() {
         if draggedItemId != nil { return } // ドラッグ中は更新しない
