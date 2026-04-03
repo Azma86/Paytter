@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 
-// 共通の残高表示パーツ
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false; @State private var lastAmount: Int = 0 
@@ -55,7 +54,7 @@ struct TwitterRow: View {
                     Text("@\(userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
                     
-                    // 【追加】計算除外アイコンの表示
+                    // 計算除外アイコン
                     if item.isExcludedFromBalance {
                         Image(systemName: "calculator.badge.minus")
                             .font(.system(size: 8))
