@@ -131,7 +131,6 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $isShowingInputSheet) { 
-            // 【変更】onPost に isExcluded を追加
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate, isExc in addTransaction(isInc: isInc, date: nDate, isExcluded: isExc) }, transactions: transactions, accounts: accounts) 
         }
     }
@@ -144,77 +143,52 @@ struct ContentView: View {
                     VStack(spacing: 8) {
                         HStack(spacing: 10) {
                             ForEach(homeItems) { item in
-                                Group {
-                                    switch item {
-                                    case .totalAssets:
-                                        let totalB = accounts.reduce(0) { $0 + $1.balance }
-                                        let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
-                                        BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
-                                        
-                                    case .account(let acc):
-                                        if let currentAcc = accounts.first(where: { $0.id == acc.id }) {
-                                            BalanceView(title: currentAcc.name, amount: currentAcc.balance, color: Color(hex: themeBodyText), diff: currentAcc.diffAmount)
-                                        }
-                                        
-                                    case .group(let group):
-                                        if let currentGroup = groups.first(where: { $0.id == group.id }) {
-                                            let groupAccounts = accounts.filter { currentGroup.accountIds.contains($0.id) }
-                                            let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
-                                            let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
-                                            BalanceView(title: currentGroup.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
-                                        }
-                                    }
-                                }
-                                .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
-                                .cornerRadius(8)
-                                .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
-                                .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
-                                .zIndex(draggedItemId == item.id ? 100 : 0)
-                                .gesture(
-                                    isHomeEditMode ? DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                                        .onChanged { value in
-                                            if draggedItemId != item.id {
-                                                draggedItemId = item.id
+                                homeItemView(for: item)
+                                    .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+                                    .cornerRadius(8)
+                                    .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
+                                    .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
+                                    .zIndex(draggedItemId == item.id ? 100 : 0)
+                                    .gesture(
+                                        isHomeEditMode ? DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                            .onChanged { value in
+                                                if draggedItemId != item.id {
+                                                    draggedItemId = item.id
+                                                    dragLastX = value.location.x
+                                                    dragOffset = 0
+                                                }
+                                                guard let lastX = dragLastX else { return }
+                                                let dx = value.location.x - lastX
+                                                dragOffset += dx
                                                 dragLastX = value.location.x
-                                                dragOffset = 0
-                                            }
-                                            guard let lastX = dragLastX else { return }
-                                            let dx = value.location.x - lastX
-                                            dragOffset += dx
-                                            dragLastX = value.location.x
-                                            
-                                            if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
-                                                let spacing: CGFloat = 10
-                                                let padding: CGFloat = 32
-                                                let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing
-                                                let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal
-                                                let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1))
-                                                let jumpDistance = itemWidth + spacing
-                                                let threshold = jumpDistance * 0.5
                                                 
-                                                if dragOffset > threshold && idx < homeItems.count - 1 {
-                                                    withAnimation(.easeInOut(duration: 0.2)) { 
-                                                        homeItems.swapAt(idx, idx + 1)
-                                                        dragOffset -= jumpDistance
-                                                    }
-                                                } else if dragOffset < -threshold && idx > 0 {
-                                                    withAnimation(.easeInOut(duration: 0.2)) { 
-                                                        homeItems.swapAt(idx, idx - 1)
-                                                        dragOffset += jumpDistance
+                                                if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
+                                                    let jumpDistance = (UIScreen.main.bounds.width - 32 - CGFloat(max(homeItems.count - 1, 0)) * 10) / CGFloat(max(homeItems.count, 1)) + 10
+                                                    let threshold = jumpDistance * 0.5
+                                                    
+                                                    if dragOffset > threshold && idx < homeItems.count - 1 {
+                                                        withAnimation(.easeInOut(duration: 0.2)) { 
+                                                            homeItems.swapAt(idx, idx + 1)
+                                                            dragOffset -= jumpDistance
+                                                        }
+                                                    } else if dragOffset < -threshold && idx > 0 {
+                                                        withAnimation(.easeInOut(duration: 0.2)) { 
+                                                            homeItems.swapAt(idx, idx - 1)
+                                                            dragOffset += jumpDistance
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-                                        .onEnded { _ in
-                                            withAnimation(.easeInOut(duration: 0.2)) {
-                                                draggedItemId = nil
-                                                dragOffset = 0
-                                                dragLastX = nil
+                                            .onEnded { _ in
+                                                withAnimation(.easeInOut(duration: 0.2)) {
+                                                    draggedItemId = nil
+                                                    dragOffset = 0
+                                                    dragLastX = nil
+                                                }
+                                                homeDisplayOrder = homeItems.map { $0.id }
                                             }
-                                            homeDisplayOrder = homeItems.map { $0.id }
-                                        }
-                                    : nil
-                                )
+                                        : nil
+                                    )
                             }
                         }
                         .padding()
@@ -259,6 +233,30 @@ struct ContentView: View {
             .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
                 Button("キャンセル", role: .cancel) {}; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }); recalculateBalances() } }
             }
+        }
+    }
+
+    // 【新規】型チェックエラー回避のためのサブビュー切り出し
+    @ViewBuilder
+    private func homeItemView(for item: HomeItem) -> some View {
+        switch item {
+        case .totalAssets:
+            let totalB = accounts.reduce(0) { $0 + $1.balance }
+            let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
+            BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
+            
+        case .account(let acc):
+            if let currentAcc = accounts.first(where: { $0.id == acc.id }) {
+                BalanceView(title: currentAcc.name, amount: currentAcc.balance, color: Color(hex: themeBodyText), diff: currentAcc.diffAmount)
+            } else { EmptyView() }
+            
+        case .group(let group):
+            if let currentGroup = groups.first(where: { $0.id == group.id }) {
+                let groupAccounts = accounts.filter { currentGroup.accountIds.contains($0.id) }
+                let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
+                let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
+                BalanceView(title: currentGroup.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
+            } else { EmptyView() }
         }
     }
     
@@ -383,11 +381,7 @@ struct ContentView: View {
     }
     
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; groups = []; monthlyBudget = 50000; recalculateBalances(); activeAlert = .completion("リセット完了") }
-    
-    // 【変更】isExcluded を追加
     func addTransaction(isInc: Bool, date: Date, isExcluded: Bool) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExcluded)); recalculateBalances() }
-
-    // 【変更】isExcludedFromBalance が true のものは加算しないように修正
     func recalculateBalances() { 
         for i in 0..<accounts.count { 
             var cur = 0; 
@@ -399,7 +393,6 @@ struct ContentView: View {
         }; 
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) 
     }
-
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
     
