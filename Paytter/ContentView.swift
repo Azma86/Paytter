@@ -74,6 +74,7 @@ struct ContentView: View {
     @State private var dragLastX: CGFloat?
     
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
+    // 並べ替えた結果の順番を保存
     @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
     @State private var homeItems: [HomeItem] = []
     
@@ -217,6 +218,13 @@ struct ContentView: View {
                             }
                         }
                         .padding()
+                        
+                        if isHomeEditMode {
+                            Text("横にスライドして淡々と並べ替えられます")
+                                .font(.caption2)
+                                .foregroundColor(Color(hex: themeMain))
+                                .padding(.bottom, 4)
+                        }
                     }
                     .background(Color(hex: themeBarBG).opacity(0.8))
                     
@@ -232,10 +240,7 @@ struct ContentView: View {
                                 Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
                             }
                         }
-                    }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .refreshable { recalculateBalances() }
+                    }.listStyle(.plain).scrollContentBackground(.hidden)
                 }
                 
                 if !isHomeEditMode {
@@ -337,6 +342,7 @@ struct ContentView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 List { 
                     Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { 
+                        // 【新規】表示ユーザー設定画面へのリンク
                         NavigationLink(destination: UserProfileSettingView()) { Label("表示ユーザー設定", systemImage: "person.crop.circle").foregroundColor(Color(hex: themeBodyText)) }
                         NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
@@ -361,11 +367,12 @@ struct ContentView: View {
     func moveGroup(from source: IndexSet, to destination: Int) { groups.move(fromOffsets: source, toOffset: destination) }
 
     func syncHomeItems() {
-        if draggedItemId != nil { return } 
+        if draggedItemId != nil { return } // ドラッグ中は更新しない
         var items: [HomeItem] = []
         if showTotalAssets { items.append(.totalAssets) }
         items.append(contentsOf: accounts.filter({ $0.isVisible }).map { .account($0) })
         items.append(contentsOf: groups.filter({ $0.isVisible }).map { .group($0) })
+        
         items.sort { item1, item2 in
             let idx1 = homeDisplayOrder.firstIndex(of: item1.id) ?? Int.max
             let idx2 = homeDisplayOrder.firstIndex(of: item2.id) ?? Int.max
