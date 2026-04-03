@@ -38,10 +38,7 @@ enum AccountType: String, Codable, CaseIterable {
 }
 
 struct AccountGroup: Identifiable, Codable, Equatable {
-    var id = UUID()
-    var name: String
-    var isVisible: Bool = true
-    var accountIds: [UUID] = []
+    var id = UUID(); var name: String; var isVisible: Bool = true; var accountIds: [UUID] = []
 }
 
 struct Account: Identifiable, Codable, Equatable {
@@ -52,16 +49,14 @@ struct Account: Identifiable, Codable, Equatable {
 struct Transaction: Identifiable, Codable, Equatable {
     var id = UUID(); var amount: Int; var date: Date; var note: String; var source: String; var isIncome: Bool
     
-    // 【重要】過去データでもエラーにならないよう、オプショナル型(?)で追加
+    // 【重要】過去データでもエラーにならないようオプショナル型(?)で追加
     var isExcludedFromBalance: Bool?
     
     var tags: [String] { note.components(separatedBy: .whitespacesAndNewlines).filter { $0.hasPrefix("#") } }
     var cleanNote: String {
         let lines = note.components(separatedBy: .newlines)
         let cleanedLines = lines.map { line in
-            line.components(separatedBy: .whitespaces)
-                .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }
-                .joined(separator: " ")
+            line.components(separatedBy: .whitespaces).filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }.joined(separator: " ")
         }
         return cleanedLines.joined(separator: "\n")
     }
