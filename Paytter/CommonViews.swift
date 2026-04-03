@@ -6,6 +6,7 @@ struct TwitterRow: View {
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     
+    // 【新規】ユーザー情報の即時反映用
     @AppStorage("userName") var userName: String = "むつき"
     @AppStorage("userId") var userId: String = "Mutsuki_dev"
     @AppStorage("userIconData") var userIconData: Data = Data()
@@ -24,8 +25,8 @@ struct TwitterRow: View {
                     Text("@\(userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
                     
-                    // 【追加】除外アイコン
-                    if item.isExcludedFromBalance ?? false {
+                    // 【追加】計算除外アイコン
+                    if item.isExcludedFromBalance == true {
                         Image(systemName: "calculator.badge.minus")
                             .font(.system(size: 8))
                             .foregroundColor(Color(hex: themeBodyText).opacity(0.4))
