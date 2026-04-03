@@ -3,7 +3,11 @@ import SwiftUI
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool
     var initialDate: Date = Date()
+    
+    // 【新規】isExcluded 初期値用
     var isExcludedInitial: Bool = false
+    
+    // 【変更】onPost に Bool (isExcluded) を追加
     var onPost: (Bool, Date, Bool) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
@@ -18,6 +22,8 @@ struct PostView: View {
     @State private var isShowingDatePicker = false
     @State private var isPickingTime = false
     @State private var suggestions: [String] = []
+    
+    // 【追加】計算除外のローカル状態
     @State private var isExcluded = false
     
     @AppStorage("userIconData") var userIconData: Data = Data()
@@ -88,6 +94,7 @@ struct PostView: View {
                         }
                         Spacer()
                         
+                        // 【新規】計算除外トグル
                         Toggle("残高計算から除外", isOn: $isExcluded)
                             .labelsHidden()
                         Text("計算除外")
@@ -101,6 +108,7 @@ struct PostView: View {
                 leading: Button("キャンセル") { isPresented = false }
                     .foregroundColor(Color(hex: themeBarText)), 
                 trailing: HStack(spacing: 12) {
+                    // 【変更】isExcluded を渡すように修正
                     Button(action: { onPost(false, postDate, isExcluded); isPresented = false }) {
                         Text("支出").font(.subheadline).fontWeight(.bold)
                             .frame(width: 60, height: 34)
@@ -143,7 +151,7 @@ struct PostView: View {
             }
         }.onAppear { 
             self.postDate = initialDate 
-            self.isExcluded = isExcludedInitial
+            self.isExcluded = isExcludedInitial // 初期値をセット
         }
     }
     
