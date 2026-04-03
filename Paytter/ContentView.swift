@@ -131,7 +131,8 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $isShowingInputSheet) { 
-            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate in addTransaction(isInc: isInc, date: nDate) }, transactions: transactions, accounts: accounts) 
+            // 【変更】onPost に isExcluded を追加
+            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate, isExc in addTransaction(isInc: isInc, date: nDate, isExcluded: isExc) }, transactions: transactions, accounts: accounts) 
         }
     }
 
@@ -217,13 +218,6 @@ struct ContentView: View {
                             }
                         }
                         .padding()
-                        
-                        if isHomeEditMode {
-                            Text("横にスライドして淡々と並べ替えられます")
-                                .font(.caption2)
-                                .foregroundColor(Color(hex: themeMain))
-                                .padding(.bottom, 4)
-                        }
                     }
                     .background(Color(hex: themeBarBG).opacity(0.8))
                     
@@ -233,18 +227,16 @@ struct ContentView: View {
                             ZStack {
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
                                 TwitterRow(item: item)
-                                    .opacity(item.date > Date() ? 0.6 : 1.0) // 【修正】未来の投稿の文字色（表示全体）を薄くする
+                                    .opacity(item.date > Date() ? 0.6 : 1.0)
                             }
                             .listRowInsets(EdgeInsets())
-                            // 未来の投稿の背景を少し暗くする（6%の黒を重ねる）
                             .listRowBackground(item.date > Date() ? Color.black.opacity(0.06) : Color(hex: themeBG))
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
                             }
                         }
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
+                    .listStyle(.plain).scrollContentBackground(.hidden)
                     .refreshable { recalculateBalances() }
                 }
                 
@@ -391,8 +383,23 @@ struct ContentView: View {
     }
     
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; groups = []; monthlyBudget = 50000; recalculateBalances(); activeAlert = .completion("リセット完了") }
-    func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)); recalculateBalances() }
-    func recalculateBalances() { for i in 0..<accounts.count { var cur = 0; for tx in transactions where tx.source == accounts[i].name { cur += (tx.isIncome ? tx.amount : -tx.amount) }; accounts[i].diffAmount = cur - accounts[i].balance; accounts[i].balance = cur }; BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) }
+    
+    // 【変更】isExcluded を追加
+    func addTransaction(isInc: Bool, date: Date, isExcluded: Bool) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExcluded)); recalculateBalances() }
+
+    // 【変更】isExcludedFromBalance が true のものは加算しないように修正
+    func recalculateBalances() { 
+        for i in 0..<accounts.count { 
+            var cur = 0; 
+            for tx in transactions where tx.source == accounts[i].name && !tx.isExcludedFromBalance { 
+                cur += (tx.isIncome ? tx.amount : -tx.amount) 
+            }; 
+            accounts[i].diffAmount = cur - accounts[i].balance; 
+            accounts[i].balance = cur 
+        }; 
+        BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) 
+    }
+
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
     
