@@ -8,6 +8,8 @@ struct ThemeSettingView: View {
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    // 【追加】土曜日の色設定
+    @AppStorage("theme_saturday") var themeSaturday: String = "#FF007AFF"
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
@@ -16,16 +18,15 @@ struct ThemeSettingView: View {
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
     struct PresetData {
-        let main, bg, barBG, barText, body, sub, tab: String
+        let main, bg, barBG, barText, body, sub, tab, saturday: String
         let isDark: Bool
     }
     
-    // 【修正】先頭2文字をFF（不透明）にし、その後にRGBを続けるARGB形式に統一しました
     let presets: [String: PresetData] = [
-        "デフォルト": PresetData(main: "#FF007AFF", bg: "#FFFFFFFF", barBG: "#FFF8F8F8", barText: "#FF000000", body: "#FF000000", sub: "#FF8E8E93", tab: "#FF007AFF", isDark: false),
-        "ダーク": PresetData(main: "#FF0A84FF", bg: "#FF111115", barBG: "#FF030305", barText: "#FFFFFFFF", body: "#FFFFFFFF", sub: "#FF8E8E93", tab: "#FF0A84FF", isDark: true),
-        "ナチュラル": PresetData(main: "#FF6B8E23", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barText: "#FF4B3621", body: "#FF4B3621", sub: "#FF999988", tab: "#FF6B8E23", isDark: false),
-        "カフェ": PresetData(main: "#FF8B4513", bg: "#FFFFF8DC", barBG: "#FFDEB887", barText: "#FF3E2723", body: "#FF3E2723", sub: "#FFA08878", tab: "#FF8B4513", isDark: false)
+        "デフォルト": PresetData(main: "#FF007AFF", bg: "#FFFFFFFF", barBG: "#FFF8F8F8", barText: "#FF000000", body: "#FF000000", sub: "#FF8E8E93", tab: "#FF007AFF", saturday: "#FF007AFF", isDark: false),
+        "ダーク": PresetData(main: "#FF0A84FF", bg: "#FF111115", barBG: "#FF030305", barText: "#FFFFFFFF", body: "#FFFFFFFF", sub: "#FF8E8E93", tab: "#FF0A84FF", saturday: "#FF0A84FF", isDark: true),
+        "ナチュラル": PresetData(main: "#FF6B8E23", bg: "#FFF5F5DC", barBG: "#FFE4E4D0", barText: "#FF4B3621", body: "#FF4B3621", sub: "#FF999988", tab: "#FF6B8E23", saturday: "#FF4169E1", isDark: false),
+        "カフェ": PresetData(main: "#FF8B4513", bg: "#FFFFF8DC", barBG: "#FFDEB887", barText: "#FF3E2723", body: "#FF3E2723", sub: "#FFA08878", tab: "#FF8B4513", saturday: "#FF4682B4", isDark: false)
     ]
 
     var body: some View {
@@ -55,7 +56,9 @@ struct ThemeSettingView: View {
                         colorRow(title: "メインカラー", hex: $themeMain, keyPath: \.main)
                         colorRow(title: "収入色", hex: $themeIncome, keyPath: \.main)
                         colorRow(title: "支出色", hex: $themeExpense, keyPath: \.main)
-                        colorRow(title: "祝日色", hex: $themeHoliday, keyPath: \.main)
+                        colorRow(title: "祝日・日曜色", hex: $themeHoliday, keyPath: \.main)
+                        // 【追加】土曜日色の設定行
+                        colorRow(title: "土曜日色", hex: $themeSaturday, keyPath: \.saturday)
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
             }
@@ -70,6 +73,7 @@ struct ThemeSettingView: View {
                 activePreset = name
                 themeMain = p.main; themeBG = p.bg; themeBarBG = p.barBG; themeBarText = p.barText
                 themeBodyText = p.body; themeSubText = p.sub; themeTabAccent = p.tab; isDarkMode = p.isDark
+                themeSaturday = p.saturday
                 notify()
             }
         }) {
