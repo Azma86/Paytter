@@ -3,7 +3,10 @@ import SwiftUI
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool
     var initialDate: Date = Date()
-    var onPost: (Bool, Date) -> Void
+    // 【新規】isExcluded 初期値用
+    var isExcludedInitial: Bool = false
+    // 【変更】onPost に Bool (isExcluded) を追加
+    var onPost: (Bool, Date, Bool) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
@@ -17,6 +20,11 @@ struct PostView: View {
     @State private var isShowingDatePicker = false
     @State private var isPickingTime = false
     @State private var suggestions: [String] = []
+    // 【追加】計算除外のローカル状態
+    @State private var isExcluded = false
+    
+    // 【追加】ユーザーアイコン反映用
+    @AppStorage("userIconData") var userIconData: Data = Data()
     
     var body: some View {
         NavigationView {
@@ -26,7 +34,13 @@ struct PostView: View {
                 
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
-                        Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
+                        // 【変更】設定アイコンを反映
+                        if let uiImage = UIImage(data: userIconData) {
+                            Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 40, height: 40).clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
+                        }
+                        
                         ZStack(alignment: .topLeading) {
                             CustomTextEditor(text: $inputText) { sym in 
                                 insertAtCursor(sym)
@@ -78,6 +92,13 @@ struct PostView: View {
                             .cornerRadius(12)
                         }
                         Spacer()
+                        
+                        // 【新規】計算除外トグル
+                        Toggle("残高計算から除外", isOn: $isExcluded)
+                            .labelsHidden()
+                        Text("計算除外")
+                            .font(.footnote)
+                            .foregroundColor(isExcluded ? Color(hex: themeMain) : .gray)
                     }.padding(.horizontal)
                     Spacer()
                 }
@@ -86,13 +107,14 @@ struct PostView: View {
                 leading: Button("キャンセル") { isPresented = false }
                     .foregroundColor(Color(hex: themeBarText)), 
                 trailing: HStack(spacing: 12) {
-                    Button(action: { onPost(false, postDate); isPresented = false }) {
+                    // 【変更】isExcluded を渡すように修正
+                    Button(action: { onPost(false, postDate, isExcluded); isPresented = false }) {
                         Text("支出").font(.subheadline).fontWeight(.bold)
                             .frame(width: 60, height: 34)
                             .background(Color(hex: themeExpense).opacity(0.8))
                             .foregroundColor(.white).cornerRadius(17)
                     }
-                    Button(action: { onPost(true, postDate); isPresented = false }) {
+                    Button(action: { onPost(true, postDate, isExcluded); isPresented = false }) {
                         Text("収入").font(.subheadline).fontWeight(.bold)
                             .frame(width: 60, height: 34)
                             .background(Color(hex: themeIncome))
@@ -131,7 +153,10 @@ struct PostView: View {
                 .preferredColorScheme(isDarkMode ? .dark : .light)
                 .presentationDetents([.height(350)])
             }
-        }.onAppear { self.postDate = initialDate }
+        }.onAppear { 
+            self.postDate = initialDate 
+            self.isExcluded = isExcludedInitial // 初期値をセット
+        }
     }
     
     func formatDate(_ date: Date) -> String { 
