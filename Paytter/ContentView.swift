@@ -108,6 +108,7 @@ struct ContentView: View {
             syncHomeItems()
         }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
+        // 【重要】transactionsが変更されたときにのみ1回だけ計算を走らせることで増減エフェクトを復活
         .onChange(of: transactions) { _ in recalculateBalances() }
         .onChange(of: accounts) { _ in syncHomeItems() }
         .onChange(of: groups) { _ in syncHomeItems() }
@@ -245,7 +246,7 @@ struct ContentView: View {
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
-                    .refreshable { recalculateBalances() }
+                    .refreshable { NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil) }
                 }
                 
                 if !isHomeEditMode {
@@ -281,7 +282,6 @@ struct ContentView: View {
                 Button("削除", role: .destructive) {
                     if let t = transactionToDelete {
                         transactions.removeAll(where: { $0.id == t.id })
-                        recalculateBalances()
                     }
                 }
             }
@@ -390,7 +390,6 @@ struct ContentView: View {
                             groups[i].accountIds.removeAll(where: { $0 == acc.id })
                         }
                         accounts.removeAll(where: { $0.id == acc.id })
-                        recalculateBalances()
                     }
                     accountToDelete = nil
                 }
@@ -482,7 +481,7 @@ struct ContentView: View {
 
     func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?) {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId))
-        recalculateBalances()
+        // recalculateBalances() は onChange で自動的に実行されるため記述しません（2重計算防止）
     }
     
     @ViewBuilder
@@ -625,7 +624,7 @@ struct ContentView: View {
                   let accStr = json["accounts"] as? String,
                   let dec = try? JSONDecoder().decode([Transaction].self, from: txStr.data(using: .utf8)!),
                   let aDec = try? JSONDecoder().decode([Account].self, from: accStr.data(using: .utf8)!) {
-            // 過去の形式からの復元をサポート
+            
             let fd = createFullBackupData()
             self.pendingImportData = FullBackupData(
                 transactions: dec, accounts: aDec, groups: fd.groups, profiles: fd.profiles,
