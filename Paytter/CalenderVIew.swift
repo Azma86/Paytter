@@ -115,7 +115,6 @@ struct CalendarView: View {
                     Text(formatDate(selectedDate, format: "yyyy年M月d日"))
                         .foregroundColor(Color(hex: themeBodyText))
                     
-                    // 【修正】カッコ内のみを色付けするロジック
                     (
                         Text("(")
                             .foregroundColor(Color(hex: themeBodyText))
@@ -210,9 +209,11 @@ struct CalendarView: View {
                     Text("\(calendar.component(.day, from: date))")
                         .font(.system(size: 13, design: .rounded))
                         .fontWeight(isSelected ? .bold : .regular)
-                        .foregroundColor(isCurrentMonth ? (isSelected ? .white : (isHoliday ? Color(hex: themeHoliday) : Color(hex: themeBodyText))) : Color(hex: themeSubText).opacity(0.4))
+                        // 【修正】 spillover の日付でも選択時は白文字にする
+                        .foregroundColor(isSelected ? .white : (isCurrentMonth ? (isHoliday ? Color(hex: themeHoliday) : Color(hex: themeBodyText)) : Color(hex: themeSubText).opacity(0.4)))
                         .frame(width: 24, height: 24)
-                        .background(isSelected && isCurrentMonth ? Color(hex: themeMain) : Color.clear)
+                        // 【修正】 spillover の日付でも選択背景（themeMain）を表示する
+                        .background(isSelected ? Color(hex: themeMain) : Color.clear)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 1) {
                         if dayTransactions.count > 0 {
@@ -221,7 +222,8 @@ struct CalendarView: View {
                     }.frame(height: 10)
                 }
                 .frame(height: 45).frame(maxWidth: .infinity).contentShape(Rectangle())
-                .onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
+                // 【修正】前月・次月の日付をタップしても、月移動せず選択だけ行うように変更
+                .onTapGesture { selectedDate = date }
             }
         }.frame(width: width).background(Color(hex: themeBG))
     }
@@ -247,7 +249,7 @@ struct CalendarView: View {
     func loadHolidays() {
         guard let url = URL(string: "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv") else { return }
         URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data, error == nil, let csvString = String(data: data, encoding: .shiftJIS) else { return }
+            guard let data = data, error == nil, let csvString = String(data: data, encoding: .shiftSJIS) else { return }
             var dict: [String: String] = [:]
             csvString.components(separatedBy: .newlines).forEach { line in
                 let columns = line.components(separatedBy: ",")
