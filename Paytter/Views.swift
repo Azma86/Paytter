@@ -139,7 +139,74 @@ struct TransactionDetailView: View {
     }
 }
 
-// 【重要】ユーザーの削除を「ボタン式」にし、確認ダイアログを出るようにしました
+// 【新規追加】各ユーザーの設定ブロックを独立させるためのView
+// これにより、画像選択時の状態が他ユーザーと混ざらず、確実に更新されます。
+struct UserProfileEditSection: View {
+    @Binding var profile: UserProfile
+    let themeMain: String
+    let themeBodyText: String
+    let themeSubText: String
+    let themeBG: String
+    let onDelete: () -> Void
+    
+    @State private var selectedItem: PhotosPickerItem? = nil
+
+    var body: some View {
+        Section(header: Text("ユーザー情報").foregroundColor(Color(hex: themeSubText))) {
+            HStack {
+                Spacer()
+                PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
+                    if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
+                        Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 80, height: 80).clipShape(Circle())
+                    } else {
+                        Image(systemName: "person.circle.fill").resizable().frame(width: 80, height: 80).foregroundColor(Color(hex: themeSubText))
+                    }
+                }
+                .onChange(of: selectedItem) { newItem in
+                    guard let item = newItem else { return }
+                    Task {
+                        if let data = try? await item.loadTransferable(type: Data.self),
+                           let uiImage = UIImage(data: data),
+                           let compressedData = uiImage.jpegData(compressionQuality: 0.5) {
+                            DispatchQueue.main.async {
+                                profile.iconData = compressedData
+                                selectedItem = nil
+                            }
+                        } else {
+                            DispatchQueue.main.async {
+                                selectedItem = nil
+                            }
+                        }
+                    }
+                }
+                Spacer()
+            }.padding(.vertical, 8)
+            
+            HStack {
+                Text("名前").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
+                TextField("ユーザー名", text: $profile.name).foregroundColor(Color(hex: themeBodyText))
+            }
+            HStack {
+                Text("ID").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
+                Text("@").foregroundColor(Color(hex: themeSubText))
+                TextField("ユーザーID", text: $profile.userId).foregroundColor(Color(hex: themeBodyText)).autocapitalization(.none)
+            }
+            
+            Toggle("タイムラインに表示", isOn: $profile.isVisible)
+                .foregroundColor(Color(hex: themeBodyText))
+            
+            Button(action: onDelete) {
+                HStack {
+                    Spacer()
+                    Text("このユーザーを削除").foregroundColor(.red)
+                    Spacer()
+                }
+            }
+        }
+        .listRowBackground(Color(hex: themeBG).opacity(0.5))
+    }
+}
+
 struct UserProfileSettingView: View {
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
@@ -147,9 +214,6 @@ struct UserProfileSettingView: View {
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
-    
-    @State private var selectedItem: PhotosPickerItem? = nil
-    @State private var editingProfileId: UUID? = nil
     
     @State private var profileToDelete: UserProfile?
     @State private var isShowingDeleteAlert = false
@@ -159,59 +223,17 @@ struct UserProfileSettingView: View {
             Color(hex: themeBG).ignoresSafeArea()
             List {
                 ForEach($profiles) { $profile in
-                    Section(header: Text("ユーザー情報").foregroundColor(Color(hex: themeSubText))) {
-                        HStack {
-                            Spacer()
-                            PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
-                                if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
-                                    Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 80, height: 80).clipShape(Circle())
-                                } else {
-                                    Image(systemName: "person.circle.fill").resizable().frame(width: 80, height: 80).foregroundColor(Color(hex: themeSubText))
-                                }
-                            }
-                            .simultaneousGesture(TapGesture().onEnded { editingProfileId = profile.id })
-                            .onChange(of: selectedItem) { newItem in
-                                if editingProfileId == profile.id {
-                                    Task {
-                                        if let data = try? await newItem?.loadTransferable(type: Data.self),
-                                           let uiImage = UIImage(data: data),
-                                           let compressedData = uiImage.jpegData(compressionQuality: 0.5) {
-                                            profile.iconData = compressedData
-                                        }
-                                        selectedItem = nil
-                                        editingProfileId = nil
-                                    }
-                                }
-                            }
-                            Spacer()
-                        }.padding(.vertical, 8)
-                        
-                        HStack {
-                            Text("名前").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
-                            TextField("ユーザー名", text: $profile.name).foregroundColor(Color(hex: themeBodyText))
-                        }
-                        HStack {
-                            Text("ID").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
-                            Text("@").foregroundColor(Color(hex: themeSubText))
-                            TextField("ユーザーID", text: $profile.userId).foregroundColor(Color(hex: themeBodyText)).autocapitalization(.none)
-                        }
-                        
-                        Toggle("タイムラインに表示", isOn: $profile.isVisible)
-                            .foregroundColor(Color(hex: themeBodyText))
-                        
-                        // 【新規】削除ボタン
-                        Button(action: {
+                    UserProfileEditSection(
+                        profile: $profile,
+                        themeMain: themeMain,
+                        themeBodyText: themeBodyText,
+                        themeSubText: themeSubText,
+                        themeBG: themeBG,
+                        onDelete: {
                             profileToDelete = profile
                             isShowingDeleteAlert = true
-                        }) {
-                            HStack {
-                                Spacer()
-                                Text("このユーザーを削除").foregroundColor(.red)
-                                Spacer()
-                            }
                         }
-                    }
-                    .listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    )
                 }
                 
                 Button(action: {
@@ -232,7 +254,6 @@ struct UserProfileSettingView: View {
                 profiles.append(UserProfile(name: "むつき", userId: "Mutsuki_dev"))
             }
         }
-        // 【新規】確認ダイアログ
         .alert("ユーザーの削除", isPresented: $isShowingDeleteAlert) {
             Button("キャンセル", role: .cancel) { profileToDelete = nil }
             Button("削除", role: .destructive) {
