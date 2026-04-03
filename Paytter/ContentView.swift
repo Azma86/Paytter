@@ -217,6 +217,13 @@ struct ContentView: View {
                             }
                         }
                         .padding()
+                        
+                        if isHomeEditMode {
+                            Text("横にスライドして淡々と並べ替えられます")
+                                .font(.caption2)
+                                .foregroundColor(Color(hex: themeMain))
+                                .padding(.bottom, 4)
+                        }
                     }
                     .background(Color(hex: themeBarBG).opacity(0.8))
                     
@@ -337,7 +344,7 @@ struct ContentView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 List { 
                     Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { 
-                        // 【新規】ユーザー設定画面へのリンク
+                        // 【追加】ユーザー設定画面へのリンク
                         NavigationLink(destination: UserProfileSettingView()) { Label("表示ユーザー設定", systemImage: "person.crop.circle").foregroundColor(Color(hex: themeBodyText)) }
                         NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
