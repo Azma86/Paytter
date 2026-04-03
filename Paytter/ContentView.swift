@@ -69,7 +69,9 @@ struct ContentView: View {
     
     // ホーム並べ替えモードとドラッグ状態
     @State private var isHomeEditMode = false
-    @State private var draggedItem: HomeItem?
+    @State private var draggedItemId: String?
+    @State private var dragOffset: CGFloat = 0 
+    @State private var dragLastX: CGFloat?
     
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
     // 並べ替えた結果の順番を保存
@@ -163,26 +165,65 @@ struct ContentView: View {
                                         }
                                     }
                                 }
-                                .background(draggedItem == item ? Color(hex: themeMain).opacity(0.2) : Color.clear)
+                                .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
                                 .cornerRadius(8)
                                 .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
-                                .opacity(draggedItem == item ? 0.8 : 1.0)
-                                // 【重要修正】長押し不要のネイティブドラッグ&ドロップ
-                                .onDrag {
-                                    if !isHomeEditMode { return NSItemProvider() }
-                                    self.draggedItem = item
-                                    return NSItemProvider(object: item.id as NSString)
-                                }
-                                .onDrop(of: [.text], delegate: HomeDropDelegate(item: item, items: $homeItems, draggedItem: $draggedItem, onReorder: {
-                                    homeDisplayOrder = homeItems.map { $0.id }
-                                }))
+                                // 【修正】Y（上下）方向は0に固定、スケール（拡大）や透明度変化などの不要なエフェクトを完全排除
+                                .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
+                                .zIndex(draggedItemId == item.id ? 100 : 0)
+                                .gesture(
+                                    isHomeEditMode ? DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                        .onChanged { value in
+                                            // 触れた瞬間に長押し不要でドラッグ開始
+                                            if draggedItemId != item.id {
+                                                draggedItemId = item.id
+                                                dragLastX = value.location.x
+                                                dragOffset = 0
+                                            }
+                                            guard let lastX = dragLastX else { return }
+                                            let dx = value.location.x - lastX
+                                            dragOffset += dx
+                                            dragLastX = value.location.x
+                                            
+                                            if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
+                                                let spacing: CGFloat = 10
+                                                let padding: CGFloat = 32
+                                                let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing
+                                                let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal
+                                                let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1))
+                                                let jumpDistance = itemWidth + spacing
+                                                let threshold = jumpDistance * 0.5
+                                                
+                                                // 【修正】淡々とした等速アニメーション（easeInOut）でスッと入れ替わる
+                                                if dragOffset > threshold && idx < homeItems.count - 1 {
+                                                    withAnimation(.easeInOut(duration: 0.2)) { 
+                                                        homeItems.swapAt(idx, idx + 1)
+                                                        dragOffset -= jumpDistance
+                                                    }
+                                                } else if dragOffset < -threshold && idx > 0 {
+                                                    withAnimation(.easeInOut(duration: 0.2)) { 
+                                                        homeItems.swapAt(idx, idx - 1)
+                                                        dragOffset += jumpDistance
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        .onEnded { _ in
+                                            withAnimation(.easeInOut(duration: 0.2)) {
+                                                draggedItemId = nil
+                                                dragOffset = 0
+                                                dragLastX = nil
+                                            }
+                                            homeDisplayOrder = homeItems.map { $0.id }
+                                        }
+                                    : nil
+                                )
                             }
                         }
                         .padding()
-                        .animation(.default, value: homeItems) // iOS標準の自然な入れ替えアニメーション
                         
                         if isHomeEditMode {
-                            Text("長押しせずに直接スライドして並べ替えられます")
+                            Text("横にスライドして淡々と並べ替えられます")
                                 .font(.caption2)
                                 .foregroundColor(Color(hex: themeMain))
                                 .padding(.bottom, 4)
@@ -325,7 +366,7 @@ struct ContentView: View {
     func moveGroup(from source: IndexSet, to destination: Int) { groups.move(fromOffsets: source, toOffset: destination) }
 
     func syncHomeItems() {
-        if draggedItem != nil { return } // ドラッグ中は更新しない
+        if draggedItemId != nil { return } // ドラッグ中は更新しない
         var items: [HomeItem] = []
         if showTotalAssets { items.append(.totalAssets) }
         items.append(contentsOf: accounts.filter({ $0.isVisible }).map { .account($0) })
@@ -379,28 +420,5 @@ struct ContentView: View {
         if let nav = vc as? UINavigationController { nav.navigationBar.standardAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.scrollEdgeAppearance = UINavigationBar.appearance().standardAppearance; nav.navigationBar.setNeedsLayout(); nav.navigationBar.layoutIfNeeded() }
         if let tab = vc as? UITabBarController { tab.tabBar.standardAppearance = UITabBar.appearance().standardAppearance; if #available(iOS 15.0, *) { tab.tabBar.scrollEdgeAppearance = UITabBar.appearance().scrollEdgeAppearance } }
         vc.children.forEach { updateViewHierarchy($0) }
-    }
-}
-
-// 【新規】iOSネイティブの自然な入れ替え処理
-struct HomeDropDelegate: DropDelegate {
-    let item: HomeItem
-    @Binding var items: [HomeItem]
-    @Binding var draggedItem: HomeItem?
-    let onReorder: () -> Void
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggedItem = nil
-        onReorder()
-        return true
-    }
-
-    func dropEntered(info: DropInfo) {
-        guard let draggedItem = draggedItem, draggedItem.id != item.id else { return }
-        let from = items.firstIndex(of: draggedItem)!
-        let to = items.firstIndex(of: item)!
-        if items[to].id != draggedItem.id {
-            items.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-        }
     }
 }
