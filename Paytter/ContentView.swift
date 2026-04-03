@@ -234,14 +234,16 @@ struct ContentView: View {
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
                                 TwitterRow(item: item)
                             }
-                            .listRowInsets(EdgeInsets()).listRowBackground(Color(hex: themeBG))
+                            .listRowInsets(EdgeInsets())
+                            // 【修正】未来の投稿の背景を少し暗くする（6%の黒を重ねる）
+                            .listRowBackground(item.date > Date() ? Color.black.opacity(0.06) : Color(hex: themeBG))
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
                             }
                         }
                     }
-                    .listStyle(.plain).scrollContentBackground(.hidden)
-                    // 【追加】引っ張って更新
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                     .refreshable { recalculateBalances() }
                 }
                 
@@ -344,7 +346,6 @@ struct ContentView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 List { 
                     Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { 
-                        // 【追加】ユーザー設定画面へのリンク
                         NavigationLink(destination: UserProfileSettingView()) { Label("表示ユーザー設定", systemImage: "person.crop.circle").foregroundColor(Color(hex: themeBodyText)) }
                         NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
