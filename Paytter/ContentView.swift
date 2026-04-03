@@ -74,6 +74,7 @@ struct ContentView: View {
     @State private var dragLastX: CGFloat?
     
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
+    // 並べ替えた結果の順番を保存
     @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
     @State private var homeItems: [HomeItem] = []
     
@@ -143,7 +144,7 @@ struct ContentView: View {
                     VStack(spacing: 8) {
                         HStack(spacing: 10) {
                             ForEach(homeItems) { item in
-                                homeItemView(for: item)
+                                homeHeaderItem(for: item)
                                     .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
                                     .cornerRadius(8)
                                     .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
@@ -203,8 +204,7 @@ struct ContentView: View {
                                 TwitterRow(item: item)
                                     .opacity(item.date > Date() ? 0.6 : 1.0)
                             }
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(item.date > Date() ? Color.black.opacity(0.06) : Color(hex: themeBG))
+                            .listRowInsets(EdgeInsets()).listRowBackground(item.date > Date() ? Color.black.opacity(0.06) : Color(hex: themeBG))
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
                             }
@@ -238,7 +238,7 @@ struct ContentView: View {
 
     // 【新規】型チェックエラー回避のためのサブビュー切り出し
     @ViewBuilder
-    private func homeItemView(for item: HomeItem) -> some View {
+    private func homeHeaderItem(for item: HomeItem) -> some View {
         switch item {
         case .totalAssets:
             let totalB = accounts.reduce(0) { $0 + $1.balance }
@@ -381,7 +381,11 @@ struct ContentView: View {
     }
     
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; groups = []; monthlyBudget = 50000; recalculateBalances(); activeAlert = .completion("リセット完了") }
+    
+    // 【修正】isExcluded を追加し、recalculateBalances を呼び出す
     func addTransaction(isInc: Bool, date: Date, isExcluded: Bool) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExcluded)); recalculateBalances() }
+
+    // 【修正】isExcludedFromBalance が true のものは加算しないように修正
     func recalculateBalances() { 
         for i in 0..<accounts.count { 
             var cur = 0; 
@@ -393,6 +397,7 @@ struct ContentView: View {
         }; 
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) 
     }
+
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
     
