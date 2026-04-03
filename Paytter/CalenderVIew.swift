@@ -209,10 +209,8 @@ struct CalendarView: View {
                     Text("\(calendar.component(.day, from: date))")
                         .font(.system(size: 13, design: .rounded))
                         .fontWeight(isSelected ? .bold : .regular)
-                        // 【修正】 spillover の日付でも選択時は白文字にする
                         .foregroundColor(isSelected ? .white : (isCurrentMonth ? (isHoliday ? Color(hex: themeHoliday) : Color(hex: themeBodyText)) : Color(hex: themeSubText).opacity(0.4)))
                         .frame(width: 24, height: 24)
-                        // 【修正】 spillover の日付でも選択背景（themeMain）を表示する
                         .background(isSelected ? Color(hex: themeMain) : Color.clear)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 1) {
@@ -222,7 +220,6 @@ struct CalendarView: View {
                     }.frame(height: 10)
                 }
                 .frame(height: 45).frame(maxWidth: .infinity).contentShape(Rectangle())
-                // 【修正】前月・次月の日付をタップしても、月移動せず選択だけ行うように変更
                 .onTapGesture { selectedDate = date }
             }
         }.frame(width: width).background(Color(hex: themeBG))
@@ -232,7 +229,6 @@ struct CalendarView: View {
     func formatDate(_ d: Date, format: String) -> String { let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = format; return f.string(from: d) }
     func generateFullGrid(for date: Date) -> [Date] { guard let first = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }; let firstWeekday = calendar.component(.weekday, from: first); let startDate = calendar.date(byAdding: .day, value: -(firstWeekday - 1), to: first)!; return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: startDate) } }
     func moveMonth(by v: Int) { if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) { withAnimation { currentMonth = next } } }
-    func slideToDate(_ date: Date) { let isFuture = date > currentMonth; moveMonth(by: isFuture ? 1 : -1); selectedDate = date }
     func combinedDate() -> Date { let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate); let tc = calendar.dateComponents([.hour, .minute], from: now); c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate }
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     func parseAmount(from t: String) -> Int { t.components(separatedBy: CharacterSet.whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
@@ -249,7 +245,11 @@ struct CalendarView: View {
     func loadHolidays() {
         guard let url = URL(string: "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv") else { return }
         URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data, error == nil, let csvString = String(data: data, encoding: .shiftSJIS) else { return }
+            guard let data = data, error == nil else { return }
+            // Shift_JIS (rawValue: 0x80000632) の指定
+            let encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.shiftJIS.rawValue)))
+            guard let csvString = String(data: data, encoding: encoding) else { return }
+            
             var dict: [String: String] = [:]
             csvString.components(separatedBy: .newlines).forEach { line in
                 let columns = line.components(separatedBy: ",")
