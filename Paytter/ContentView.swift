@@ -74,7 +74,6 @@ struct ContentView: View {
     @State private var dragLastX: CGFloat?
     
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true
-    // 並べ替えた結果の順番を保存
     @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
     @State private var homeItems: [HomeItem] = []
     
@@ -132,7 +131,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $isShowingInputSheet) { 
-            // 【変更】onPost に isExcluded 引数を追加
+            // 【変更】isExcluded を追加
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), onPost: { isInc, nDate, isExc in addTransaction(isInc: isInc, date: nDate, isExcluded: isExc) }, transactions: transactions, accounts: accounts) 
         }
     }
@@ -145,7 +144,7 @@ struct ContentView: View {
                     VStack(spacing: 8) {
                         HStack(spacing: 10) {
                             ForEach(homeItems) { item in
-                                homeHeaderItem(for: item) // 【修正】型チェックエラー回避のためにメソッド化
+                                homeHeaderItem(for: item)
                                     .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
                                     .cornerRadius(8)
                                     .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
@@ -194,21 +193,20 @@ struct ContentView: View {
                             }
                         }
                         .padding()
+                        
+                        if isHomeEditMode {
+                            Text("横にスライドして淡々と並べ替えられます")
+                                .font(.caption2)
+                                .foregroundColor(Color(hex: themeMain))
+                                .padding(.bottom, 4)
+                        }
                     }
                     .background(Color(hex: themeBarBG).opacity(0.8))
                     
                     Divider()
                     List {
                         ForEach(transactions.sorted(by: { $0.date > $1.date })) { item in
-                            ZStack {
-                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
-                                TwitterRow(item: item)
-                                    .opacity(item.date > Date() ? 0.6 : 1.0)
-                            }
-                            .listRowInsets(EdgeInsets()).listRowBackground(item.date > Date() ? Color.black.opacity(0.06) : Color(hex: themeBG))
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
-                            }
+                            transactionRow(for: item)
                         }
                     }
                     .listStyle(.plain).scrollContentBackground(.hidden)
@@ -237,7 +235,7 @@ struct ContentView: View {
         }
     }
 
-    // 【修正】型チェックエラー回避のためのサブビュー切り出し
+    // 【新規】型チェックエラー回避のために処理を分割
     @ViewBuilder
     private func homeHeaderItem(for item: HomeItem) -> some View {
         switch item {
@@ -258,6 +256,22 @@ struct ContentView: View {
                 let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
                 BalanceView(title: currentGroup.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
             } else { EmptyView() }
+        }
+    }
+
+    // 【新規】型チェックエラー回避のために処理を分割
+    @ViewBuilder
+    private func transactionRow(for item: Transaction) -> some View {
+        let isFuture = item.date > Date()
+        ZStack {
+            NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
+            TwitterRow(item: item)
+                .opacity(isFuture ? 0.6 : 1.0)
+        }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
         }
     }
     
@@ -383,10 +397,10 @@ struct ContentView: View {
     
     func resetAll() { transactions = []; accounts = [Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point)]; groups = []; monthlyBudget = 50000; recalculateBalances(); activeAlert = .completion("リセット完了") }
     
-    // 【修正】isExcluded を追加し、recalculateBalances を呼び出す
+    // 【変更】isExcluded を受け取る
     func addTransaction(isInc: Bool, date: Date, isExcluded: Bool) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExcluded)); recalculateBalances() }
-
-    // 【修正】isExcludedFromBalance が true のものは加算しないように修正
+    
+    // 【変更】計算から除外する処理を反映
     func recalculateBalances() { 
         for i in 0..<accounts.count { 
             var cur = 0; 
@@ -398,7 +412,7 @@ struct ContentView: View {
         }; 
         BackupManager.saveAll(transactions: transactions, accounts: accounts, isManual: false) 
     }
-
+    
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
     

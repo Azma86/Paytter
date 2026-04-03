@@ -51,6 +51,7 @@ struct Account: Identifiable, Codable, Equatable {
 
 struct Transaction: Identifiable, Codable, Equatable {
     var id = UUID(); var amount: Int; var date: Date; var note: String; var source: String; var isIncome: Bool
+    
     // 【新規】残高計算から除外するかどうかのフラグ
     var isExcludedFromBalance: Bool = false
     

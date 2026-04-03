@@ -3,8 +3,10 @@ import SwiftUI
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool
     var initialDate: Date = Date()
+    
     // 【新規】isExcluded 初期値用
     var isExcludedInitial: Bool = false
+    
     // 【変更】onPost に Bool (isExcluded) を追加
     var onPost: (Bool, Date, Bool) -> Void
     var transactions: [Transaction]; var accounts: [Account]
@@ -20,25 +22,24 @@ struct PostView: View {
     @State private var isShowingDatePicker = false
     @State private var isPickingTime = false
     @State private var suggestions: [String] = []
+    
     // 【追加】計算除外のローカル状態
     @State private var isExcluded = false
     
-    // 【追加】ユーザーアイコン反映用
     @AppStorage("userIconData") var userIconData: Data = Data()
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
     var body: some View {
         NavigationView {
             ZStack {
-                // シート全体の背景色をテーマ設定に合わせる（クリーム色等も反映）
                 Color(hex: themeBG).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
-                        // 【変更】設定アイコンを反映
                         if let uiImage = UIImage(data: userIconData) {
                             Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 40, height: 40).clipShape(Circle())
                         } else {
-                            Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(.gray)
+                            Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(Color(hex: themeSubText))
                         }
                         
                         ZStack(alignment: .topLeading) {
@@ -122,19 +123,15 @@ struct PostView: View {
                     }
                 }
             )
-            // ドラムロール（DatePicker）を表示するシート
             .sheet(isPresented: $isShowingDatePicker) {
                 NavigationView {
                     ZStack {
-                        // ドラムロールの背景もテーマカラー（クリーム色等）にする
                         Color(hex: themeBG).ignoresSafeArea()
-                        
                         VStack { 
                             DatePicker("日時を選択", selection: $postDate, displayedComponents: isPickingTime ? .hourAndMinute : .date)
                                 .datePickerStyle(.wheel)
                                 .labelsHidden()
                                 .environment(\.locale, Locale(identifier: "ja_JP"))
-                                // デフォルトの白背景を消して、後ろのテーマ色を透けさせる
                                 .background(Color.clear) 
                         }
                     }
@@ -149,7 +146,6 @@ struct PostView: View {
                         }.foregroundColor(Color(hex: themeMain))
                     )
                 }
-                // 背景がクリーム色などの明るい色の時に、文字が消えないよう自動調整
                 .preferredColorScheme(isDarkMode ? .dark : .light)
                 .presentationDetents([.height(350)])
             }

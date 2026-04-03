@@ -1,7 +1,7 @@
 import SwiftUI
 import PhotosUI
 
-// 【修正】ContentViewから見えるように、ファイル先頭に定義を戻しました
+// ContentViewから正しく参照できるように配置
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false; @State private var lastAmount: Int = 0 
@@ -42,7 +42,6 @@ struct TransactionDetailView: View {
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
-    // 【新規】ユーザー情報
     @AppStorage("userName") var userName: String = "むつき"
     @AppStorage("userId") var userId: String = "Mutsuki_dev"
     @AppStorage("userIconData") var userIconData: Data = Data()
