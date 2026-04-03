@@ -10,6 +10,8 @@ struct CalendarView: View {
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    // 【追加】土曜日の色設定
+    @AppStorage("theme_saturday") var themeSaturday: String = "#FF007AFF"
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
     @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
@@ -78,7 +80,8 @@ struct CalendarView: View {
                             Text(day)
                                 .font(.system(size: 11, weight: .bold))
                                 .frame(maxWidth: .infinity)
-                                .foregroundColor(day == "日" ? Color(hex: themeHoliday) : (day == "土" ? .blue : Color(hex: themeBodyText).opacity(0.8)))
+                                // 曜日のラベル色：祝日・土日の設定を反映
+                                .foregroundColor(day == "日" ? Color(hex: themeHoliday) : (day == "土" ? Color(hex: themeSaturday) : Color(hex: themeBodyText).opacity(0.8)))
                         }
                     }.padding(.bottom, 8)
                 }.background(Color(hex: themeBarBG).opacity(0.4))
@@ -109,7 +112,7 @@ struct CalendarView: View {
                 
                 Divider()
 
-                // 日付表示ヘッダー（カッコはそのまま、中身だけ色分け）
+                // 日付表示ヘッダー
                 HStack(spacing: 4) {
                     let holidayName = getHolidayName(selectedDate)
                     Text(formatDate(selectedDate, format: "yyyy年M月d日"))
@@ -119,7 +122,8 @@ struct CalendarView: View {
                         Text("(")
                             .foregroundColor(Color(hex: themeBodyText))
                         + Text(formatDate(selectedDate, format: "EEE"))
-                            .foregroundColor(holidayName != nil ? Color(hex: themeHoliday) : Color(hex: themeBodyText))
+                            // 選択中の曜日の色：祝日（日曜日含む）なら祝日色、土曜日なら土曜日色
+                            .foregroundColor(holidayName != nil || calendar.component(.weekday, from: selectedDate) == 1 ? Color(hex: themeHoliday) : (calendar.component(.weekday, from: selectedDate) == 7 ? Color(hex: themeSaturday) : Color(hex: themeBodyText)))
                         + Text(")")
                             .foregroundColor(Color(hex: themeBodyText))
                     )
@@ -205,11 +209,21 @@ struct CalendarView: View {
                 let dayTransactions = transactions.filter { calendar.isDate($0.date, inSameDayAs: date) }
                 let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
                 let isHoliday = checkIsHoliday(date)
+                let weekday = calendar.component(.weekday, from: date)
+                
+                // 【追加】祝日・日曜・土曜の基本色を決定
+                let dayBaseColor: Color = {
+                    if isHoliday || weekday == 1 { return Color(hex: themeHoliday) }
+                    if weekday == 7 { return Color(hex: themeSaturday) }
+                    return Color(hex: themeBodyText)
+                }()
+                
                 VStack(spacing: 2) {
                     Text("\(calendar.component(.day, from: date))")
                         .font(.system(size: 13, design: .rounded))
                         .fontWeight(isSelected ? .bold : .regular)
-                        .foregroundColor(isSelected ? .white : (isCurrentMonth ? (isHoliday ? Color(hex: themeHoliday) : Color(hex: themeBodyText)) : Color(hex: themeSubText).opacity(0.4)))
+                        // 【変更】 spillover の日付でも、祝日や土日の色が（透明度を下げて）適用されるように修正
+                        .foregroundColor(isSelected ? .white : (isCurrentMonth ? dayBaseColor : dayBaseColor.opacity(0.4)))
                         .frame(width: 24, height: 24)
                         .background(isSelected ? Color(hex: themeMain) : Color.clear)
                         .clipShape(Circle())
@@ -229,6 +243,7 @@ struct CalendarView: View {
     func formatDate(_ d: Date, format: String) -> String { let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = format; return f.string(from: d) }
     func generateFullGrid(for date: Date) -> [Date] { guard let first = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }; let firstWeekday = calendar.component(.weekday, from: first); let startDate = calendar.date(byAdding: .day, value: -(firstWeekday - 1), to: first)!; return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: startDate) } }
     func moveMonth(by v: Int) { if let next = calendar.date(byAdding: .month, value: v, to: currentMonth) { withAnimation { currentMonth = next } } }
+    func slideToDate(_ date: Date) { let isFuture = date > currentMonth; moveMonth(by: isFuture ? 1 : -1); selectedDate = date }
     func combinedDate() -> Date { let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate); let tc = calendar.dateComponents([.hour, .minute], from: now); c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate }
     func addTransaction(isInc: Bool, date: Date) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc)) }
     func parseAmount(from t: String) -> Int { t.components(separatedBy: CharacterSet.whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
@@ -246,7 +261,6 @@ struct CalendarView: View {
         guard let url = URL(string: "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv") else { return }
         URLSession.shared.dataTask(with: url) { data, response, error in
             guard let data = data, error == nil else { return }
-            // Shift_JIS (rawValue: 0x80000632) の指定
             let encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.shiftJIS.rawValue)))
             guard let csvString = String(data: data, encoding: encoding) else { return }
             
