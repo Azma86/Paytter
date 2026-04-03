@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct TransactionDetailView: View {
     let item: Transaction; @Binding var transactions: [Transaction]; @Binding var accounts: [Account]
@@ -8,6 +9,12 @@ struct TransactionDetailView: View {
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    
+    // 【新規】ユーザー情報
+    @AppStorage("userName") var userName: String = "むつき"
+    @AppStorage("userId") var userId: String = "Mutsuki_dev"
+    @AppStorage("userIconData") var userIconData: Data = Data()
+    
     @Environment(\.dismiss) var dismiss; @State private var isShowingEditSheet = false; @State private var editLineText = ""; @State private var isShowingDeleteConfirm = false
     var body: some View {
         ZStack {
@@ -15,8 +22,17 @@ struct TransactionDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "person.circle.fill").resizable().frame(width: 56, height: 56).foregroundColor(Color(hex: themeSubText))
-                        VStack(alignment: .leading, spacing: 4) { Text("むつき").font(.headline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText)); Text("@Mutsuki_dev").font(.subheadline).foregroundColor(Color(hex: themeSubText)) }
+                        // 【変更】保存されたアイコン、またはデフォルトのアイコンを表示
+                        if let uiImage = UIImage(data: userIconData) {
+                            Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 56, height: 56).clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.circle.fill").resizable().frame(width: 56, height: 56).foregroundColor(Color(hex: themeSubText))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) { 
+                            Text(userName).font(.headline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
+                            Text("@\(userId)").font(.subheadline).foregroundColor(Color(hex: themeSubText)) 
+                        }
                         Spacer(); Text(item.source).font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color(hex: themeSubText).opacity(0.1)).cornerRadius(5).foregroundColor(Color(hex: themeBodyText))
                     }
                     HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3).foregroundColor(Color(hex: themeBodyText))
@@ -61,13 +77,92 @@ struct TransactionDetailView: View {
     }
 }
 
+// 【新規】ユーザープロフィール設定画面
+struct UserProfileSettingView: View {
+    @AppStorage("userName") var userName: String = "むつき"
+    @AppStorage("userId") var userId: String = "Mutsuki_dev"
+    @AppStorage("userIconData") var userIconData: Data = Data()
+    
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("isDarkMode") var isDarkMode: Bool = false
+    
+    @State private var selectedItem: PhotosPickerItem? = nil
+    
+    var body: some View {
+        ZStack {
+            Color(hex: themeBG).ignoresSafeArea()
+            Form {
+                Section(header: Text("プロフィール画像").foregroundColor(Color(hex: themeSubText))) {
+                    HStack {
+                        Spacer()
+                        PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
+                            if let uiImage = UIImage(data: userIconData) {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(Circle())
+                            } else {
+                                Image(systemName: "person.circle.fill")
+                                    .resizable()
+                                    .frame(width: 100, height: 100)
+                                    .foregroundColor(Color(hex: themeSubText))
+                            }
+                        }
+                        .onChange(of: selectedItem) { newItem in
+                            Task {
+                                if let data = try? await newItem?.loadTransferable(type: Data.self),
+                                   let uiImage = UIImage(data: data),
+                                   let compressedData = uiImage.jpegData(compressionQuality: 0.5) {
+                                    userIconData = compressedData
+                                }
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical)
+                    
+                    if !userIconData.isEmpty {
+                        Button(role: .destructive, action: {
+                            userIconData = Data()
+                            selectedItem = nil
+                        }) {
+                            Text("画像を削除")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                
+                Section(header: Text("ユーザー情報").foregroundColor(Color(hex: themeSubText))) {
+                    HStack {
+                        Text("名前").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
+                        TextField("ユーザー名", text: $userName).foregroundColor(Color(hex: themeBodyText))
+                    }
+                    HStack {
+                        Text("ID").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
+                        Text("@").foregroundColor(Color(hex: themeSubText))
+                        TextField("ユーザーID", text: $userId).foregroundColor(Color(hex: themeBodyText)).autocapitalization(.none)
+                    }
+                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+            }
+            .scrollContentBackground(.hidden)
+        }
+        .navigationTitle("表示ユーザー設定")
+        .navigationBarTitleDisplayMode(.inline)
+        .preferredColorScheme(isDarkMode ? .dark : .light)
+    }
+}
+
 struct AccountCreateView: View {
     @Binding var accounts: [Account]; @Binding var transactions: [Transaction]; @Environment(\.dismiss) var dismiss
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @State private var name = ""; @State private var initial = ""; @State private var selectedType: AccountType = .wallet
-    @State private var isVisible = true // 【新規】
+    @State private var isVisible = true 
     var body: some View {
         NavigationView {
             ZStack {
@@ -77,7 +172,7 @@ struct AccountCreateView: View {
                         TextField("お財布の名前", text: $name)
                         Picker(selection: $selectedType) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }
                         TextField("現在の金額", text: $initial).keyboardType(.numbersAndPunctuation)
-                        Toggle("ホーム上部に表示", isOn: $isVisible) // 【新規】
+                        Toggle("ホーム上部に表示", isOn: $isVisible) 
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -240,7 +335,7 @@ struct AccountGroupCreateView: View {
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @State private var name = ""
-    @State private var isVisible = true // 【新規】
+    @State private var isVisible = true
     @State private var selectedAccountIds: [UUID] = []
     var body: some View {
         NavigationView {
@@ -249,7 +344,7 @@ struct AccountGroupCreateView: View {
                 Form {
                     Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
                         TextField("グループ名（例：銀行まとめなど）", text: $name).foregroundColor(Color(hex: themeBodyText))
-                        Toggle("ホーム上部に表示", isOn: $isVisible) // 【新規】
+                        Toggle("ホーム上部に表示", isOn: $isVisible) 
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("お財布を紐付ける").foregroundColor(Color(hex: themeSubText))) {
