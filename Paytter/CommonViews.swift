@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 
-// 共通の残高表示パーツ
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     @State private var showDiff = false; @State private var lastAmount: Int = 0 
@@ -37,13 +36,14 @@ struct TwitterRow: View {
     let item: Transaction
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("userName") var userName: String = "むつき"
-    @AppStorage("userId") var userId: String = "Mutsuki_dev"
-    @AppStorage("userIconData") var userIconData: Data = Data()
+    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     
     var body: some View {
+        // 【重要】設定されているプロフィールを取得（見つからない場合はデフォルト）
+        let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
+        
         HStack(alignment: .top, spacing: 12) {
-            if let uiImage = UIImage(data: userIconData) {
+            if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
                 Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(Circle())
             } else {
                 Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
@@ -51,24 +51,14 @@ struct TwitterRow: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(userName).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
-                    Text("@\(userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                    Text(profile.name).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
+                    Text("@\(profile.userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
-                    
-                    // 【追加】計算除外アイコンの表示
-                    if item.isExcludedFromBalance == true {
-                        Image(systemName: "calculator.badge.minus")
-                            .font(.system(size: 8))
-                            .foregroundColor(Color(hex: themeBodyText).opacity(0.4))
-                    }
-                    
+                    if item.isExcludedFromBalance == true { Image(systemName: "calculator.badge.minus").font(.system(size: 8)).foregroundColor(Color(hex: themeBodyText).opacity(0.4)) }
                     Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText))
                 }
-                HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
-                    .font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBodyText))
-                if !item.tags.isEmpty {
-                    HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } }
-                }
+                HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBodyText))
+                if !item.tags.isEmpty { HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } } }
             }
         }.padding(.vertical, 8).padding(.horizontal, 16)
     }
