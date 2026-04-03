@@ -41,20 +41,18 @@ struct AccountGroup: Identifiable, Codable, Equatable {
     var id = UUID()
     var name: String
     var isVisible: Bool = true
+    // 【変更】所属するお財布のIDを複数持てるように保持
     var accountIds: [UUID] = []
 }
 
 struct Account: Identifiable, Codable, Equatable {
     var id = UUID(); var name: String; var balance: Int; var type: AccountType
     var isVisible: Bool = true; var payday: Int? = nil; var withdrawalAccountId: UUID? = nil; var diffAmount: Int = 0
+    // 【削除】groupId は多対多にするため削除
 }
 
 struct Transaction: Identifiable, Codable, Equatable {
     var id = UUID(); var amount: Int; var date: Date; var note: String; var source: String; var isIncome: Bool
-    
-    // 【新規】残高計算から除外するかどうかのフラグ
-    var isExcludedFromBalance: Bool = false
-    
     var tags: [String] { note.components(separatedBy: .whitespacesAndNewlines).filter { $0.hasPrefix("#") } }
     var cleanNote: String {
         let lines = note.components(separatedBy: .newlines)
