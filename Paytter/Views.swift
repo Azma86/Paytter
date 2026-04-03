@@ -22,7 +22,7 @@ struct TransactionDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 12) {
-                        // 【変更】保存されたアイコン、またはデフォルトのアイコンを表示
+                        // 保存されたアイコン、またはデフォルトのアイコンを表示
                         if let uiImage = UIImage(data: userIconData) {
                             Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 56, height: 56).clipShape(Circle())
                         } else {
@@ -156,6 +156,131 @@ struct UserProfileSettingView: View {
     }
 }
 
+// --- 投稿画面 ---
+struct PostView: View {
+    @Binding var inputText: String; @Binding var isPresented: Bool; var initialDate: Date; var onPost: (Bool, Date) -> Void
+    var transactions: [Transaction]; var accounts: [Account]
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @State private var postDate: Date = Date()
+    
+    @AppStorage("userIconData") var userIconData: Data = Data()
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color(hex: themeBG).ignoresSafeArea()
+                VStack(spacing: 0) {
+                    HStack(alignment: .top, spacing: 12) {
+                        if let uiImage = UIImage(data: userIconData) {
+                            Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 40, height: 40).clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.circle.fill").resizable().frame(width: 40, height: 40).foregroundColor(Color(hex: themeSubText))
+                        }
+                        CustomTextEditor(text: $inputText, onInsert: { s in inputText += s })
+                    }.padding()
+                    Spacer()
+                    Divider()
+                    HStack {
+                        DatePicker("", selection: $postDate).labelsHidden()
+                        Spacer()
+                        Button(action: { onPost(true, postDate); isPresented = false }) { Text("収入").bold().padding(.horizontal, 20).padding(.vertical, 8).background(Color(hex: themeMain).opacity(0.1)).cornerRadius(20) }
+                        Button(action: { onPost(false, postDate); isPresented = false }) { Text("支出").bold().padding(.horizontal, 20).padding(.vertical, 8).background(Color(hex: themeMain)).foregroundColor(.white).cornerRadius(20) }.disabled(inputText.isEmpty)
+                    }.padding()
+                }
+            }
+            .navigationBarItems(leading: Button("キャンセル"){ isPresented = false }.foregroundColor(Color(hex: themeMain)))
+            .onAppear { postDate = initialDate }
+        }
+    }
+}
+
+// --- カレンダー ---
+struct CalendarView: View {
+    @Binding var transactions: [Transaction]; @Binding var accounts: [Account]
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @State private var selectedDate = Date()
+    var body: some View {
+        ZStack {
+            Color(hex: themeBG).ignoresSafeArea()
+            VStack {
+                DatePicker("日付選択", selection: $selectedDate, displayedComponents: .date)
+                    .datePickerStyle(.graphical).accentColor(Color(hex: themeMain)).padding()
+                Divider()
+                List {
+                    let dayItems = transactions.filter { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
+                    if dayItems.isEmpty { Text("この日の投稿はありません").font(.caption).foregroundColor(Color(hex: themeSubText)).listRowBackground(Color.clear) }
+                    ForEach(dayItems) { item in
+                        NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) {
+                            HStack {
+                                Text(item.source).font(.caption).padding(4).background(Color(hex: themeMain).opacity(0.1)).cornerRadius(4)
+                                HighlightedText(text: item.cleanNote, isIncome: item.isIncome).lineLimit(1)
+                                Spacer()
+                                Text(item.date, style: .time).font(.caption2).foregroundColor(Color(hex: themeSubText))
+                            }
+                        }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                }.listStyle(.plain).scrollContentBackground(.hidden)
+            }
+        }
+    }
+}
+
+// --- テーマ設定 ---
+struct ThemeSettingView: View {
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
+    @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
+    @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("isDarkMode") var isDarkMode: Bool = false
+    var body: some View {
+        Form {
+            Section(header: Text("基本カラー")) {
+                ColorPicker("メインカラー", selection: binding(for: $themeMain))
+                Toggle("ダークモード", isOn: $isDarkMode)
+            }
+            Section(header: Text("収支カラー")) {
+                ColorPicker("収入", selection: binding(for: $themeIncome))
+                ColorPicker("支出", selection: binding(for: $themeExpense))
+            }
+            Section(header: Text("背景・バー")) {
+                ColorPicker("全体の背景", selection: binding(for: $themeBG))
+                ColorPicker("ナビゲーションバー背景", selection: binding(for: $themeBarBG))
+                ColorPicker("ナビゲーションバー文字", selection: binding(for: $themeBarText))
+                ColorPicker("タブ選択色", selection: binding(for: $themeTabAccent))
+            }
+            Section(header: Text("テキスト")) {
+                ColorPicker("本文", selection: binding(for: $themeBodyText))
+                ColorPicker("補足情報", selection: binding(for: $themeSubText))
+            }
+            Section { Button("デフォルトに戻す") { resetTheme() }.foregroundColor(.red) }
+        }
+        .navigationTitle("テーマ設定")
+        .onChange(of: themeBarBG) { _ in NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil) }
+    }
+    private func binding(for key: Binding<String>) -> Binding<Color> {
+        return Binding(get: { Color(hex: key.wrappedValue) }, set: { key.wrappedValue = $0.toHex() ?? key.wrappedValue })
+    }
+    private func resetTheme() {
+        themeMain = "#FF007AFF"; themeIncome = "#FF19B219"; themeExpense = "#FFFF3B30"; themeHoliday = "#FFFF3B30"
+        themeBG = "#FFFFFFFF"; themeBarBG = "#F8F8F8FF"; themeBarText = "#FF000000"; themeTabAccent = "#FF007AFF"
+        themeBodyText = "#FF000000"; themeSubText = "#FF8E8E93"; isDarkMode = false
+    }
+}
+
+// --- お財布・グループ管理 ---
 struct AccountCreateView: View {
     @Binding var accounts: [Account]; @Binding var transactions: [Transaction]; @Environment(\.dismiss) var dismiss
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
@@ -395,36 +520,5 @@ struct WalletAnalysisView: View {
     var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
     var body: some View {
         List { Section(header: Text("今月のサマリー").foregroundColor(Color(hex: themeSubText))) { VStack(alignment: .leading, spacing: 10) { Text("合計支出").font(.caption).foregroundColor(Color(hex: themeSubText)); Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()).foregroundColor(Color(hex: themeBodyText)); ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget)).accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? Color(hex: themeExpense) : Color(hex: themeMain)); Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))").font(.caption2).foregroundColor(Color(hex: themeSubText)) }.padding(.vertical, 10) } }.listStyle(.insetGrouped).navigationTitle("分析")
-    }
-}
-
-struct BalanceView: View {
-    let title: String; let amount: Int; let color: Color; let diff: Int
-    @State private var showDiff = false; @State private var lastAmount: Int = 0 
-    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
-    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    var body: some View {
-        VStack {
-            Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
-            ZStack(alignment: .topTrailing) {
-                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
-                if diff != 0 { 
-                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
-                        .foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense))
-                        .offset(x: 20, y: showDiff ? -15 : 0)
-                        .opacity(showDiff ? 0 : 1) 
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .onChange(of: amount) { newValue in 
-            if newValue != lastAmount { 
-                showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
-                lastAmount = newValue 
-            } 
-        }
-        .onAppear { lastAmount = amount }
     }
 }
