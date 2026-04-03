@@ -36,6 +36,7 @@ struct TransactionDetailView: View {
                     HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3).foregroundColor(Color(hex: themeBodyText))
                     if !item.tags.isEmpty { HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(Color(hex: themeMain)) } } }
                     
+                    // 【追加】詳細画面にも計算除外であることを表示
                     if item.isExcludedFromBalance {
                         Label("この投稿は残高計算から除外されています", systemImage: "calculator.badge.minus")
                             .font(.caption)
@@ -70,6 +71,7 @@ struct TransactionDetailView: View {
                 } 
             } 
         }
+        // 【修正】PostView 呼び出しに isExcludedInitial と closure 引数を追加
         .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, initialDate: item.date, isExcludedInitial: item.isExcludedFromBalance, onPost: { isInc, nDate, isExc in
             if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
                 let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
@@ -399,5 +401,36 @@ struct WalletAnalysisView: View {
     var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
     var body: some View {
         List { Section(header: Text("今月のサマリー").foregroundColor(Color(hex: themeSubText))) { VStack(alignment: .leading, spacing: 10) { Text("合計支出").font(.caption).foregroundColor(Color(hex: themeSubText)); Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()).foregroundColor(Color(hex: themeBodyText)); ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget)).accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? Color(hex: themeExpense) : Color(hex: themeMain)); Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))").font(.caption2).foregroundColor(Color(hex: themeSubText)) }.padding(.vertical, 10) } }.listStyle(.insetGrouped).navigationTitle("分析")
+    }
+}
+
+struct BalanceView: View {
+    let title: String; let amount: Int; let color: Color; let diff: Int
+    @State private var showDiff = false; @State private var lastAmount: Int = 0 
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    var body: some View {
+        VStack {
+            Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
+            ZStack(alignment: .topTrailing) {
+                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
+                if diff != 0 { 
+                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense))
+                        .offset(x: 20, y: showDiff ? -15 : 0)
+                        .opacity(showDiff ? 0 : 1) 
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .onChange(of: amount) { newValue in 
+            if newValue != lastAmount { 
+                showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
+                lastAmount = newValue 
+            } 
+        }
+        .onAppear { lastAmount = amount }
     }
 }
