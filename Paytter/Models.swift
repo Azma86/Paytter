@@ -29,6 +29,7 @@ extension Color {
         }
         self.init(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue: Double(b) / 255, opacity: Double(a) / 255)
     }
+    
     func toHex() -> String {
         let components = UIColor(self).cgColor.components
         let r: CGFloat = components?[0] ?? 0.0
@@ -52,65 +53,53 @@ enum AccountType: String, Codable, CaseIterable {
 }
 
 struct AccountGroup: Identifiable, Codable, Equatable {
-    var id = UUID(); var name: String; var isVisible: Bool = true; var accountIds: [UUID] = []
+    var id = UUID()
+    var name: String
+    var isVisible: Bool = true
+    var accountIds: [UUID] = []
 }
 
 struct Account: Identifiable, Codable, Equatable {
-    var id = UUID(); var name: String; var balance: Int; var type: AccountType
-    var isVisible: Bool = true; var payday: Int? = nil; var withdrawalAccountId: UUID? = nil; var diffAmount: Int = 0
+    var id = UUID()
+    var name: String
+    var balance: Int
+    var type: AccountType
+    var isVisible: Bool = true
+    var payday: Int? = nil
+    var withdrawalAccountId: UUID? = nil
+    var diffAmount: Int = 0
 }
 
-// 【新規】ユーザープロファイルモデル
 struct UserProfile: Identifiable, Codable, Equatable {
     var id = UUID()
     var name: String
     var userId: String
     var iconData: Data?
-    var isVisible: Bool = true // タイムラインに表示するかどうか
+    var isVisible: Bool = true
 }
 
 struct Transaction: Identifiable, Codable, Equatable {
-    var id = UUID(); var amount: Int; var date: Date; var note: String; var source: String; var isIncome: Bool
-    
+    var id = UUID()
+    var amount: Int
+    var date: Date
+    var note: String
+    var source: String
+    var isIncome: Bool
     var isExcludedFromBalance: Bool?
-    // 【新規】どのユーザーの投稿かを紐付けるID
     var profileId: UUID?
     
-    var tags: [String] { note.components(separatedBy: .whitespacesAndNewlines).filter { $0.hasPrefix("#") } }
+    var tags: [String] {
+        note.components(separatedBy: .whitespacesAndNewlines).filter { $0.hasPrefix("#") }
+    }
+    
     var cleanNote: String {
         let lines = note.components(separatedBy: .newlines)
         let cleanedLines = lines.map { line in
-            line.components(separatedBy: .whitespaces).filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }.joined(separator: " ")
+            line.components(separatedBy: .whitespaces)
+                .filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }
+                .joined(separator: " ")
         }
         return cleanedLines.joined(separator: "\n")
-    }
-}
-
-// 【新規】全データをまとめるバックアップ用モデル
-struct FullBackupData: Codable {
-    var transactions: [Transaction]; var accounts: [Account]; var groups: [AccountGroup]; var profiles: [UserProfile]
-    var monthlyBudget: Int; var isDarkMode: Bool
-    var themeMain: String; var themeIncome: String; var themeExpense: String; var themeHoliday: String; var themeSaturday: String
-    var themeBG: String; var themeBarBG: String; var themeBarText: String; var themeTabAccent: String; var themeBodyText: String; var themeSubText: String
-    var showTotalAssets: Bool; var homeDisplayOrder: [String]
-    var backupDate: String
-}
-
-class BackupManager {
-    static let manualFile = "paytter_fullbackup_manual.json"
-    static let autoFile = "paytter_fullbackup_auto.json"
-    
-    static func getDocumentsDirectory() -> URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
-    static func currentDateString() -> String { let formatter = DateFormatter(); formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"; return formatter.string(from: Date()) }
-    
-    static func saveFullBackup(data: FullBackupData, isManual: Bool) {
-        let fName = isManual ? manualFile : autoFile; let url = getDocumentsDirectory().appendingPathComponent(fName)
-        try? JSONEncoder().encode(data).write(to: url)
-    }
-    static func loadFullBackup(isManual: Bool) -> FullBackupData? {
-        let fName = isManual ? manualFile : autoFile; let url = getDocumentsDirectory().appendingPathComponent(fName)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(FullBackupData.self, from: data)
     }
 }
 
