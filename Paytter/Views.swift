@@ -1,38 +1,6 @@
 import SwiftUI
 import PhotosUI
 
-// ContentViewから正しく参照できるように配置
-struct BalanceView: View {
-    let title: String; let amount: Int; let color: Color; let diff: Int
-    @State private var showDiff = false; @State private var lastAmount: Int = 0 
-    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
-    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    var body: some View {
-        VStack {
-            Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
-            ZStack(alignment: .topTrailing) {
-                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
-                if diff != 0 { 
-                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
-                        .foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense))
-                        .offset(x: 20, y: showDiff ? -15 : 0)
-                        .opacity(showDiff ? 0 : 1) 
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .onChange(of: amount) { newValue in 
-            if newValue != lastAmount { 
-                showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
-                lastAmount = newValue 
-            } 
-        }
-        .onAppear { lastAmount = amount }
-    }
-}
-
 struct TransactionDetailView: View {
     let item: Transaction; @Binding var transactions: [Transaction]; @Binding var accounts: [Account]
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
@@ -42,6 +10,7 @@ struct TransactionDetailView: View {
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
+    // 【新規】ユーザー情報
     @AppStorage("userName") var userName: String = "むつき"
     @AppStorage("userId") var userId: String = "Mutsuki_dev"
     @AppStorage("userIconData") var userIconData: Data = Data()
@@ -53,6 +22,7 @@ struct TransactionDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 12) {
+                        // 【変更】保存されたアイコン、またはデフォルトのアイコンを表示
                         if let uiImage = UIImage(data: userIconData) {
                             Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 56, height: 56).clipShape(Circle())
                         } else {
@@ -67,14 +37,6 @@ struct TransactionDetailView: View {
                     }
                     HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3).foregroundColor(Color(hex: themeBodyText))
                     if !item.tags.isEmpty { HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(Color(hex: themeMain)) } } }
-                    
-                    // 【追加】詳細画面にも計算除外であることを表示
-                    if item.isExcludedFromBalance {
-                        Label("この投稿は残高計算から除外されています", systemImage: "calculator.badge.minus")
-                            .font(.caption)
-                            .foregroundColor(Color(hex: themeSubText))
-                    }
-
                     Text(item.date, style: .date) + Text(" " ) + Text(item.date, style: .time)
                     Divider().background(Color(hex: themeSubText).opacity(0.2))
                     HStack(spacing: 60) { Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "shareplay") }.font(.subheadline).foregroundColor(Color(hex: themeSubText)).frame(maxWidth: .infinity)
@@ -103,19 +65,19 @@ struct TransactionDetailView: View {
                 } 
             } 
         }
-        // 【修正】PostView 呼び出しに isExcludedInitial と closure 引数を追加
-        .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, initialDate: item.date, isExcludedInitial: item.isExcludedFromBalance, onPost: { isInc, nDate, isExc in
+        .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, initialDate: item.date, onPost: { isInc, nDate in
             if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
                 let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
                 var nSrc = item.source; for acc in accounts { if editLineText.contains("@\(acc.name)") { nSrc = acc.name } }
                 var copy = transactions
-                copy[idx] = Transaction(id: item.id, amount: nAmt, date: nDate, note: editLineText, source: nSrc, isIncome: isInc, isExcludedFromBalance: isExc)
+                copy[idx] = Transaction(id: item.id, amount: nAmt, date: nDate, note: editLineText, source: nSrc, isIncome: isInc)
                 transactions = copy
             }
         }, transactions: transactions, accounts: accounts) }
     }
 }
 
+// 【新規】ユーザープロフィール設定画面
 struct UserProfileSettingView: View {
     @AppStorage("userName") var userName: String = "むつき"
     @AppStorage("userId") var userId: String = "Mutsuki_dev"
@@ -433,5 +395,36 @@ struct WalletAnalysisView: View {
     var monthlyTotal: Int { transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount } }
     var body: some View {
         List { Section(header: Text("今月のサマリー").foregroundColor(Color(hex: themeSubText))) { VStack(alignment: .leading, spacing: 10) { Text("合計支出").font(.caption).foregroundColor(Color(hex: themeSubText)); Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()).foregroundColor(Color(hex: themeBodyText)); ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget)).accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? Color(hex: themeExpense) : Color(hex: themeMain)); Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))").font(.caption2).foregroundColor(Color(hex: themeSubText)) }.padding(.vertical, 10) } }.listStyle(.insetGrouped).navigationTitle("分析")
+    }
+}
+
+struct BalanceView: View {
+    let title: String; let amount: Int; let color: Color; let diff: Int
+    @State private var showDiff = false; @State private var lastAmount: Int = 0 
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    var body: some View {
+        VStack {
+            Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
+            ZStack(alignment: .topTrailing) {
+                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
+                if diff != 0 { 
+                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense))
+                        .offset(x: 20, y: showDiff ? -15 : 0)
+                        .opacity(showDiff ? 0 : 1) 
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .onChange(of: amount) { newValue in 
+            if newValue != lastAmount { 
+                showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
+                lastAmount = newValue 
+            } 
+        }
+        .onAppear { lastAmount = amount }
     }
 }
