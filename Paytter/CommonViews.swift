@@ -6,7 +6,7 @@ struct TwitterRow: View {
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     
-    // 【追加】ユーザー情報の即時反映用
+    // 【新規】ユーザー情報の即時反映用
     @AppStorage("userName") var userName: String = "むつき"
     @AppStorage("userId") var userId: String = "Mutsuki_dev"
     @AppStorage("userIconData") var userIconData: Data = Data()
@@ -21,10 +21,15 @@ struct TwitterRow: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    // 【変更】設定値を参照するように修正
                     Text(userName).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
                     Text("@\(userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
+                    // 【追加】計算除外アイコンの表示
+                    if item.isExcludedFromBalance {
+                        Image(systemName: "calculator.badge.minus")
+                            .font(.system(size: 8))
+                            .foregroundColor(Color(hex: themeBodyText).opacity(0.4))
+                    }
                     Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText))
                 }
                 HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
