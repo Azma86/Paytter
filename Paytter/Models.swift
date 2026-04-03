@@ -1,6 +1,20 @@
 import Foundation
 import SwiftUI
 
+// アラートの種類を定義
+enum ActiveAlert: Identifiable {
+    case reset, restore, save, importConfirm, completion(String)
+    var id: String {
+        switch self {
+        case .reset: return "reset"
+        case .restore: return "restore"
+        case .save: return "save"
+        case .importConfirm: return "import"
+        case .completion(let m): return m
+        }
+    }
+}
+
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -46,11 +60,21 @@ struct Account: Identifiable, Codable, Equatable {
     var isVisible: Bool = true; var payday: Int? = nil; var withdrawalAccountId: UUID? = nil; var diffAmount: Int = 0
 }
 
+// 【新規】ユーザープロファイルモデル
+struct UserProfile: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var name: String
+    var userId: String
+    var iconData: Data?
+    var isVisible: Bool = true // タイムラインに表示するかどうか
+}
+
 struct Transaction: Identifiable, Codable, Equatable {
     var id = UUID(); var amount: Int; var date: Date; var note: String; var source: String; var isIncome: Bool
     
-    // 【重要】過去データでもエラーにならないようオプショナル型(?)で追加
     var isExcludedFromBalance: Bool?
+    // 【新規】どのユーザーの投稿かを紐付けるID
+    var profileId: UUID?
     
     var tags: [String] { note.components(separatedBy: .whitespacesAndNewlines).filter { $0.hasPrefix("#") } }
     var cleanNote: String {
@@ -59,6 +83,34 @@ struct Transaction: Identifiable, Codable, Equatable {
             line.components(separatedBy: .whitespaces).filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }.joined(separator: " ")
         }
         return cleanedLines.joined(separator: "\n")
+    }
+}
+
+// 【新規】全データをまとめるバックアップ用モデル
+struct FullBackupData: Codable {
+    var transactions: [Transaction]; var accounts: [Account]; var groups: [AccountGroup]; var profiles: [UserProfile]
+    var monthlyBudget: Int; var isDarkMode: Bool
+    var themeMain: String; var themeIncome: String; var themeExpense: String; var themeHoliday: String; var themeSaturday: String
+    var themeBG: String; var themeBarBG: String; var themeBarText: String; var themeTabAccent: String; var themeBodyText: String; var themeSubText: String
+    var showTotalAssets: Bool; var homeDisplayOrder: [String]
+    var backupDate: String
+}
+
+class BackupManager {
+    static let manualFile = "paytter_fullbackup_manual.json"
+    static let autoFile = "paytter_fullbackup_auto.json"
+    
+    static func getDocumentsDirectory() -> URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
+    static func currentDateString() -> String { let formatter = DateFormatter(); formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"; return formatter.string(from: Date()) }
+    
+    static func saveFullBackup(data: FullBackupData, isManual: Bool) {
+        let fName = isManual ? manualFile : autoFile; let url = getDocumentsDirectory().appendingPathComponent(fName)
+        try? JSONEncoder().encode(data).write(to: url)
+    }
+    static func loadFullBackup(isManual: Bool) -> FullBackupData? {
+        let fName = isManual ? manualFile : autoFile; let url = getDocumentsDirectory().appendingPathComponent(fName)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(FullBackupData.self, from: data)
     }
 }
 

@@ -4,7 +4,7 @@ import PhotosUI
 struct TransactionDetailView: View {
     let item: Transaction; @Binding var transactions: [Transaction]; @Binding var accounts: [Account]
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"; @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"; @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"; @AppStorage("theme_barText") var themeBarText: String = "#FF000000"; @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"; @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @AppStorage("userName") var userName: String = "むつき"; @AppStorage("userId") var userId: String = "Mutsuki_dev"; @AppStorage("userIconData") var userIconData: Data = Data()
+    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     
     @Environment(\.dismiss) var dismiss; @State private var isShowingEditSheet = false; @State private var editLineText = ""; @State private var isShowingDeleteConfirm = false
     var body: some View {
@@ -13,18 +13,14 @@ struct TransactionDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 12) {
-                        if let uiImage = UIImage(data: userIconData) { Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 56, height: 56).clipShape(Circle()) } else { Image(systemName: "person.circle.fill").resizable().frame(width: 56, height: 56).foregroundColor(Color(hex: themeSubText)) }
-                        VStack(alignment: .leading, spacing: 4) { Text(userName).font(.headline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText)); Text("@\(userId)").font(.subheadline).foregroundColor(Color(hex: themeSubText)) }
+                        let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
+                        if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) { Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 56, height: 56).clipShape(Circle()) } else { Image(systemName: "person.circle.fill").resizable().frame(width: 56, height: 56).foregroundColor(Color(hex: themeSubText)) }
+                        VStack(alignment: .leading, spacing: 4) { Text(profile.name).font(.headline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText)); Text("@\(profile.userId)").font(.subheadline).foregroundColor(Color(hex: themeSubText)) }
                         Spacer(); Text(item.source).font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color(hex: themeSubText).opacity(0.1)).cornerRadius(5).foregroundColor(Color(hex: themeBodyText))
                     }
                     HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.title3).foregroundColor(Color(hex: themeBodyText))
                     if !item.tags.isEmpty { HStack(spacing: 12) { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.subheadline).foregroundColor(Color(hex: themeMain)) } } }
-                    
-                    // 【追加】詳細画面にも除外マークを表示
-                    if item.isExcludedFromBalance == true {
-                        Label("この投稿は残高計算から除外されています", systemImage: "calculator.badge.minus").font(.caption).foregroundColor(Color(hex: themeSubText))
-                    }
-
+                    if item.isExcludedFromBalance == true { Label("この投稿は残高計算から除外されています", systemImage: "calculator.badge.minus").font(.caption).foregroundColor(Color(hex: themeSubText)) }
                     Text(item.date, style: .date) + Text(" " ) + Text(item.date, style: .time)
                     Divider().background(Color(hex: themeSubText).opacity(0.2))
                     HStack(spacing: 60) { Image(systemName: "bubble.left"); Image(systemName: "arrow.2.squarepath"); Image(systemName: "heart"); Image(systemName: "shareplay") }.font(.subheadline).foregroundColor(Color(hex: themeSubText)).frame(maxWidth: .infinity)
@@ -34,44 +30,84 @@ struct TransactionDetailView: View {
         .navigationTitle("投稿").toolbarBackground(Color(hex: themeBarBG), for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
         .toolbar { ToolbarItem(placement: .navigationBarTrailing) { HStack { Button(action: { editLineText = item.note; isShowingEditSheet = true }) { Image(systemName: "pencil.line") }; Button(action: { isShowingDeleteConfirm = true }) { Image(systemName: "trash") }.foregroundColor(.red) }.foregroundColor(Color(hex: themeMain)) } }
         .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { if let idx = transactions.firstIndex(where: { $0.id == item.id }) { transactions.remove(at: idx); dismiss() } } }
-        // 【変更】コンパイラエラー回避のためにメソッドを渡す
         .sheet(isPresented: $isShowingEditSheet) { PostView(inputText: $editLineText, isPresented: $isShowingEditSheet, initialDate: item.date, isExcludedInitial: item.isExcludedFromBalance ?? false, onPost: handleEditTransaction, transactions: transactions, accounts: accounts) }
     }
     
-    // 【新規】型推論エラーを防ぐためのメソッド
-    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool) {
+    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
             var nSrc = item.source; for acc in accounts { if editLineText.contains("@\(acc.name)") { nSrc = acc.name } }
-            transactions[idx] = Transaction(id: item.id, amount: nAmt, date: nDate, note: editLineText, source: nSrc, isIncome: isInc, isExcludedFromBalance: isExc)
+            transactions[idx] = Transaction(id: item.id, amount: nAmt, date: nDate, note: editLineText, source: nSrc, isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId ?? item.profileId)
         }
     }
 }
 
+// 【新規】複数ユーザーの管理に対応した表示ユーザー設定画面
 struct UserProfileSettingView: View {
-    @AppStorage("userName") var userName: String = "むつき"; @AppStorage("userId") var userId: String = "Mutsuki_dev"; @AppStorage("userIconData") var userIconData: Data = Data()
-    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"; @AppStorage("theme_main") var themeMain: String = "#FF007AFF"; @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"; @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"; @AppStorage("isDarkMode") var isDarkMode: Bool = false
+    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("isDarkMode") var isDarkMode: Bool = false
+    
     @State private var selectedItem: PhotosPickerItem? = nil
+    @State private var editingProfileId: UUID? = nil
+    
     var body: some View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
-            Form {
-                Section(header: Text("プロフィール画像").foregroundColor(Color(hex: themeSubText))) {
-                    HStack {
-                        Spacer()
-                        PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
-                            if let uiImage = UIImage(data: userIconData) { Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 100, height: 100).clipShape(Circle()) } else { Image(systemName: "person.circle.fill").resizable().frame(width: 100, height: 100).foregroundColor(Color(hex: themeSubText)) }
-                        }.onChange(of: selectedItem) { newItem in Task { if let data = try? await newItem?.loadTransferable(type: Data.self), let uiImage = UIImage(data: data), let compressedData = uiImage.jpegData(compressionQuality: 0.5) { userIconData = compressedData } } }
-                        Spacer()
-                    }.padding(.vertical)
-                    if !userIconData.isEmpty { Button(role: .destructive, action: { userIconData = Data(); selectedItem = nil }) { Text("画像を削除") }.frame(maxWidth: .infinity, alignment: .center) }
+            List {
+                ForEach($profiles) { $profile in
+                    Section(header: Text("ユーザー情報").foregroundColor(Color(hex: themeSubText))) {
+                        HStack {
+                            Spacer()
+                            PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
+                                if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
+                                    Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 80, height: 80).clipShape(Circle())
+                                } else {
+                                    Image(systemName: "person.circle.fill").resizable().frame(width: 80, height: 80).foregroundColor(Color(hex: themeSubText))
+                                }
+                            }
+                            .simultaneousGesture(TapGesture().onEnded { editingProfileId = profile.id })
+                            .onChange(of: selectedItem) { newItem in
+                                if editingProfileId == profile.id {
+                                    Task {
+                                        if let data = try? await newItem?.loadTransferable(type: Data.self), let uiImage = UIImage(data: data), let compressedData = uiImage.jpegData(compressionQuality: 0.5) {
+                                            profile.iconData = compressedData
+                                        }
+                                        selectedItem = nil
+                                        editingProfileId = nil
+                                    }
+                                }
+                            }
+                            Spacer()
+                        }.padding(.vertical, 8)
+                        
+                        HStack { Text("名前").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading); TextField("ユーザー名", text: $profile.name).foregroundColor(Color(hex: themeBodyText)) }
+                        HStack { Text("ID").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading); Text("@").foregroundColor(Color(hex: themeSubText)); TextField("ユーザーID", text: $profile.userId).foregroundColor(Color(hex: themeBodyText)).autocapitalization(.none) }
+                        
+                        Toggle("タイムラインに表示", isOn: $profile.isVisible)
+                            .foregroundColor(Color(hex: themeBodyText))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                }
+                .onDelete(perform: deleteProfile)
+                
+                Button(action: { profiles.append(UserProfile(name: "新規ユーザー", userId: "new_user")) }) {
+                    Label("ユーザーを追加", systemImage: "person.badge.plus").foregroundColor(Color(hex: themeMain))
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                Section(header: Text("ユーザー情報").foregroundColor(Color(hex: themeSubText))) {
-                    HStack { Text("名前").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading); TextField("ユーザー名", text: $userName).foregroundColor(Color(hex: themeBodyText)) }
-                    HStack { Text("ID").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading); Text("@").foregroundColor(Color(hex: themeSubText)); TextField("ユーザーID", text: $userId).foregroundColor(Color(hex: themeBodyText)).autocapitalization(.none) }
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-            }.scrollContentBackground(.hidden)
-        }.navigationTitle("表示ユーザー設定").navigationBarTitleDisplayMode(.inline).preferredColorScheme(isDarkMode ? .dark : .light)
+            }
+            .scrollContentBackground(.hidden).listStyle(.insetGrouped)
+        }
+        .navigationTitle("表示ユーザー設定").navigationBarTitleDisplayMode(.inline).preferredColorScheme(isDarkMode ? .dark : .light)
+        .onAppear {
+            if profiles.isEmpty { profiles.append(UserProfile(name: "むつき", userId: "Mutsuki_dev")) }
+        }
+    }
+    
+    func deleteProfile(at offsets: IndexSet) {
+        profiles.remove(atOffsets: offsets)
+        if profiles.isEmpty { profiles.append(UserProfile(name: "新規ユーザー", userId: "new_user")) }
     }
 }
 
@@ -84,16 +120,11 @@ struct AccountCreateView: View {
             ZStack {
                 Color(hex: themeBG).ignoresSafeArea()
                 Form {
-                    Section(header: Text("基本情報")) {
-                        TextField("お財布の名前", text: $name); Picker(selection: $selectedType) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }
-                        TextField("現在の金額", text: $initial).keyboardType(.numbersAndPunctuation); Toggle("ホーム上部に表示", isOn: $isVisible) 
-                    }
+                    Section(header: Text("基本情報")) { TextField("お財布の名前", text: $name); Picker(selection: $selectedType) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }; TextField("現在の金額", text: $initial).keyboardType(.numbersAndPunctuation); Toggle("ホーム上部に表示", isOn: $isVisible) }
                 }.scrollContentBackground(.hidden)
             }.navigationTitle("新しいお財布").navigationBarTitleDisplayMode(.inline).navigationBarItems(leading: Button("キャンセル"){ dismiss() }.foregroundColor(Color(hex: themeMain)), trailing: Button("追加") {
-                let val = Int(initial) ?? 0; let newAcc = Account(name: name, balance: val, type: selectedType, isVisible: isVisible)
-                accounts.append(newAcc)
-                if val != 0 { transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val)", source: name, isIncome: true)) }
-                dismiss()
+                let val = Int(initial) ?? 0; let newAcc = Account(name: name, balance: val, type: selectedType, isVisible: isVisible); accounts.append(newAcc)
+                if val != 0 { transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val)", source: name, isIncome: true)) }; dismiss()
             }.disabled(name.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold)).preferredColorScheme(isDarkMode ? .dark : .light)
         }
     }
@@ -108,20 +139,9 @@ struct AccountEditView: View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             Form {
-                Section(header: Text("基本設定").foregroundColor(Color(hex: themeSubText))) { 
-                    TextField("名前", text: $account.name).foregroundColor(Color(hex: themeBodyText)); Picker(selection: $account.type) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }; Toggle("ホーム上部に表示", isOn: $account.isVisible).foregroundColor(Color(hex: themeBodyText))
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                Section(header: Text("残高の調整").foregroundColor(Color(hex: themeSubText))) { 
-                    HStack { 
-                        TextField("新しい残高を入力", text: $editBalance).keyboardType(.numbersAndPunctuation).foregroundColor(Color(hex: themeBodyText))
-                        Button("調整投稿") { if let newVal = Int(editBalance) { let diff = newVal - account.balance; if diff != 0 { transactions.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff))", source: account.name, isIncome: diff > 0)) }; editBalance = ""; NotificationCenter.default.post(name: NSNotification.Name("SwitchToHomeTab"), object: nil); dismiss() } }.buttonStyle(.borderedProminent).tint(Color(hex: themeMain))
-                    } 
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                Section(header: Text("所属グループ").foregroundColor(Color(hex: themeSubText))) {
-                    let belongedGroups = groups.filter { $0.accountIds.contains(account.id) }
-                    if belongedGroups.isEmpty { Text("未設定").foregroundColor(Color(hex: themeSubText)).font(.subheadline) }
-                    else { ForEach(belongedGroups) { group in HStack { Image(systemName: "folder").foregroundColor(Color(hex: themeMain)); Text(group.name).foregroundColor(Color(hex: themeBodyText)) } } }
-                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                Section(header: Text("基本設定").foregroundColor(Color(hex: themeSubText))) { TextField("名前", text: $account.name).foregroundColor(Color(hex: themeBodyText)); Picker(selection: $account.type) { ForEach(AccountType.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag($0) } } label: { Text("種類") }; Toggle("ホーム上部に表示", isOn: $account.isVisible).foregroundColor(Color(hex: themeBodyText)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                Section(header: Text("残高の調整").foregroundColor(Color(hex: themeSubText))) { HStack { TextField("新しい残高を入力", text: $editBalance).keyboardType(.numbersAndPunctuation).foregroundColor(Color(hex: themeBodyText)); Button("調整投稿") { if let newVal = Int(editBalance) { let diff = newVal - account.balance; if diff != 0 { transactions.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff))", source: account.name, isIncome: diff > 0)) }; editBalance = ""; NotificationCenter.default.post(name: NSNotification.Name("SwitchToHomeTab"), object: nil); dismiss() } }.buttonStyle(.borderedProminent).tint(Color(hex: themeMain)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                Section(header: Text("所属グループ").foregroundColor(Color(hex: themeSubText))) { let belongedGroups = groups.filter { $0.accountIds.contains(account.id) }; if belongedGroups.isEmpty { Text("未設定").foregroundColor(Color(hex: themeSubText)).font(.subheadline) } else { ForEach(belongedGroups) { group in HStack { Image(systemName: "folder").foregroundColor(Color(hex: themeMain)); Text(group.name).foregroundColor(Color(hex: themeBodyText)) } } } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
             }.scrollContentBackground(.hidden)
         }.navigationTitle(account.name).navigationBarTitleDisplayMode(.inline).preferredColorScheme(isDarkMode ? .dark : .light)
     }
@@ -129,9 +149,7 @@ struct AccountEditView: View {
 
 struct TotalAssetEditView: View {
     @Binding var isVisible: Bool; @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"; @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"; @AppStorage("isDarkMode") var isDarkMode: Bool = false
-    var body: some View {
-        ZStack { Color(hex: themeBG).ignoresSafeArea(); Form { Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) { Toggle("ホーム上部に表示", isOn: $isVisible) }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(footer: Text("「総資産」グループは自動的にすべてのお財布を合算します。").foregroundColor(Color(hex: themeSubText))) { EmptyView() } }.scrollContentBackground(.hidden) }.navigationTitle("総資産").navigationBarTitleDisplayMode(.inline).preferredColorScheme(isDarkMode ? .dark : .light)
-    }
+    var body: some View { ZStack { Color(hex: themeBG).ignoresSafeArea(); Form { Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) { Toggle("ホーム上部に表示", isOn: $isVisible) }.listRowBackground(Color(hex: themeBG).opacity(0.5)); Section(footer: Text("「総資産」グループは自動的にすべてのお財布を合算します。").foregroundColor(Color(hex: themeSubText))) { EmptyView() } }.scrollContentBackground(.hidden) }.navigationTitle("総資産").navigationBarTitleDisplayMode(.inline).preferredColorScheme(isDarkMode ? .dark : .light) }
 }
 
 struct AccountGroupEditView: View {
