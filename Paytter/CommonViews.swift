@@ -24,8 +24,8 @@ struct TwitterRow: View {
                     Text("@\(userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
                     
-                    // 【追加】計算除外アイコンの表示
-                    if item.isExcludedFromBalance {
+                    // 【追加】除外アイコン
+                    if item.isExcludedFromBalance ?? false {
                         Image(systemName: "calculator.badge.minus")
                             .font(.system(size: 8))
                             .foregroundColor(Color(hex: themeBodyText).opacity(0.4))

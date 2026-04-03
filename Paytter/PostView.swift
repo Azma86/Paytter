@@ -108,7 +108,7 @@ struct PostView: View {
                 leading: Button("キャンセル") { isPresented = false }
                     .foregroundColor(Color(hex: themeBarText)), 
                 trailing: HStack(spacing: 12) {
-                    // 【変更】isExcluded を渡すように修正
+                    // 【変更】isExcluded を渡す
                     Button(action: { onPost(false, postDate, isExcluded); isPresented = false }) {
                         Text("支出").font(.subheadline).fontWeight(.bold)
                             .frame(width: 60, height: 34)
@@ -151,7 +151,7 @@ struct PostView: View {
             }
         }.onAppear { 
             self.postDate = initialDate 
-            self.isExcluded = isExcludedInitial // 初期値をセット
+            self.isExcluded = isExcludedInitial
         }
     }
     
