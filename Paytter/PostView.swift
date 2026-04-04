@@ -39,7 +39,8 @@ struct PostView: View {
     
     @State private var draggedImageId: UUID?
     @State private var dragImageOffset: CGFloat = 0
-    @State private var dragImageLastX: CGFloat?
+    // 【新規】ジャンプ（スワップ）した分の距離を記憶して、絶対的なtranslationから引き算するための変数
+    @State private var dragImageTotalJump: CGFloat = 0
     
     var body: some View {
         NavigationView {
@@ -100,8 +101,8 @@ struct PostView: View {
                                     .offset(x: draggedImageId == item.id ? dragImageOffset : 0)
                                     .zIndex(draggedImageId == item.id ? 100 : 0)
                                     .gesture(
-                                        // 【修正】coordinateSpace: .global を指定して絶対座標を基準にすることで、指にピッタリ追従するようにしました
-                                        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                        // 【変更】.global座標でのtranslationを使い、完璧に指に追従させます
+                                        DragGesture(coordinateSpace: .global)
                                             .onChanged { val in handleImageDragChange(val, item: item) }
                                             .onEnded { _ in handleImageDragEnded() }
                                     )
@@ -195,28 +196,33 @@ struct PostView: View {
         }
     }
     
+    // 【変更】入れ替わり時の基準点ズレを完全に補正するドラッグロジック
     private func handleImageDragChange(_ value: DragGesture.Value, item: PostAttachedImage) {
         if draggedImageId != item.id {
             draggedImageId = item.id
-            dragImageLastX = value.location.x
-            dragImageOffset = 0
+            dragImageTotalJump = 0
         }
-        guard let lastX = dragImageLastX else { return }
-        dragImageOffset += value.location.x - lastX
-        dragImageLastX = value.location.x
+        
+        // 実際の移動距離から、入れ替わった分の距離を引くことで完璧に指に追従
+        dragImageOffset = value.translation.width - dragImageTotalJump
         
         if let idx = attachedImages.firstIndex(where: { $0.id == item.id }) {
-            let jumpDistance: CGFloat = 88 // 画像の幅(80) + 余白(8)
+            let jumpDistance: CGFloat = 88 // 画像幅80 + 余白8
             let threshold = jumpDistance * 0.5
             
+            // 右へスワップ
             if dragImageOffset > threshold && idx < attachedImages.count - 1 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
                     attachedImages.swapAt(idx, idx + 1)
+                    dragImageTotalJump += jumpDistance
                     dragImageOffset -= jumpDistance
                 }
-            } else if dragImageOffset < -threshold && idx > 0 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+            } 
+            // 左へスワップ
+            else if dragImageOffset < -threshold && idx > 0 {
+                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
                     attachedImages.swapAt(idx, idx - 1)
+                    dragImageTotalJump -= jumpDistance
                     dragImageOffset += jumpDistance
                 }
             }
@@ -224,10 +230,10 @@ struct PostView: View {
     }
     
     private func handleImageDragEnded() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.interactiveSpring()) {
             draggedImageId = nil
             dragImageOffset = 0
-            dragImageLastX = nil
+            dragImageTotalJump = 0
         }
     }
     
