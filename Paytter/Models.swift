@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 import LocalAuthentication
-import Combine // 【追加】これを追加することでエラーが解消されます
+import Combine
 
 // アラートの種類を定義
 enum ActiveAlert: Identifiable {
@@ -37,6 +37,20 @@ class LockManager: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "use_biometrics"); objectWillChange.send() }
     }
     
+    // 【新規】ロック設定のカスタマイズ
+    var lockBehavior: Int { // 0: 全画面ロック, 1: 鍵アカウントのみ非表示
+        get { UserDefaults.standard.integer(forKey: "lock_behavior") }
+        set { UserDefaults.standard.set(newValue, forKey: "lock_behavior"); objectWillChange.send() }
+    }
+    var privatePostDisplayMode: Int { // 0: 完全に非表示, 1: 内容のみ非表示
+        get { UserDefaults.standard.integer(forKey: "private_post_display") }
+        set { UserDefaults.standard.set(newValue, forKey: "private_post_display"); objectWillChange.send() }
+    }
+    var reflectPrivateBalanceWhenLocked: Bool { // true: 反映する, false: 反映しない
+        get { UserDefaults.standard.bool(forKey: "reflect_private_balance") }
+        set { UserDefaults.standard.set(newValue, forKey: "reflect_private_balance"); objectWillChange.send() }
+    }
+    
     init() {
         if !(UserDefaults.standard.string(forKey: "app_passcode") ?? "").isEmpty {
             isUnlocked = false
@@ -44,13 +58,17 @@ class LockManager: ObservableObject {
     }
     
     func lock() {
-        if !passcode.isEmpty { isUnlocked = false }
+        if !passcode.isEmpty {
+            isUnlocked = false
+            if lockBehavior == 0 {
+                isShowingLockScreen = true
+            }
+        }
     }
     
     func promptUnlock() {
         guard !passcode.isEmpty else { return }
         isShowingLockScreen = true
-        if useBiometrics { authenticateWithBiometrics() }
     }
     
     func authenticateWithBiometrics() {
