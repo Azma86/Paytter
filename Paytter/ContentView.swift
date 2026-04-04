@@ -59,8 +59,8 @@ struct ContentView: View {
     @State private var isHomeEditMode = false
     @State private var draggedItemId: String?
     @State private var dragOffset: CGFloat = 0
-    // 【新規】ホームアイテム用の絶対座標トラッキング変数
-    @State private var dragHomeTotalJump: CGFloat = 0
+    // 【変更】元のアルゴリズム用に dragLastX を復活
+    @State private var dragLastX: CGFloat?
     
     @State private var homeItems: [HomeItem] = []
     
@@ -83,6 +83,7 @@ struct ContentView: View {
             
             if isDeleted { return true }
             if !isVisible { return false }
+            
             if isPrivate && !lockManager.isUnlocked && lockManager.privatePostDisplayMode == 0 {
                 return false
             }
@@ -141,9 +142,9 @@ struct ContentView: View {
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .background {
                 lockManager.lock()
-                recalculateBalances()
+                // 【重要修正】バックグラウンド移行時の不要な再計算（重くなる原因）を削除
             } else if newPhase == .active {
-                recalculateBalances()
+                // 【重要修正】アプリを開いた時の不要な再計算（重くなる原因）を削除
                 if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
                     lockManager.promptUnlock()
                 }
@@ -196,7 +197,8 @@ struct ContentView: View {
                                     .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
                                     .zIndex(draggedItemId == item.id ? 100 : 0)
                                     .gesture(
-                                        isHomeEditMode ? DragGesture(coordinateSpace: .global)
+                                        // 【変更】coordinateSpace: .global を外し、元の軽いジェスチャーに戻す
+                                        isHomeEditMode ? DragGesture(minimumDistance: 0)
                                             .onChanged { value in handleDragChange(value: value, item: item) }
                                             .onEnded { _ in handleDragEnded() }
                                         : nil
@@ -341,14 +343,16 @@ struct ContentView: View {
         }
     }
 
-    // 【変更】ホームアイテムも画像ドラッグと同じ完璧な追従ロジックへと修正
+    // 【修正】最も軽くてスムーズな以前のアルゴリズムに差し戻し
     private func handleDragChange(value: DragGesture.Value, item: HomeItem) {
         if draggedItemId != item.id {
             draggedItemId = item.id
-            dragHomeTotalJump = 0
+            dragLastX = value.location.x
+            dragOffset = 0
         }
-        
-        dragOffset = value.translation.width - dragHomeTotalJump
+        guard let lastX = dragLastX else { return }
+        dragOffset += value.location.x - lastX
+        dragLastX = value.location.x
         
         if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
             let spacing: CGFloat = 10
@@ -360,15 +364,13 @@ struct ContentView: View {
             let threshold = jumpDistance * 0.5
             
             if dragOffset > threshold && idx < homeItems.count - 1 {
-                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
+                withAnimation(.easeInOut(duration: 0.2)) {
                     homeItems.swapAt(idx, idx + 1)
-                    dragHomeTotalJump += jumpDistance
                     dragOffset -= jumpDistance
                 }
             } else if dragOffset < -threshold && idx > 0 {
-                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
+                withAnimation(.easeInOut(duration: 0.2)) {
                     homeItems.swapAt(idx, idx - 1)
-                    dragHomeTotalJump -= jumpDistance
                     dragOffset += jumpDistance
                 }
             }
@@ -376,10 +378,10 @@ struct ContentView: View {
     }
     
     private func handleDragEnded() {
-        withAnimation(.interactiveSpring()) {
+        withAnimation(.easeInOut(duration: 0.2)) {
             draggedItemId = nil
             dragOffset = 0
-            dragHomeTotalJump = 0
+            dragLastX = nil
         }
         homeDisplayOrder = homeItems.map { $0.id }
     }
