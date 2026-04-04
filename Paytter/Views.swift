@@ -157,73 +157,85 @@ struct UserProfileEditSection: View {
     let themeBodyText: String
     let themeSubText: String
     let themeBG: String
-    let onDelete: () -> Void
+    
+    // アクションシートを出すためのコールバック
+    let onDeleteRequest: () -> Void
     
     @State private var selectedItem: PhotosPickerItem? = nil
 
     var body: some View {
-        Section(header: Text("ユーザー情報").foregroundColor(Color(hex: themeSubText))) {
-            HStack {
-                Spacer()
-                PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
-                    if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
-                        Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 80, height: 80).clipShape(Circle())
-                    } else {
-                        Image(systemName: "person.circle.fill").resizable().frame(width: 80, height: 80).foregroundColor(Color(hex: themeSubText))
+        // 削除済みユーザーは編集不可にする
+        if profile.isDeleted == true {
+            Section(header: Text("削除されたユーザー").foregroundColor(Color(hex: themeSubText))) {
+                Text("このユーザーは削除されていますが、過去の投稿は残っています。")
+                    .font(.caption)
+                    .foregroundColor(Color(hex: themeSubText))
+                Button(action: onDeleteRequest) {
+                    HStack {
+                        Spacer()
+                        Text("投稿ごと完全に削除する").foregroundColor(.red)
+                        Spacer()
                     }
                 }
-                .onChange(of: selectedItem) { newItem in
-                    guard let item = newItem else { return }
-                    Task {
-                        if let data = try? await item.loadTransferable(type: Data.self),
-                           let uiImage = UIImage(data: data),
-                           let compressedData = uiImage.jpegData(compressionQuality: 0.5) {
-                            DispatchQueue.main.async {
-                                profile.iconData = compressedData
-                                selectedItem = nil
-                            }
+            }
+            .listRowBackground(Color(hex: themeBG).opacity(0.5))
+        } else {
+            Section(header: Text("ユーザー情報").foregroundColor(Color(hex: themeSubText))) {
+                HStack {
+                    Spacer()
+                    PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
+                        if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
+                            Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 80, height: 80).clipShape(Circle())
                         } else {
-                            DispatchQueue.main.async {
-                                selectedItem = nil
+                            Image(systemName: "person.circle.fill").resizable().frame(width: 80, height: 80).foregroundColor(Color(hex: themeSubText))
+                        }
+                    }
+                    .onChange(of: selectedItem) { newItem in
+                        guard let item = newItem else { return }
+                        Task {
+                            if let data = try? await item.loadTransferable(type: Data.self),
+                               let uiImage = UIImage(data: data),
+                               let compressedData = uiImage.jpegData(compressionQuality: 0.5) {
+                                DispatchQueue.main.async {
+                                    profile.iconData = compressedData
+                                    selectedItem = nil
+                                }
+                            } else {
+                                DispatchQueue.main.async { selectedItem = nil }
                             }
                         }
                     }
-                }
-                Spacer()
-            }.padding(.vertical, 8)
-            
-            HStack {
-                Text("名前").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
-                TextField("ユーザー名", text: $profile.name).foregroundColor(Color(hex: themeBodyText))
-            }
-            HStack {
-                Text("ID").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
-                Text("@").foregroundColor(Color(hex: themeSubText))
-                TextField("ユーザーID", text: $profile.userId).foregroundColor(Color(hex: themeBodyText)).autocapitalization(.none)
-            }
-            
-            Toggle("タイムラインに表示", isOn: $profile.isVisible)
-                .foregroundColor(Color(hex: themeBodyText))
-            
-            Toggle("鍵アカウントにする（ロック時非表示）", isOn: Binding(
-                get: { profile.isPrivate ?? false },
-                set: { profile.isPrivate = $0 }
-            ))
-            .foregroundColor(Color(hex: themeBodyText))
-            
-            Button(action: onDelete) {
+                    Spacer()
+                }.padding(.vertical, 8)
+                
                 HStack {
-                    Spacer()
-                    Text("このユーザーを削除").foregroundColor(.red)
-                    Spacer()
+                    Text("名前").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
+                    TextField("ユーザー名", text: $profile.name).foregroundColor(Color(hex: themeBodyText))
+                }
+                HStack {
+                    Text("ID").foregroundColor(Color(hex: themeBodyText)).frame(width: 80, alignment: .leading)
+                    Text("@").foregroundColor(Color(hex: themeSubText))
+                    TextField("ユーザーID", text: $profile.userId).foregroundColor(Color(hex: themeBodyText)).autocapitalization(.none)
+                }
+                
+                Toggle("タイムラインに表示", isOn: $profile.isVisible).foregroundColor(Color(hex: themeBodyText))
+                Toggle("鍵アカウントにする（ロック時非表示）", isOn: Binding(get: { profile.isPrivate ?? false }, set: { profile.isPrivate = $0 })).foregroundColor(Color(hex: themeBodyText))
+                
+                Button(action: onDeleteRequest) {
+                    HStack {
+                        Spacer()
+                        Text("このユーザーを削除").foregroundColor(.red)
+                        Spacer()
+                    }
                 }
             }
+            .listRowBackground(Color(hex: themeBG).opacity(0.5))
         }
-        .listRowBackground(Color(hex: themeBG).opacity(0.5))
     }
 }
 
 struct UserProfileSettingView: View {
+    @Binding var transactions: [Transaction]
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
@@ -232,7 +244,7 @@ struct UserProfileSettingView: View {
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
     @State private var profileToDelete: UserProfile?
-    @State private var isShowingDeleteAlert = false
+    @State private var isShowingDeleteActionSheet = false
     
     var body: some View {
         ZStack {
@@ -245,9 +257,9 @@ struct UserProfileSettingView: View {
                         themeBodyText: themeBodyText,
                         themeSubText: themeSubText,
                         themeBG: themeBG,
-                        onDelete: {
+                        onDeleteRequest: {
                             profileToDelete = profile
-                            isShowingDeleteAlert = true
+                            isShowingDeleteActionSheet = true
                         }
                     )
                 }
@@ -266,24 +278,42 @@ struct UserProfileSettingView: View {
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear {
-            if profiles.isEmpty {
-                profiles.append(UserProfile(name: "むつき", userId: "Mutsuki_dev"))
-            }
+            if profiles.isEmpty { profiles.append(UserProfile(name: "むつき", userId: "Mutsuki_dev")) }
         }
-        .alert("ユーザーの削除", isPresented: $isShowingDeleteAlert) {
-            Button("キャンセル", role: .cancel) { profileToDelete = nil }
-            Button("削除", role: .destructive) {
-                if let p = profileToDelete {
-                    profiles.removeAll(where: { $0.id == p.id })
-                    if profiles.isEmpty {
-                        profiles.append(UserProfile(name: "新規ユーザー", userId: "new_user"))
+        // 【新規】アクションシートで削除方法を選ばせる
+        .actionSheet(isPresented: $isShowingDeleteActionSheet) {
+            ActionSheet(
+                title: Text("ユーザーの削除"),
+                message: Text("ユーザーを削除します。過去の投稿はどうしますか？"),
+                buttons: [
+                    .destructive(Text("投稿もすべて削除する")) {
+                        if let p = profileToDelete {
+                            transactions.removeAll(where: { $0.profileId == p.id })
+                            profiles.removeAll(where: { $0.id == p.id })
+                            ensureAtLeastOneProfile()
+                        }
+                    },
+                    .default(Text("投稿は残してユーザーのみ削除")) {
+                        if let p = profileToDelete {
+                            if let idx = profiles.firstIndex(where: { $0.id == p.id }) {
+                                profiles[idx].isDeleted = true
+                            }
+                            ensureAtLeastOneProfile()
+                        }
+                    },
+                    .cancel(Text("キャンセル")) {
+                        profileToDelete = nil
                     }
-                    profileToDelete = nil
-                }
-            }
-        } message: {
-            Text("このユーザーを削除してもよろしいですか？")
+                ]
+            )
         }
+    }
+    
+    func ensureAtLeastOneProfile() {
+        if profiles.filter({ !($0.isDeleted ?? false) }).isEmpty {
+            profiles.append(UserProfile(name: "新規ユーザー", userId: "new_user"))
+        }
+        profileToDelete = nil
     }
 }
 
