@@ -9,6 +9,86 @@ struct DisplayHomeItem: Identifiable, Equatable {
     let diffAmount: Int
 }
 
+// 【新規】理論上最適な処理にするため、お財布一覧を独立したViewに切り出しました
+// これにより、ドラッグ中の再描画が画面全体（タイムライン等）に波及せず、負荷が最小限になります
+struct HomeHeaderView: View {
+    @Binding var homeItems: [DisplayHomeItem]
+    @Binding var isHomeEditMode: Bool
+    @Binding var homeDisplayOrder: [String]
+    
+    let themeMain: String
+    let themeBodyText: String
+    let isSilentUpdate: Bool
+    
+    @State private var draggedItemId: String?
+    @State private var dragOffset: CGFloat = 0
+    @State private var dragHomeTotalJump: CGFloat = 0
+    
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(homeItems) { item in
+                BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: isSilentUpdate)
+                    .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+                    .cornerRadius(8)
+                    .overlay(
+                        isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil
+                    )
+                    .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
+                    .zIndex(draggedItemId == item.id ? 100 : 0)
+                    .gesture(
+                        isHomeEditMode ? DragGesture(coordinateSpace: .global)
+                            .onChanged { value in handleDragChange(value: value, item: item) }
+                            .onEnded { _ in handleDragEnded() }
+                        : nil
+                    )
+            }
+        }
+        .padding()
+    }
+    
+    private func handleDragChange(value: DragGesture.Value, item: DisplayHomeItem) {
+        if draggedItemId != item.id {
+            draggedItemId = item.id
+            dragHomeTotalJump = 0
+        }
+        
+        dragOffset = value.translation.width - dragHomeTotalJump
+        
+        if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
+            let spacing: CGFloat = 10
+            let padding: CGFloat = 32
+            let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing
+            let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal
+            let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1))
+            let jumpDistance = itemWidth + spacing
+            let threshold = jumpDistance * 0.5
+            
+            if dragOffset > threshold && idx < homeItems.count - 1 {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
+                    homeItems.swapAt(idx, idx + 1)
+                    dragHomeTotalJump += jumpDistance
+                    dragOffset -= jumpDistance
+                }
+            } else if dragOffset < -threshold && idx > 0 {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
+                    homeItems.swapAt(idx, idx - 1)
+                    dragHomeTotalJump -= jumpDistance
+                    dragOffset += jumpDistance
+                }
+            }
+        }
+    }
+    
+    private func handleDragEnded() {
+        withAnimation(.interactiveSpring()) {
+            draggedItemId = nil
+            dragOffset = 0
+            dragHomeTotalJump = 0
+        }
+        homeDisplayOrder = homeItems.map { $0.id }
+    }
+}
+
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
     @AppStorage("accounts_v2") var accounts: [Account] = [
@@ -50,13 +130,7 @@ struct ContentView: View {
     @State private var groupToDelete: AccountGroup?
     
     @State private var isHomeEditMode = false
-    @State private var draggedItemId: String?
-    @State private var dragOffset: CGFloat = 0
-    @State private var dragHomeTotalJump: CGFloat = 0 // 絶対座標のズレ補正用
-    
     @State private var homeItems: [DisplayHomeItem] = []
-    
-    // 【重要】重い計算を排除するためのキャッシュ配列
     @State private var cachedVisibleTransactions: [Transaction] = []
     
     @State private var activeAlert: ActiveAlert?
@@ -69,7 +143,6 @@ struct ContentView: View {
     @ObservedObject var lockManager = LockManager.shared
     @Environment(\.scenePhase) var scenePhase
 
-    // 【重要】ドラッグ中に呼ばれないよう、独立した関数にして最速アルゴリズムに変更
     func updateVisibleTransactions() {
         let profileDict = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
         let defaultProfile = profiles.first
@@ -112,8 +185,8 @@ struct ContentView: View {
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear {
-            recalculateBalances()
-            updateVisibleTransactions() // 【追加】初期計算
+            recalculateBalances(saveBackup: false)
+            updateVisibleTransactions()
             updateAppearance()
             syncHomeItems()
             if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
@@ -121,9 +194,16 @@ struct ContentView: View {
             }
         }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
-        // 【追加】データが変わった時だけ再計算させる
         .onChange(of: transactions) { _ in recalculateBalances(); updateVisibleTransactions() }
-        .onChange(of: lockManager.isUnlocked) { _ in recalculateBalances(); updateVisibleTransactions() }
+        
+        // 【修正】ロック状態の変更時は、アニメーションの邪魔にならないよう0.3秒遅延させ、不要なファイル保存をスキップします
+        .onChange(of: lockManager.isUnlocked) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                recalculateBalances(saveBackup: false)
+                updateVisibleTransactions()
+            }
+        }
+        
         .onChange(of: profiles) { _ in updateVisibleTransactions() }
         .onChange(of: accounts) { _ in syncHomeItems() }
         .onChange(of: groups) { _ in syncHomeItems() }
@@ -175,25 +255,15 @@ struct ContentView: View {
                 
                 VStack(spacing: 0) {
                     VStack(spacing: 8) {
-                        HStack(spacing: 10) {
-                            ForEach(homeItems) { item in
-                                BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: lockManager.isSilentUpdate)
-                                    .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil
-                                    )
-                                    .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
-                                    .zIndex(draggedItemId == item.id ? 100 : 0)
-                                    .gesture(
-                                        isHomeEditMode ? DragGesture(coordinateSpace: .global)
-                                            .onChanged { value in handleDragChange(value: value, item: item) }
-                                            .onEnded { _ in handleDragEnded() }
-                                        : nil
-                                    )
-                            }
-                        }
-                        .padding()
+                        // 【変更】独立させた超軽量なHeaderViewを呼び出し
+                        HomeHeaderView(
+                            homeItems: $homeItems,
+                            isHomeEditMode: $isHomeEditMode,
+                            homeDisplayOrder: $homeDisplayOrder,
+                            themeMain: themeMain,
+                            themeBodyText: themeBodyText,
+                            isSilentUpdate: lockManager.isSilentUpdate
+                        )
                         
                         if isHomeEditMode {
                             Text("横にスライドして並べ替えられます")
@@ -207,7 +277,6 @@ struct ContentView: View {
                     Divider()
                     
                     List {
-                        // 【変更】毎回の重い計算を避け、キャッシュした配列をそのまま描画
                         ForEach(cachedVisibleTransactions) { item in
                             let isFuture = item.date > Date()
                             ZStack {
@@ -445,70 +514,22 @@ struct ContentView: View {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images))
     }
 
-    // 【重要】カクつかないよう、バネのアニメーションと絶対座標での補正を完全に適応
-    private func handleDragChange(value: DragGesture.Value, item: DisplayHomeItem) {
-        if draggedItemId != item.id {
-            draggedItemId = item.id
-            dragHomeTotalJump = 0
-        }
-        
-        dragOffset = value.translation.width - dragHomeTotalJump
-        
-        if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
-            let spacing: CGFloat = 10
-            let padding: CGFloat = 32
-            let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing
-            let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal
-            let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1))
-            let jumpDistance = itemWidth + spacing
-            let threshold = jumpDistance * 0.5
-            
-            if dragOffset > threshold && idx < homeItems.count - 1 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    homeItems.swapAt(idx, idx + 1)
-                    dragHomeTotalJump += jumpDistance
-                    dragOffset -= jumpDistance
-                }
-            } else if dragOffset < -threshold && idx > 0 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    homeItems.swapAt(idx, idx - 1)
-                    dragHomeTotalJump -= jumpDistance
-                    dragOffset += jumpDistance
-                }
-            }
-        }
-    }
-    
-    private func handleDragEnded() {
-        withAnimation(.interactiveSpring()) {
-            draggedItemId = nil
-            dragOffset = 0
-            dragHomeTotalJump = 0
-        }
-        homeDisplayOrder = homeItems.map { $0.id }
-    }
-
     func syncHomeItems() {
-        if draggedItemId != nil { return }
         var items: [DisplayHomeItem] = []
-        
         if showTotalAssets { 
             let totalB = accounts.reduce(0) { $0 + $1.balance }
             let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
             items.append(DisplayHomeItem(id: "TOTAL_ASSETS", title: "総資産", amount: totalB, diffAmount: totalD))
         }
-        
         for acc in accounts where acc.isVisible {
             items.append(DisplayHomeItem(id: "ACCOUNT_\(acc.id.uuidString)", title: acc.name, amount: acc.balance, diffAmount: acc.diffAmount))
         }
-        
         for g in groups where g.isVisible {
             let accs = accounts.filter { g.accountIds.contains($0.id) }
             let b = accs.reduce(0) { $0 + $1.balance }
             let d = accs.reduce(0) { $0 + $1.diffAmount }
             items.append(DisplayHomeItem(id: "GROUP_\(g.id.uuidString)", title: g.name, amount: b, diffAmount: d))
         }
-        
         items.sort { i1, i2 in
             let idx1 = homeDisplayOrder.firstIndex(of: i1.id) ?? Int.max
             let idx2 = homeDisplayOrder.firstIndex(of: i2.id) ?? Int.max
@@ -525,7 +546,32 @@ struct ContentView: View {
     
     func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("リセット完了") }
     
-    func recalculateBalances() { var tempAccounts = accounts; for i in 0..<tempAccounts.count { var cur = 0; for tx in transactions where tx.source == tempAccounts[i].name { if tx.isExcludedFromBalance == true { continue }; let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first; let isPrivate = profile?.isPrivate ?? false; let isDeleted = profile?.isDeleted ?? false; if isDeleted { cur += (tx.isIncome ? tx.amount : -tx.amount); continue }; if isPrivate && !lockManager.isUnlocked && !lockManager.reflectPrivateBalanceWhenLocked { continue }; cur += (tx.isIncome ? tx.amount : -tx.amount) }; tempAccounts[i].diffAmount = cur - tempAccounts[i].balance; tempAccounts[i].balance = cur }; accounts = tempAccounts; let backupData = createFullBackupData(); DispatchQueue.global(qos: .background).async { BackupManager.saveFullBackup(data: backupData, isManual: false) } }
+    // 【変更】saveBackup引数を追加し、無駄なファイルアクセスを減らす
+    func recalculateBalances(saveBackup: Bool = true) {
+        var tempAccounts = accounts
+        for i in 0..<tempAccounts.count {
+            var cur = 0
+            for tx in transactions where tx.source == tempAccounts[i].name {
+                if tx.isExcludedFromBalance == true { continue }
+                let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
+                let isPrivate = profile?.isPrivate ?? false
+                let isDeleted = profile?.isDeleted ?? false
+                
+                if isDeleted { cur += (tx.isIncome ? tx.amount : -tx.amount); continue }
+                if isPrivate && !lockManager.isUnlocked && !lockManager.reflectPrivateBalanceWhenLocked { continue }
+                
+                cur += (tx.isIncome ? tx.amount : -tx.amount)
+            }
+            tempAccounts[i].diffAmount = cur - tempAccounts[i].balance
+            tempAccounts[i].balance = cur
+        }
+        accounts = tempAccounts
+        
+        if saveBackup {
+            let backupData = createFullBackupData()
+            DispatchQueue.global(qos: .background).async { BackupManager.saveFullBackup(data: backupData, isManual: false) }
+        }
+    }
     
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
