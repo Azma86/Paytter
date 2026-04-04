@@ -157,7 +157,6 @@ struct TransactionDetailView: View {
             )
         }
     }
-}
     
     // 【変更】画像データも保存できるように修正
     func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
