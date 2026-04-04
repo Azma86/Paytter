@@ -1,14 +1,18 @@
 import SwiftUI
-import PhotosUI // 【新規】画像選択に必要
+import PhotosUI
+
+// 【新規】ドラッグ操作を管理するための画像ラッパー
+struct PostAttachedImage: Identifiable, Equatable {
+    let id = UUID()
+    let data: Data
+}
 
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool
     var initialDate: Date = Date()
     var isExcludedInitial: Bool = false
-    // 【新規】編集時用の初期画像
     var initialImages: [Data]? = nil
     
-    // 【変更】画像のデータ配列も渡すようにクロージャを変更
     var onPost: (Bool, Date, Bool, UUID?, [Data]?) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
@@ -31,9 +35,14 @@ struct PostView: View {
     
     @State private var selectedProfileId: UUID?
     
-    // 【新規】画像添付用のState
     @State private var selectedItems: [PhotosPickerItem] = []
-    @State private var attachedImages: [Data] = []
+    // 【変更】並び替え可能なモデル配列を使用
+    @State private var attachedImages: [PostAttachedImage] = []
+    
+    // 【新規】ドラッグ＆ドロップ並び替え用State
+    @State private var draggedImageId: UUID?
+    @State private var dragImageOffset: CGFloat = 0
+    @State private var dragImageLastX: CGFloat?
     
     var body: some View {
         NavigationView {
@@ -41,6 +50,7 @@ struct PostView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
+                    // 【変更】入力エリアに高さを最大限取らせることで、画像出現時にテキストが押し上げられないように固定
                     HStack(alignment: .top) {
                         Menu {
                             ForEach(profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.filter { !($0.isDeleted ?? false) }) { profile in
@@ -60,7 +70,6 @@ struct PostView: View {
                                 insertAtCursor(sym)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() }
                             }
-                            .frame(minHeight: 150)
                             .foregroundColor(Color(hex: themeBarText))
                             .onChange(of: inputText) { _ in updateSuggestionsForCursor() }
                             
@@ -68,17 +77,17 @@ struct PostView: View {
                                 Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) 
                             }
                         }
-                    }.padding()
+                    }
+                    .padding()
+                    .frame(maxHeight: .infinity)
                     
-                    Spacer()
-                    
-                    // 【新規】選択した画像のプレビュー
+                    // 選択した画像のプレビュー（並び替え可能）
                     if !attachedImages.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(attachedImages.indices, id: \.self) { idx in
+                                ForEach(attachedImages) { item in
                                     ZStack(alignment: .topTrailing) {
-                                        if let uiImage = UIImage(data: attachedImages[idx]) {
+                                        if let uiImage = UIImage(data: item.data) {
                                             Image(uiImage: uiImage)
                                                 .resizable()
                                                 .scaledToFill()
@@ -86,13 +95,20 @@ struct PostView: View {
                                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                                         }
                                         
-                                        Button(action: { attachedImages.remove(at: idx) }) {
+                                        Button(action: { attachedImages.removeAll(where: { $0.id == item.id }) }) {
                                             Image(systemName: "xmark.circle.fill")
                                                 .foregroundColor(.white)
                                                 .background(Circle().fill(Color.black.opacity(0.6)))
                                         }
                                         .padding(4)
                                     }
+                                    .offset(x: draggedImageId == item.id ? dragImageOffset : 0)
+                                    .zIndex(draggedImageId == item.id ? 100 : 0)
+                                    .gesture(
+                                        DragGesture(minimumDistance: 0)
+                                            .onChanged { val in handleImageDragChange(val, item: item) }
+                                            .onEnded { _ in handleImageDragEnded() }
+                                    )
                                 }
                             }
                             .padding(.horizontal)
@@ -101,7 +117,6 @@ struct PostView: View {
                     }
                     
                     HStack {
-                        // 【新規】画像追加ボタン（Twitter風に左下に配置）
                         PhotosPicker(selection: $selectedItems, maxSelectionCount: 4, matching: .images) {
                             Image(systemName: "photo.on.rectangle")
                                 .font(.system(size: 20))
@@ -115,9 +130,8 @@ struct PostView: View {
                                        let uiImage = UIImage(data: data),
                                        let compressed = compressImage(uiImage) {
                                         DispatchQueue.main.async {
-                                            // 最大4枚までに制限
                                             if attachedImages.count < 4 {
-                                                attachedImages.append(compressed)
+                                                attachedImages.append(PostAttachedImage(data: compressed))
                                             }
                                         }
                                     }
@@ -136,6 +150,7 @@ struct PostView: View {
                     }.padding(.horizontal).padding(.vertical, 8)
                 }
                 
+                // サジェストリスト（ツールバーの上に浮くように表示）
                 if !suggestions.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
@@ -165,9 +180,9 @@ struct PostView: View {
             .navigationBarItems(
                 leading: Button("キャンセル") { isPresented = false }.foregroundColor(Color(hex: themeBarText)), 
                 trailing: HStack(spacing: 12) {
-                    // 【変更】画像データも一緒に渡す
-                    Button(action: { onPost(false, postDate, isExcluded, selectedProfileId, attachedImages); isPresented = false }) { Text("支出").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeExpense).opacity(0.8)).foregroundColor(.white).cornerRadius(17) }
-                    Button(action: { onPost(true, postDate, isExcluded, selectedProfileId, attachedImages); isPresented = false }) { Text("収入").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeIncome)).foregroundColor(.white).cornerRadius(17) }
+                    let imageDatas = attachedImages.map { $0.data }
+                    Button(action: { onPost(false, postDate, isExcluded, selectedProfileId, imageDatas); isPresented = false }) { Text("支出").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeExpense).opacity(0.8)).foregroundColor(.white).cornerRadius(17) }
+                    Button(action: { onPost(true, postDate, isExcluded, selectedProfileId, imageDatas); isPresented = false }) { Text("収入").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeIncome)).foregroundColor(.white).cornerRadius(17) }
                 }
             )
             .sheet(isPresented: $isShowingDatePicker) {
@@ -181,14 +196,50 @@ struct PostView: View {
             self.postDate = initialDate
             self.isExcluded = isExcludedInitial
             self.selectedProfileId = profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.first(where: { $0.isVisible })?.id ?? profiles.first?.id
-            // 【新規】編集モードの時は既存の画像をセット
-            self.attachedImages = initialImages ?? []
+            // 【変更】初期画像がある場合はモデルに変換して格納
+            self.attachedImages = (initialImages ?? []).map { PostAttachedImage(data: $0) }
         }
     }
     
-    // 【新規】画像を自動で縮小・圧縮する関数（UserDefaults保護のため）
+    // 【新規】画像のドラッグ並び替えロジック
+    private func handleImageDragChange(_ value: DragGesture.Value, item: PostAttachedImage) {
+        if draggedImageId != item.id {
+            draggedImageId = item.id
+            dragImageLastX = value.location.x
+            dragImageOffset = 0
+        }
+        guard let lastX = dragImageLastX else { return }
+        dragImageOffset += value.location.x - lastX
+        dragImageLastX = value.location.x
+        
+        if let idx = attachedImages.firstIndex(where: { $0.id == item.id }) {
+            let jumpDistance: CGFloat = 88 // 画像幅80 + スペース8
+            let threshold = jumpDistance * 0.5
+            
+            if dragImageOffset > threshold && idx < attachedImages.count - 1 {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    attachedImages.swapAt(idx, idx + 1)
+                    dragImageOffset -= jumpDistance
+                }
+            } else if dragImageOffset < -threshold && idx > 0 {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    attachedImages.swapAt(idx, idx - 1)
+                    dragImageOffset += jumpDistance
+                }
+            }
+        }
+    }
+    
+    private func handleImageDragEnded() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            draggedImageId = nil
+            dragImageOffset = 0
+            dragImageLastX = nil
+        }
+    }
+    
     func compressImage(_ image: UIImage) -> Data? {
-        let maxSize: CGFloat = 800 // 長辺最大800pxに縮小
+        let maxSize: CGFloat = 800
         var targetSize = image.size
         if targetSize.width > maxSize || targetSize.height > maxSize {
             let ratio = min(maxSize / targetSize.width, maxSize / targetSize.height)
@@ -198,7 +249,6 @@ struct PostView: View {
         format.scale = 1
         let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
         let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: targetSize)) }
-        // 画質を半分まで落としてJPEGで書き出し（容量を劇的に削減）
         return resized.jpegData(compressionQuality: 0.5)
     }
     

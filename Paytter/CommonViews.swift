@@ -1,6 +1,61 @@
 import SwiftUI
 import UIKit
 
+// 【新規】Twitter風の画像グリッドレイアウト
+struct TimelineImageGrid: View {
+    let images: [Data]
+    var cornerRadius: CGFloat = 12
+    var maxHeight: CGFloat = 160
+    
+    var body: some View {
+        let count = images.count
+        Group {
+            if count == 1 {
+                imgView(images[0])
+            } else if count == 2 {
+                HStack(spacing: 4) {
+                    imgView(images[0])
+                    imgView(images[1])
+                }
+            } else if count == 3 {
+                HStack(spacing: 4) {
+                    imgView(images[0])
+                    VStack(spacing: 4) {
+                        imgView(images[1])
+                        imgView(images[2])
+                    }
+                }
+            } else if count >= 4 {
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        imgView(images[0])
+                        imgView(images[1])
+                    }
+                    HStack(spacing: 4) {
+                        imgView(images[2])
+                        imgView(images[3])
+                    }
+                }
+            }
+        }
+        .frame(height: maxHeight)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+    }
+    
+    @ViewBuilder func imgView(_ data: Data) -> some View {
+        if let uiImage = UIImage(data: data) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                .clipped()
+        } else {
+            Color.gray.opacity(0.1)
+        }
+    }
+}
+
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
     let isSilent: Bool
@@ -50,6 +105,7 @@ struct TwitterRow: View {
     
     var body: some View {
         let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
+        
         let isPrivate = profile.isPrivate ?? false
         let isDeleted = profile.isDeleted ?? false
         let isLocked = !LockManager.shared.isUnlocked
@@ -93,23 +149,10 @@ struct TwitterRow: View {
                     
                     if !item.tags.isEmpty { HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } } }
                     
-                    // 【新規】画像のグリッド表示（Twitter風）
+                    // 【変更】美しくリサイズされる専用のグリッドビューを使用
                     if let images = item.attachedImageDatas, !images.isEmpty {
-                        let cols = images.count == 1 ? 1 : 2
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: cols), spacing: 6) {
-                            ForEach(images.indices, id: \.self) { idx in
-                                if let uiImage = UIImage(data: images[idx]) {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(height: images.count == 1 ? 160 : 100)
-                                        .clipped()
-                                        .cornerRadius(12)
-                                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.2), lineWidth: 1))
-                                }
-                            }
-                        }
-                        .padding(.top, 4)
+                        TimelineImageGrid(images: images, maxHeight: 160)
+                            .padding(.top, 4)
                     }
                 }
             }
