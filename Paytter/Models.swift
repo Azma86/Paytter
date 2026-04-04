@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import LocalAuthentication
+import Combine // 【追加】これを追加することでエラーが解消されます
 
 // アラートの種類を定義
 enum ActiveAlert: Identifiable {
@@ -16,7 +17,7 @@ enum ActiveAlert: Identifiable {
     }
 }
 
-// 【新規】アプリ全体のロック状態を管理するマネージャー
+// アプリ全体のロック状態を管理するマネージャー
 class LockManager: ObservableObject {
     static let shared = LockManager()
     
@@ -132,7 +133,6 @@ struct UserProfile: Identifiable, Codable, Equatable {
     var userId: String
     var iconData: Data?
     var isVisible: Bool = true
-    // 【新規】鍵アカウントフラグ
     var isPrivate: Bool?
 }
 
