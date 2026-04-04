@@ -2,18 +2,12 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
-enum HomeItem: Identifiable, Equatable {
-    case totalAssets
-    case account(Account)
-    case group(AccountGroup)
-    
-    var id: String {
-        switch self {
-        case .totalAssets: return "TOTAL_ASSETS"
-        case .account(let a): return "ACCOUNT_\(a.id.uuidString)"
-        case .group(let g): return "GROUP_\(g.id.uuidString)"
-        }
-    }
+// 【変更】計算済みのデータを持つ構造体に変更し、ドラッグ中の重い再計算を防ぎます
+struct DisplayHomeItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let amount: Int
+    let diffAmount: Int
 }
 
 struct ContentView: View {
@@ -59,10 +53,11 @@ struct ContentView: View {
     @State private var isHomeEditMode = false
     @State private var draggedItemId: String?
     @State private var dragOffset: CGFloat = 0
-    // 【変更】元のアルゴリズム用に dragLastX を復活
-    @State private var dragLastX: CGFloat?
+    // 【変更】絶対座標追従のためのジャンプ距離記憶変数
+    @State private var dragHomeTotalJump: CGFloat = 0
     
-    @State private var homeItems: [HomeItem] = []
+    // 【変更】キャッシュされたアイテム配列
+    @State private var homeItems: [DisplayHomeItem] = []
     
     @State private var activeAlert: ActiveAlert?
     @State private var isRestoringManual = false
@@ -142,9 +137,7 @@ struct ContentView: View {
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .background {
                 lockManager.lock()
-                // 【重要修正】バックグラウンド移行時の不要な再計算（重くなる原因）を削除
             } else if newPhase == .active {
-                // 【重要修正】アプリを開いた時の不要な再計算（重くなる原因）を削除
                 if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
                     lockManager.promptUnlock()
                 }
@@ -188,7 +181,8 @@ struct ContentView: View {
                     VStack(spacing: 8) {
                         HStack(spacing: 10) {
                             ForEach(homeItems) { item in
-                                homeHeaderItem(for: item)
+                                // 【変更】キャッシュされた値を使うので、ドラッグ中に再計算が走りません
+                                BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: lockManager.isSilentUpdate)
                                     .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
                                     .cornerRadius(8)
                                     .overlay(
@@ -197,8 +191,8 @@ struct ContentView: View {
                                     .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
                                     .zIndex(draggedItemId == item.id ? 100 : 0)
                                     .gesture(
-                                        // 【変更】coordinateSpace: .global を外し、元の軽いジェスチャーに戻す
-                                        isHomeEditMode ? DragGesture(minimumDistance: 0)
+                                        // 【変更】global座標にして指に完全に吸い付くように設定
+                                        isHomeEditMode ? DragGesture(coordinateSpace: .global)
                                             .onChanged { value in handleDragChange(value: value, item: item) }
                                             .onEnded { _ in handleDragEnded() }
                                         : nil
@@ -325,34 +319,14 @@ struct ContentView: View {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images))
     }
     
-    @ViewBuilder
-    private func homeHeaderItem(for item: HomeItem) -> some View {
-        Group {
-            switch item {
-            case .totalAssets:
-                let totalB = accounts.reduce(0) { $0 + $1.balance }; let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
-                BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD, isSilent: lockManager.isSilentUpdate)
-            case .account(let a):
-                if let currentAcc = accounts.first(where: { $0.id == a.id }) { BalanceView(title: currentAcc.name, amount: currentAcc.balance, color: Color(hex: themeBodyText), diff: currentAcc.diffAmount, isSilent: lockManager.isSilentUpdate) }
-            case .group(let g):
-                if let currentGroup = groups.first(where: { $0.id == g.id }) {
-                    let groupAccounts = accounts.filter { currentGroup.accountIds.contains($0.id) }; let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }; let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
-                    BalanceView(title: currentGroup.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff, isSilent: lockManager.isSilentUpdate)
-                }
-            }
-        }
-    }
-
-    // 【修正】最も軽くてスムーズな以前のアルゴリズムに差し戻し
-    private func handleDragChange(value: DragGesture.Value, item: HomeItem) {
+    // 【変更】指に完璧に追従し、ヌルヌル動くドラッグアルゴリズム
+    private func handleDragChange(value: DragGesture.Value, item: DisplayHomeItem) {
         if draggedItemId != item.id {
             draggedItemId = item.id
-            dragLastX = value.location.x
-            dragOffset = 0
+            dragHomeTotalJump = 0
         }
-        guard let lastX = dragLastX else { return }
-        dragOffset += value.location.x - lastX
-        dragLastX = value.location.x
+        
+        dragOffset = value.translation.width - dragHomeTotalJump
         
         if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
             let spacing: CGFloat = 10
@@ -364,13 +338,15 @@ struct ContentView: View {
             let threshold = jumpDistance * 0.5
             
             if dragOffset > threshold && idx < homeItems.count - 1 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     homeItems.swapAt(idx, idx + 1)
+                    dragHomeTotalJump += jumpDistance
                     dragOffset -= jumpDistance
                 }
             } else if dragOffset < -threshold && idx > 0 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     homeItems.swapAt(idx, idx - 1)
+                    dragHomeTotalJump -= jumpDistance
                     dragOffset += jumpDistance
                 }
             }
@@ -378,30 +354,42 @@ struct ContentView: View {
     }
     
     private func handleDragEnded() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.interactiveSpring()) {
             draggedItemId = nil
             dragOffset = 0
-            dragLastX = nil
+            dragHomeTotalJump = 0
         }
         homeDisplayOrder = homeItems.map { $0.id }
     }
 
-    private func binding(for account: Account) -> Binding<Account> { Binding( get: { self.accounts.first(where: { $0.id == account.id }) ?? account }, set: { if let i = self.accounts.firstIndex(where: { $0.id == account.id }) { self.accounts[i] = $0 } } ) }
-    private func binding(for group: AccountGroup) -> Binding<AccountGroup> { Binding( get: { self.groups.first(where: { $0.id == group.id }) ?? group }, set: { if let i = self.groups.firstIndex(where: { $0.id == group.id }) { self.groups[i] = $0 } } ) }
-
+    // 【変更】データのキャッシュ化（重い計算をここだけで終わらせる）
     func syncHomeItems() {
         if draggedItemId != nil { return }
-        var items: [HomeItem] = []
-        if showTotalAssets { items.append(.totalAssets) }
-        items.append(contentsOf: accounts.filter({ $0.isVisible }).map { .account($0) })
-        items.append(contentsOf: groups.filter({ $0.isVisible }).map { .group($0) })
+        var items: [DisplayHomeItem] = []
         
-        items.sort { item1, item2 in
-            let idx1 = homeDisplayOrder.firstIndex(of: item1.id) ?? Int.max
-            let idx2 = homeDisplayOrder.firstIndex(of: item2.id) ?? Int.max
+        if showTotalAssets { 
+            let totalB = accounts.reduce(0) { $0 + $1.balance }
+            let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
+            items.append(DisplayHomeItem(id: "TOTAL_ASSETS", title: "総資産", amount: totalB, diffAmount: totalD))
+        }
+        
+        for acc in accounts where acc.isVisible {
+            items.append(DisplayHomeItem(id: "ACCOUNT_\(acc.id.uuidString)", title: acc.name, amount: acc.balance, diffAmount: acc.diffAmount))
+        }
+        
+        for g in groups where g.isVisible {
+            let accs = accounts.filter { g.accountIds.contains($0.id) }
+            let b = accs.reduce(0) { $0 + $1.balance }
+            let d = accs.reduce(0) { $0 + $1.diffAmount }
+            items.append(DisplayHomeItem(id: "GROUP_\(g.id.uuidString)", title: g.name, amount: b, diffAmount: d))
+        }
+        
+        items.sort { i1, i2 in
+            let idx1 = homeDisplayOrder.firstIndex(of: i1.id) ?? Int.max
+            let idx2 = homeDisplayOrder.firstIndex(of: i2.id) ?? Int.max
             return idx1 < idx2
         }
-        homeItems = items
+        self.homeItems = items
     }
 
     func createFullBackupData() -> FullBackupData { return FullBackupData( transactions: transactions, accounts: accounts, groups: groups, profiles: profiles, monthlyBudget: monthlyBudget, isDarkMode: isDarkMode, themeMain: themeMain, themeIncome: themeIncome, themeExpense: themeExpense, themeHoliday: themeHoliday, themeSaturday: themeSaturday, themeBG: themeBG, themeBarBG: themeBarBG, themeBarText: themeBarText, themeTabAccent: themeTabAccent, themeBodyText: themeBodyText, themeSubText: themeSubText, showTotalAssets: showTotalAssets, homeDisplayOrder: homeDisplayOrder, backupDate: BackupManager.currentDateString() ) }
