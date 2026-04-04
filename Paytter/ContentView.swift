@@ -52,9 +52,12 @@ struct ContentView: View {
     @State private var isHomeEditMode = false
     @State private var draggedItemId: String?
     @State private var dragOffset: CGFloat = 0
-    @State private var dragHomeTotalJump: CGFloat = 0
+    @State private var dragHomeTotalJump: CGFloat = 0 // 絶対座標のズレ補正用
     
     @State private var homeItems: [DisplayHomeItem] = []
+    
+    // 【重要】重い計算を排除するためのキャッシュ配列
+    @State private var cachedVisibleTransactions: [Transaction] = []
     
     @State private var activeAlert: ActiveAlert?
     @State private var isRestoringManual = false
@@ -66,21 +69,25 @@ struct ContentView: View {
     @ObservedObject var lockManager = LockManager.shared
     @Environment(\.scenePhase) var scenePhase
 
-    var visibleTransactions: [Transaction] {
-        transactions.filter { tx in
-            let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
+    // 【重要】ドラッグ中に呼ばれないよう、独立した関数にして最速アルゴリズムに変更
+    func updateVisibleTransactions() {
+        let profileDict = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+        let defaultProfile = profiles.first
+        let isUnlocked = lockManager.isUnlocked
+        let hidePrivate = lockManager.privatePostDisplayMode == 0
+        
+        let filtered = transactions.filter { tx in
+            let profile = profileDict[tx.profileId ?? UUID()] ?? defaultProfile
             let isVisible = profile?.isVisible ?? true
             let isPrivate = profile?.isPrivate ?? false
             let isDeleted = profile?.isDeleted ?? false
             
             if isDeleted { return true }
             if !isVisible { return false }
-            
-            if isPrivate && !lockManager.isUnlocked && lockManager.privatePostDisplayMode == 0 {
-                return false
-            }
+            if isPrivate && !isUnlocked && hidePrivate { return false }
             return true
-        }.sorted(by: { $0.date > $1.date })
+        }
+        cachedVisibleTransactions = filtered.sorted(by: { $0.date > $1.date })
     }
 
     var body: some View {
@@ -106,6 +113,7 @@ struct ContentView: View {
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear {
             recalculateBalances()
+            updateVisibleTransactions() // 【追加】初期計算
             updateAppearance()
             syncHomeItems()
             if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
@@ -113,8 +121,10 @@ struct ContentView: View {
             }
         }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
-        .onChange(of: transactions) { _ in recalculateBalances() }
-        .onChange(of: lockManager.isUnlocked) { _ in recalculateBalances() }
+        // 【追加】データが変わった時だけ再計算させる
+        .onChange(of: transactions) { _ in recalculateBalances(); updateVisibleTransactions() }
+        .onChange(of: lockManager.isUnlocked) { _ in recalculateBalances(); updateVisibleTransactions() }
+        .onChange(of: profiles) { _ in updateVisibleTransactions() }
         .onChange(of: accounts) { _ in syncHomeItems() }
         .onChange(of: groups) { _ in syncHomeItems() }
         .onChange(of: showTotalAssets) { _ in syncHomeItems() }
@@ -135,7 +145,7 @@ struct ContentView: View {
                 return Alert(title: Text("全リセット"), message: Text("全てのデータとユーザー設定を初期化します。"), primaryButton: .destructive(Text("リセット")) { resetAll() }, secondaryButton: .cancel(Text("キャンセル")))
             case .restore:
                 let dateStr = BackupManager.getBackupDate(isManual: isRestoringManual)
-                return Alert(title: Text("バックアップの復元"), message: Text("保存日時: \(dateStr)\nデータを復元しますか？"), primaryButton: .destructive(Text("復元")) { if let b = BackupManager.loadFullBackup(isManual: isRestoringManual) { applyFullBackup(b); activeAlert = .completion("復元完了") } else if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); activeAlert = .completion("復元完了(旧形式)") } }, secondaryButton: .cancel(Text("キャンセル")))
+                return Alert(title: Text("バックアップの復元"), message: Text("保存日時: \(dateStr)\nデータを復元しますか？"), primaryButton: .destructive(Text("復元")) { if let b = BackupManager.loadFullBackup(isManual: isRestoringManual) { applyFullBackup(b); activeAlert = .completion("復元完了") } else if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("復元完了(旧形式)") } }, secondaryButton: .cancel(Text("キャンセル")))
             case .save:
                 return Alert(title: Text("バックアップの保存"), message: Text("現在のすべてのデータで上書きしますか？"), primaryButton: .default(Text("保存")) { BackupManager.saveFullBackup(data: createFullBackupData(), isManual: true); activeAlert = .completion("保存完了") }, secondaryButton: .cancel(Text("キャンセル")))
             case .importConfirm:
@@ -197,7 +207,8 @@ struct ContentView: View {
                     Divider()
                     
                     List {
-                        ForEach(visibleTransactions) { item in
+                        // 【変更】毎回の重い計算を避け、キャッシュした配列をそのまま描画
+                        ForEach(cachedVisibleTransactions) { item in
                             let isFuture = item.date > Date()
                             ZStack {
                                 NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
@@ -250,14 +261,10 @@ struct ContentView: View {
     private var calendarTab: some View {
         NavigationView {
             CalendarView(transactions: $transactions, accounts: $accounts)
-                .navigationTitle("カレンダー")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
-                .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+                .navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline).toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
         }
     }
 
-    // コンパイラの負担を減らすため、改行を入れて整理
     private var walletTab: some View {
         NavigationView {
             ZStack {
@@ -357,7 +364,6 @@ struct ContentView: View {
         }
     }
 
-    // コンパイラの負担を減らすため、改行を入れて整理
     private var settingTab: some View {
         NavigationView {
             ZStack {
@@ -421,7 +427,6 @@ struct ContentView: View {
         }
     }
 
-    // 【重要】消えてしまっていた binding(for:) 関数を復活させました！
     private func binding(for account: Account) -> Binding<Account> {
         Binding(
             get: { self.accounts.first(where: { $0.id == account.id }) ?? account },
@@ -440,6 +445,7 @@ struct ContentView: View {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images))
     }
 
+    // 【重要】カクつかないよう、バネのアニメーションと絶対座標での補正を完全に適応
     private func handleDragChange(value: DragGesture.Value, item: DisplayHomeItem) {
         if draggedItemId != item.id {
             draggedItemId = item.id
@@ -513,11 +519,11 @@ struct ContentView: View {
 
     func createFullBackupData() -> FullBackupData { return FullBackupData( transactions: transactions, accounts: accounts, groups: groups, profiles: profiles, monthlyBudget: monthlyBudget, isDarkMode: isDarkMode, themeMain: themeMain, themeIncome: themeIncome, themeExpense: themeExpense, themeHoliday: themeHoliday, themeSaturday: themeSaturday, themeBG: themeBG, themeBarBG: themeBarBG, themeBarText: themeBarText, themeTabAccent: themeTabAccent, themeBodyText: themeBodyText, themeSubText: themeSubText, showTotalAssets: showTotalAssets, homeDisplayOrder: homeDisplayOrder, backupDate: BackupManager.currentDateString() ) }
     
-    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = backup.themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = backup.showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance() }
+    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = backup.themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = backup.showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance(); updateVisibleTransactions() }
 
     func handleImport(from url: URL) { guard let data = try? Data(contentsOf: url) else { return }; if let fd = try? JSONDecoder().decode(FullBackupData.self, from: data) { self.pendingImportData = fd; self.activeAlert = .importConfirm } else if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dec = try? JSONDecoder().decode([Transaction].self, from: txStr.data(using: .utf8)!), let aDec = try? JSONDecoder().decode([Account].self, from: accStr.data(using: .utf8)!) { let fd = createFullBackupData(); self.pendingImportData = FullBackupData( transactions: dec, accounts: aDec, groups: fd.groups, profiles: fd.profiles, monthlyBudget: fd.monthlyBudget, isDarkMode: fd.isDarkMode, themeMain: fd.themeMain, themeIncome: fd.themeIncome, themeExpense: fd.themeExpense, themeHoliday: fd.themeHoliday, themeSaturday: fd.themeSaturday, themeBG: fd.themeBG, themeBarBG: fd.themeBarBG, themeBarText: fd.themeBarText, themeTabAccent: fd.themeTabAccent, themeBodyText: fd.themeBodyText, themeSubText: fd.themeSubText, showTotalAssets: fd.showTotalAssets, homeDisplayOrder: fd.homeDisplayOrder, backupDate: "以前の形式" ); self.activeAlert = .importConfirm } }
     
-    func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recalculateBalances(); activeAlert = .completion("リセット完了") }
+    func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("リセット完了") }
     
     func recalculateBalances() { var tempAccounts = accounts; for i in 0..<tempAccounts.count { var cur = 0; for tx in transactions where tx.source == tempAccounts[i].name { if tx.isExcludedFromBalance == true { continue }; let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first; let isPrivate = profile?.isPrivate ?? false; let isDeleted = profile?.isDeleted ?? false; if isDeleted { cur += (tx.isIncome ? tx.amount : -tx.amount); continue }; if isPrivate && !lockManager.isUnlocked && !lockManager.reflectPrivateBalanceWhenLocked { continue }; cur += (tx.isIncome ? tx.amount : -tx.amount) }; tempAccounts[i].diffAmount = cur - tempAccounts[i].balance; tempAccounts[i].balance = cur }; accounts = tempAccounts; let backupData = createFullBackupData(); DispatchQueue.global(qos: .background).async { BackupManager.saveFullBackup(data: backupData, isManual: false) } }
     
