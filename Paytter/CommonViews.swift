@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 
-// 【新規】Twitter風の画像グリッドレイアウト
 struct TimelineImageGrid: View {
     let images: [Data]
     var cornerRadius: CGFloat = 12
@@ -44,7 +43,8 @@ struct TimelineImageGrid: View {
     }
     
     @ViewBuilder func imgView(_ data: Data) -> some View {
-        if let uiImage = UIImage(data: data) {
+        // 【変更】画像の生成負荷をゼロにするためにImageCacheを使用
+        if let uiImage = ImageCache.shared.image(for: data) {
             Image(uiImage: uiImage)
                 .resizable()
                 .scaledToFill()
@@ -115,7 +115,8 @@ struct TwitterRow: View {
         let displayId = isDeleted ? "deleted_user" : profile.userId
         
         HStack(alignment: .top, spacing: 12) {
-            if !isDeleted, let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
+            // 【変更】アイコン画像もキャッシュを利用してスクロールを高速化
+            if !isDeleted, let iconData = profile.iconData, let uiImage = ImageCache.shared.image(for: iconData) {
                 Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(Circle())
             } else {
                 Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
@@ -149,7 +150,6 @@ struct TwitterRow: View {
                     
                     if !item.tags.isEmpty { HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } } }
                     
-                    // 【変更】美しくリサイズされる専用のグリッドビューを使用
                     if let images = item.attachedImageDatas, !images.isEmpty {
                         TimelineImageGrid(images: images, maxHeight: 160)
                             .padding(.top, 4)

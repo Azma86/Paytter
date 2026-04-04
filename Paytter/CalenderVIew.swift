@@ -27,6 +27,9 @@ struct CalendarView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var isShowingDeleteAlert = false
     @State private var transactionToDelete: Transaction?
+    
+    // 【新規】カレンダー用計算をO(1)にするためのキャッシュ辞書
+    @State private var monthlyTransactionsDict: [String: [Transaction]] = [:]
 
     @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
     @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
@@ -34,6 +37,12 @@ struct CalendarView: View {
 
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
+    
+    let dateKeyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 
     var validTransactionsForCalendar: [Transaction] {
         transactions.filter { tx in
@@ -49,10 +58,19 @@ struct CalendarView: View {
         }
     }
     
+    // 【新規】データ更新時に辞書を作り直す
+    func updateCalendarDict() {
+        var dict: [String: [Transaction]] = [:]
+        for tx in validTransactionsForCalendar {
+            let key = dateKeyFormatter.string(from: tx.date)
+            dict[key, default: []].append(tx)
+        }
+        monthlyTransactionsDict = dict
+    }
+    
     var filteredTransactions: [Transaction] {
-        validTransactionsForCalendar
-            .filter { calendar.isDate($0.date, inSameDayAs: selectedDate) }
-            .sorted(by: { $0.date > $1.date })
+        let key = dateKeyFormatter.string(from: selectedDate)
+        return (monthlyTransactionsDict[key] ?? []).sorted(by: { $0.date > $1.date })
     }
 
     var body: some View {
@@ -111,7 +129,6 @@ struct CalendarView: View {
         }
         .sheet(isPresented: $isShowingMonthPicker) { monthPickerSheet }
         .sheet(isPresented: $isShowingInputSheet) {
-            // 【変更】画像データ配列を受け取る口を追加
             PostView(
                 inputText: $inputText,
                 isPresented: $isShowingInputSheet,
@@ -123,7 +140,10 @@ struct CalendarView: View {
                 accounts: accounts
             )
         }
-        .onAppear { loadHolidays() }
+        // 【変更】データ更新時に辞書を再構築
+        .onAppear { loadHolidays(); updateCalendarDict() }
+        .onChange(of: transactions) { _ in updateCalendarDict() }
+        .onChange(of: lockManager.isUnlocked) { _ in updateCalendarDict() }
     }
 
     private var headerView: some View { VStack(spacing: 0) { HStack { Button(action: { moveMonth(by: -1) }) { Image(systemName: "chevron.left").foregroundColor(Color(hex: themeMain)) }; Spacer(); Button(action: { pickerYear = calendar.component(.year, from: currentMonth); pickerMonth = calendar.component(.month, from: currentMonth); isShowingMonthPicker = true }) { HStack(spacing: 4) { Text(monthYearString(from: currentMonth)).font(.headline).foregroundColor(Color(hex: themeBarText)); Image(systemName: "chevron.down").font(.caption).foregroundColor(Color(hex: themeBarText).opacity(0.6)) } }; Spacer(); Button(action: { moveMonth(by: 1) }) { Image(systemName: "chevron.right").foregroundColor(Color(hex: themeMain)) } }.padding(.horizontal).padding(.vertical, 12); HStack { ForEach(daysOfWeek, id: \.self) { day in Text(day).font(.system(size: 11, weight: .bold)).frame(maxWidth: .infinity).foregroundColor(day == "日" ? Color(hex: themeHoliday) : (day == "土" ? Color(hex: themeSaturday) : Color(hex: themeBodyText).opacity(0.8))) } }.padding(.bottom, 8) }.background(Color(hex: themeBarBG).opacity(0.4)) }
@@ -132,7 +152,58 @@ struct CalendarView: View {
     private var monthPickerSheet: some View { NavigationView { ZStack { Color(hex: themeBG).ignoresSafeArea(); HStack(spacing: 0) { Picker("年", selection: $pickerYear) { ForEach(2000...2100, id: \.self) { year in Text("\(String(year))年").tag(year) } }.pickerStyle(.wheel).frame(maxWidth: .infinity); Picker("月", selection: $pickerMonth) { ForEach(1...12, id: \.self) { month in Text("\(month)月").tag(month) } }.pickerStyle(.wheel).frame(maxWidth: .infinity) }.background(Color.clear) }.navigationTitle("年月を選択").navigationBarTitleDisplayMode(.inline).navigationBarItems(leading: Button("キャンセル") { isShowingMonthPicker = false }.foregroundColor(Color(hex: themeMain)), trailing: Button("移動") { if let newDate = calendar.date(from: DateComponents(year: pickerYear, month: pickerMonth)) { currentMonth = newDate }; isShowingMonthPicker = false }.foregroundColor(Color(hex: themeMain))) }.preferredColorScheme(isDarkMode ? .dark : .light).presentationDetents([.height(300)]) }
 
     @ViewBuilder func monthGrid(for month: Date, width: CGFloat) -> some View { let allDays = generateFullGrid(for: month); LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) { ForEach(0..<allDays.count, id: \.self) { index in dayCell(date: allDays[index], month: month) } }.frame(width: width).background(Color(hex: themeBG)) }
-    @ViewBuilder func dayCell(date: Date, month: Date) -> some View { let isCurrentMonth = calendar.isDate(date, equalTo: month, toGranularity: .month); let dayTransactions = validTransactionsForCalendar.filter { calendar.isDate($0.date, inSameDayAs: date) }; let isSelected = calendar.isDate(date, inSameDayAs: selectedDate); let isHoliday = checkIsHoliday(date); let weekday = calendar.component(.weekday, from: date); let dayBaseColor: Color = { if isHoliday || weekday == 1 { return Color(hex: themeHoliday) }; if weekday == 7 { return Color(hex: themeSaturday) }; return Color(hex: themeBodyText) }(); VStack(spacing: 2) { Text("\(calendar.component(.day, from: date))").font(.system(size: 13, design: .rounded)).fontWeight(isSelected ? .bold : .regular).foregroundColor(isCurrentMonth ? (isSelected ? .white : dayBaseColor) : dayBaseColor.opacity(0.4)).frame(width: 24, height: 24).background(isSelected && isCurrentMonth ? Color(hex: themeMain) : Color.clear).clipShape(Circle()); VStack(alignment: .leading, spacing: 1) { if dayTransactions.count > 0 { HStack(spacing: 2) { ForEach(dayTransactions.prefix(5)) { tx in Circle().fill(tx.isIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).frame(width: 4.5, height: 4.5) } } } else { Spacer().frame(height: 4.5) } }.frame(height: 10) }.frame(height: 45).frame(maxWidth: .infinity).contentShape(Rectangle()).onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } } }
+    
+    @ViewBuilder func dayCell(date: Date, month: Date) -> some View {
+        let isCurrentMonth = calendar.isDate(date, equalTo: month, toGranularity: .month)
+        // 【変更】辞書からO(1)で直接取り出すので負荷ゼロ
+        let dayKey = dateKeyFormatter.string(from: date)
+        let dayTransactions = monthlyTransactionsDict[dayKey] ?? []
+        
+        let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
+        let isHoliday = checkIsHoliday(date)
+        let weekday = calendar.component(.weekday, from: date)
+        
+        let dayBaseColor: Color = {
+            if isHoliday || weekday == 1 { return Color(hex: themeHoliday) }
+            if weekday == 7 { return Color(hex: themeSaturday) }
+            return Color(hex: themeBodyText)
+        }()
+        
+        VStack(spacing: 2) {
+            Text("\(calendar.component(.day, from: date))")
+                .font(.system(size: 13, design: .rounded))
+                .fontWeight(isSelected ? .bold : .regular)
+                .foregroundColor(isCurrentMonth ? (isSelected ? .white : dayBaseColor) : dayBaseColor.opacity(0.4))
+                .frame(width: 24, height: 24)
+                .background(isSelected && isCurrentMonth ? Color(hex: themeMain) : Color.clear)
+                .clipShape(Circle())
+            
+            VStack(alignment: .leading, spacing: 1) {
+                if dayTransactions.count > 0 {
+                    HStack(spacing: 2) {
+                        ForEach(dayTransactions.prefix(5)) { tx in
+                            Circle()
+                                .fill(tx.isIncome ? Color(hex: themeIncome) : Color(hex: themeExpense))
+                                .frame(width: 4.5, height: 4.5)
+                        }
+                    }
+                } else {
+                    Spacer().frame(height: 4.5)
+                }
+            }
+            .frame(height: 10)
+        }
+        .frame(height: 45)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isCurrentMonth {
+                selectedDate = date
+            } else {
+                slideToDate(date)
+            }
+        }
+    }
 
     private func handleDragEnded(value: DragGesture.Value, width: CGFloat) { let threshold = width * 0.3; if value.translation.width < -threshold { withAnimation(.easeInOut(duration: 0.4)) { dragOffset = -width }; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)!; dragOffset = 0 } } else if value.translation.width > threshold { withAnimation(.easeInOut(duration: 0.4)) { dragOffset = width }; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth)!; dragOffset = 0 } } else { withAnimation(.easeInOut(duration: 0.2)) { dragOffset = 0 } } }
     func deleteTransaction() { if let t = transactionToDelete, let idx = transactions.firstIndex(where: { $0.id == t.id }) { transactions.remove(at: idx) } }
@@ -143,7 +214,6 @@ struct CalendarView: View {
     func slideToDate(_ date: Date) { let isFuture = date > currentMonth; moveMonth(by: isFuture ? 1 : -1); selectedDate = date }
     func combinedDate() -> Date { let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate); let tc = calendar.dateComponents([.hour, .minute], from: now); c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate }
     
-    // 【変更】シグネチャを修正
     func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images))
     }
