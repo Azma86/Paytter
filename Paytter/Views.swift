@@ -69,6 +69,25 @@ struct TransactionDetailView: View {
                                 }
                             }
                         }
+                        
+                        // 【新規】詳細画面での画像グリッド表示（大きく表示）
+                        if let images = item.attachedImageDatas, !images.isEmpty {
+                            let cols = images.count == 1 ? 1 : 2
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: cols), spacing: 8) {
+                                ForEach(images.indices, id: \.self) { idx in
+                                    if let uiImage = UIImage(data: images[idx]) {
+                                        Image(uiImage: uiImage)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(height: images.count == 1 ? 250 : 150)
+                                            .clipped()
+                                            .cornerRadius(16)
+                                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
                     }
                     
                     if item.isExcludedFromBalance == true {
@@ -119,11 +138,13 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $isShowingEditSheet) {
+            // 【変更】編集時に既存の画像を引き継ぐ
             PostView(
                 inputText: $editLineText,
                 isPresented: $isShowingEditSheet,
                 initialDate: item.date,
                 isExcludedInitial: item.isExcludedFromBalance ?? false,
+                initialImages: item.attachedImageDatas,
                 onPost: handleEditTransaction,
                 transactions: transactions,
                 accounts: accounts
@@ -131,7 +152,8 @@ struct TransactionDetailView: View {
         }
     }
     
-    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?) {
+    // 【変更】画像データも保存できるように修正
+    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
                 .filter { $0.contains("¥") }
@@ -145,7 +167,8 @@ struct TransactionDetailView: View {
             transactions[idx] = Transaction(
                 id: item.id, amount: nAmt, date: nDate, note: editLineText,
                 source: nSrc, isIncome: isInc, isExcludedFromBalance: isExc,
-                profileId: profileId ?? item.profileId
+                profileId: profileId ?? item.profileId,
+                attachedImageDatas: images
             )
         }
     }
@@ -158,13 +181,10 @@ struct UserProfileEditSection: View {
     let themeSubText: String
     let themeBG: String
     
-    // アクションシートを出すためのコールバック
     let onDeleteRequest: () -> Void
-    
     @State private var selectedItem: PhotosPickerItem? = nil
 
     var body: some View {
-        // 削除済みユーザーは編集不可にする
         if profile.isDeleted == true {
             Section(header: Text("削除されたユーザー").foregroundColor(Color(hex: themeSubText))) {
                 Text("このユーザーは削除されていますが、過去の投稿は残っています。")
@@ -280,7 +300,6 @@ struct UserProfileSettingView: View {
         .onAppear {
             if profiles.isEmpty { profiles.append(UserProfile(name: "むつき", userId: "Mutsuki_dev")) }
         }
-        // 【新規】アクションシートで削除方法を選ばせる
         .actionSheet(isPresented: $isShowingDeleteActionSheet) {
             ActionSheet(
                 title: Text("ユーザーの削除"),
@@ -317,7 +336,6 @@ struct UserProfileSettingView: View {
     }
 }
 
-// 【変更】パスコード設定画面にロック時の挙動のカスタマイズを追加
 struct PasscodeSettingView: View {
     @ObservedObject var lockManager = LockManager.shared
     @State private var newPasscode = ""
@@ -399,7 +417,6 @@ struct PasscodeSettingView: View {
     }
 }
 
-// 【変更】パスコード入力画面の表示から0.3秒後に生体認証を要求する
 struct PasscodeLockOverlay: View {
     @ObservedObject var lockManager = LockManager.shared
     @State private var inputCode = ""
@@ -457,7 +474,6 @@ struct PasscodeLockOverlay: View {
                 
                 Spacer()
                 
-                // 全画面ロックじゃない場合だけキャンセル可能
                 if lockManager.lockBehavior == 1 {
                     Button("キャンセルして鍵アカウントを非表示") {
                         lockManager.cancelUnlock()
@@ -470,7 +486,6 @@ struct PasscodeLockOverlay: View {
         }
         .onAppear {
             if lockManager.useBiometrics {
-                // UIがレンダリングされてから生体認証を出すための遅延
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     lockManager.authenticateWithBiometrics()
                 }
@@ -757,7 +772,6 @@ struct WalletAnalysisView: View {
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     @ObservedObject var lockManager = LockManager.shared
     
-    // 【変更】分析画面でも鍵アカウントの残高反映設定を考慮
     var validTransactions: [Transaction] {
         if lockManager.isUnlocked || lockManager.reflectPrivateBalanceWhenLocked {
             return transactions
