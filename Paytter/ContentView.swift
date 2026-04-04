@@ -72,15 +72,18 @@ struct ContentView: View {
     @ObservedObject var lockManager = LockManager.shared
     @Environment(\.scenePhase) var scenePhase
 
-    // 【変更】鍵アカウントの表示ロジック
+    // 【変更】削除済みユーザーの投稿は見えるようにする
     var visibleTransactions: [Transaction] {
         transactions.filter { tx in
             let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
             let isVisible = profile?.isVisible ?? true
             let isPrivate = profile?.isPrivate ?? false
+            let isDeleted = profile?.isDeleted ?? false
             
+            // 削除済みユーザーの投稿は設定に関わらず表示する
+            if isDeleted { return true }
             if !isVisible { return false }
-            // ロック中で、かつ「完全に非表示」設定の場合は見せない
+            
             if isPrivate && !lockManager.isUnlocked && lockManager.privatePostDisplayMode == 0 {
                 return false
             }
@@ -130,19 +133,16 @@ struct ContentView: View {
         }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances() }
-        // 【新規】ロック状態が変わったときも残高を再計算する
         .onChange(of: lockManager.isUnlocked) { _ in recalculateBalances() }
         .onChange(of: accounts) { _ in syncHomeItems() }
         .onChange(of: groups) { _ in syncHomeItems() }
         .onChange(of: showTotalAssets) { _ in syncHomeItems() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
-        // 【変更】アプリを離れた時のロック挙動
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .background {
                 lockManager.lock()
             } else if newPhase == .active {
-                // 全画面ロック設定の時だけ解除画面を出す
                 if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
                     lockManager.promptUnlock()
                 }
@@ -478,7 +478,7 @@ struct ContentView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 List {
                     Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) {
-                        NavigationLink(destination: UserProfileSettingView()) {
+                        NavigationLink(destination: UserProfileSettingView(transactions: $transactions)) {
                             Label("表示ユーザー設定", systemImage: "person.2.circle").foregroundColor(Color(hex: themeBodyText))
                         }
                         NavigationLink(destination: ThemeSettingView()) {
@@ -577,17 +577,18 @@ struct ContentView: View {
             case .totalAssets:
                 let totalB = accounts.reduce(0) { $0 + $1.balance }
                 let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
-                BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD)
+                // 【変更】フラグを渡してエフェクトのオンオフを制御
+                BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD, isSilent: lockManager.isSilentUpdate)
             case .account(let a):
                 if let currentAcc = accounts.first(where: { $0.id == a.id }) {
-                    BalanceView(title: currentAcc.name, amount: currentAcc.balance, color: Color(hex: themeBodyText), diff: currentAcc.diffAmount)
+                    BalanceView(title: currentAcc.name, amount: currentAcc.balance, color: Color(hex: themeBodyText), diff: currentAcc.diffAmount, isSilent: lockManager.isSilentUpdate)
                 }
             case .group(let g):
                 if let currentGroup = groups.first(where: { $0.id == g.id }) {
                     let groupAccounts = accounts.filter { currentGroup.accountIds.contains($0.id) }
                     let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }
                     let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
-                    BalanceView(title: currentGroup.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff)
+                    BalanceView(title: currentGroup.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff, isSilent: lockManager.isSilentUpdate)
                 }
             }
         }
@@ -739,7 +740,7 @@ struct ContentView: View {
         activeAlert = .completion("リセット完了")
     }
     
-    // 【変更】鍵アカウントの残高をロック時に反映するかどうかの設定を適用
+    // 【変更】残額反映のロジック修正
     func recalculateBalances() {
         var tempAccounts = accounts
         for i in 0..<tempAccounts.count {
@@ -747,9 +748,19 @@ struct ContentView: View {
             for tx in transactions where tx.source == tempAccounts[i].name {
                 if tx.isExcludedFromBalance == true { continue }
                 
-                if !lockManager.isUnlocked && !lockManager.reflectPrivateBalanceWhenLocked {
-                    let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
-                    if profile?.isPrivate == true { continue }
+                let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
+                let isPrivate = profile?.isPrivate ?? false
+                let isDeleted = profile?.isDeleted ?? false
+                
+                // 削除済みユーザーの投稿は計算に含める
+                if isDeleted {
+                    cur += (tx.isIncome ? tx.amount : -tx.amount)
+                    continue
+                }
+                
+                // ロック中で、かつ「残額に反映しない」設定の場合は計算から除外
+                if isPrivate && !lockManager.isUnlocked && !lockManager.reflectPrivateBalanceWhenLocked {
+                    continue
                 }
                 
                 cur += (tx.isIncome ? tx.amount : -tx.amount)

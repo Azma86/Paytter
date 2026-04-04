@@ -3,10 +3,14 @@ import UIKit
 
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
+    // 【新規】エフェクトを鳴らすかどうかのフラグ
+    let isSilent: Bool
+    
     @State private var showDiff = false; @State private var lastAmount: Int = 0 
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    
     var body: some View {
         VStack {
             Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
@@ -24,8 +28,15 @@ struct BalanceView: View {
         .frame(maxWidth: .infinity)
         .onChange(of: amount) { newValue in 
             if newValue != lastAmount { 
-                showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
-                lastAmount = newValue 
+                // 【変更】Silentフラグが立っているときはアニメーションしない
+                if isSilent {
+                    showDiff = true
+                    lastAmount = newValue
+                } else {
+                    showDiff = false
+                    withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
+                    lastAmount = newValue
+                }
             } 
         }
         .onAppear { lastAmount = amount }
@@ -41,13 +52,18 @@ struct TwitterRow: View {
     
     var body: some View {
         let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
+        
         let isPrivate = profile.isPrivate ?? false
+        let isDeleted = profile.isDeleted ?? false
         let isLocked = !LockManager.shared.isUnlocked
-        // 【変更】内容のみ非表示モードの時のフラグ
         let hideContent = isPrivate && isLocked && LockManager.shared.privatePostDisplayMode == 1
         
+        // 【変更】削除済みユーザーの名前を上書き
+        let displayName = isDeleted ? "削除されたユーザー" : profile.name
+        let displayId = isDeleted ? "deleted_user" : profile.userId
+        
         HStack(alignment: .top, spacing: 12) {
-            if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
+            if !isDeleted, let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
                 Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(Circle())
             } else {
                 Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray)
@@ -55,8 +71,8 @@ struct TwitterRow: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(profile.name).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
-                    Text("@\(profile.userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                    Text(displayName).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
+                    Text("@\(displayId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
                     
                     if item.isExcludedFromBalance == true {
@@ -72,7 +88,6 @@ struct TwitterRow: View {
                     }
                 }
                 
-                // 【変更】内容を隠す
                 if hideContent {
                     Text("鍵アカウントによる投稿です")
                         .font(.subheadline)

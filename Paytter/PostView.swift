@@ -17,7 +17,6 @@ struct PostView: View {
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     
-    // 【新規】ロック状態を取得
     @ObservedObject var lockManager = LockManager.shared
     
     @State private var postDate = Date()
@@ -30,14 +29,13 @@ struct PostView: View {
     
     var body: some View {
         NavigationView {
-            ZStack {
+            ZStack(alignment: .bottom) { // 【変更】ZStackを使って浮かせる
                 Color(hex: themeBG).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
                         Menu {
-                            // 【重要】ロック中は鍵アカウントを選択できないようにフィルター
-                            ForEach(profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }) { profile in
+                            ForEach(profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.filter { !($0.isDeleted ?? false) }) { profile in
                                 Button(action: { selectedProfileId = profile.id }) { Text(profile.name) }
                             }
                         } label: {
@@ -66,29 +64,6 @@ struct PostView: View {
                     
                     Spacer()
                     
-                    if !suggestions.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
-                                ForEach(suggestions, id: \.self) { suggestion in
-                                    Button(action: { applySuggestion(suggestion) }) {
-                                        Text(suggestion)
-                                            .font(.subheadline)
-                                            .fontWeight(.bold)
-                                            .foregroundColor(Color(hex: themeMain))
-                                            .padding(.horizontal, 16)
-                                            .padding(.vertical, 10)
-                                            .background(Color(hex: themeMain).opacity(0.1))
-                                            .cornerRadius(20)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal)
-                            .padding(.vertical, 8)
-                        }
-                        .background(Color(hex: themeBG))
-                        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: -3)
-                    }
-                    
                     HStack {
                         Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
                             HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
@@ -98,6 +73,33 @@ struct PostView: View {
                         Toggle("残高計算から除外", isOn: $isExcluded).labelsHidden()
                         Text("計算除外").font(.footnote).foregroundColor(isExcluded ? Color(hex: themeMain) : .gray)
                     }.padding(.horizontal).padding(.vertical, 8)
+                }
+                
+                // 【変更】サジェストリストをキーボードのすぐ上に「浮く」ように配置
+                if !suggestions.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(suggestions, id: \.self) { suggestion in
+                                Button(action: { applySuggestion(suggestion) }) {
+                                    Text(suggestion)
+                                        .font(.subheadline)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(Color(hex: themeMain))
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 10)
+                                        .background(Color(hex: themeBG))
+                                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color(hex: themeMain).opacity(0.5), lineWidth: 1))
+                                        .cornerRadius(20)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                    }
+                    .background(Color(hex: themeBG).opacity(0.95))
+                    .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: -2)
+                    .offset(y: -44) // ボトムのボタンエリアの上に配置
+                    .zIndex(10)
                 }
             }
             .navigationBarItems(
