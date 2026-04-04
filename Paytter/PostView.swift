@@ -1,7 +1,6 @@
 import SwiftUI
 import PhotosUI
 
-// 【新規】ドラッグ操作を管理するための画像ラッパー
 struct PostAttachedImage: Identifiable, Equatable {
     let id = UUID()
     let data: Data
@@ -36,10 +35,8 @@ struct PostView: View {
     @State private var selectedProfileId: UUID?
     
     @State private var selectedItems: [PhotosPickerItem] = []
-    // 【変更】並び替え可能なモデル配列を使用
     @State private var attachedImages: [PostAttachedImage] = []
     
-    // 【新規】ドラッグ＆ドロップ並び替え用State
     @State private var draggedImageId: UUID?
     @State private var dragImageOffset: CGFloat = 0
     @State private var dragImageLastX: CGFloat?
@@ -50,7 +47,6 @@ struct PostView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // 【変更】入力エリアに高さを最大限取らせることで、画像出現時にテキストが押し上げられないように固定
                     HStack(alignment: .top) {
                         Menu {
                             ForEach(profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.filter { !($0.isDeleted ?? false) }) { profile in
@@ -81,7 +77,6 @@ struct PostView: View {
                     .padding()
                     .frame(maxHeight: .infinity)
                     
-                    // 選択した画像のプレビュー（並び替え可能）
                     if !attachedImages.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -105,7 +100,8 @@ struct PostView: View {
                                     .offset(x: draggedImageId == item.id ? dragImageOffset : 0)
                                     .zIndex(draggedImageId == item.id ? 100 : 0)
                                     .gesture(
-                                        DragGesture(minimumDistance: 0)
+                                        // 【修正】coordinateSpace: .global を指定して絶対座標を基準にすることで、指にピッタリ追従するようにしました
+                                        DragGesture(minimumDistance: 0, coordinateSpace: .global)
                                             .onChanged { val in handleImageDragChange(val, item: item) }
                                             .onEnded { _ in handleImageDragEnded() }
                                     )
@@ -150,7 +146,6 @@ struct PostView: View {
                     }.padding(.horizontal).padding(.vertical, 8)
                 }
                 
-                // サジェストリスト（ツールバーの上に浮くように表示）
                 if !suggestions.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
@@ -196,12 +191,10 @@ struct PostView: View {
             self.postDate = initialDate
             self.isExcluded = isExcludedInitial
             self.selectedProfileId = profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.first(where: { $0.isVisible })?.id ?? profiles.first?.id
-            // 【変更】初期画像がある場合はモデルに変換して格納
             self.attachedImages = (initialImages ?? []).map { PostAttachedImage(data: $0) }
         }
     }
     
-    // 【新規】画像のドラッグ並び替えロジック
     private func handleImageDragChange(_ value: DragGesture.Value, item: PostAttachedImage) {
         if draggedImageId != item.id {
             draggedImageId = item.id
@@ -213,7 +206,7 @@ struct PostView: View {
         dragImageLastX = value.location.x
         
         if let idx = attachedImages.firstIndex(where: { $0.id == item.id }) {
-            let jumpDistance: CGFloat = 88 // 画像幅80 + スペース8
+            let jumpDistance: CGFloat = 88 // 画像の幅(80) + 余白(8)
             let threshold = jumpDistance * 0.5
             
             if dragImageOffset > threshold && idx < attachedImages.count - 1 {
