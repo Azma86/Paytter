@@ -2,7 +2,6 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
-// 【変更】計算済みのデータを持つ構造体に変更し、ドラッグ中の重い再計算を防ぎます
 struct DisplayHomeItem: Identifiable, Equatable {
     let id: String
     let title: String
@@ -53,10 +52,8 @@ struct ContentView: View {
     @State private var isHomeEditMode = false
     @State private var draggedItemId: String?
     @State private var dragOffset: CGFloat = 0
-    // 【変更】絶対座標追従のためのジャンプ距離記憶変数
     @State private var dragHomeTotalJump: CGFloat = 0
     
-    // 【変更】キャッシュされたアイテム配列
     @State private var homeItems: [DisplayHomeItem] = []
     
     @State private var activeAlert: ActiveAlert?
@@ -90,21 +87,10 @@ struct ContentView: View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             TabView(selection: $selection) {
-                homeTab
-                    .tag(0)
-                    .tabItem { Label("ホーム", systemImage: "house") }
-                
-                calendarTab
-                    .tag(1)
-                    .tabItem { Label("カレンダー", systemImage: "calendar") }
-                
-                walletTab
-                    .tag(2)
-                    .tabItem { Label("お財布", systemImage: "wallet.pass") }
-                
-                settingTab
-                    .tag(3)
-                    .tabItem { Label("設定", systemImage: "gearshape") }
+                homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }
+                calendarTab.tag(1).tabItem { Label("カレンダー", systemImage: "calendar") }
+                walletTab.tag(2).tabItem { Label("お財布", systemImage: "wallet.pass") }
+                settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
             }
             .accentColor(Color(hex: themeTabAccent))
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in
@@ -181,7 +167,6 @@ struct ContentView: View {
                     VStack(spacing: 8) {
                         HStack(spacing: 10) {
                             ForEach(homeItems) { item in
-                                // 【変更】キャッシュされた値を使うので、ドラッグ中に再計算が走りません
                                 BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: lockManager.isSilentUpdate)
                                     .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
                                     .cornerRadius(8)
@@ -191,7 +176,6 @@ struct ContentView: View {
                                     .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
                                     .zIndex(draggedItemId == item.id ? 100 : 0)
                                     .gesture(
-                                        // 【変更】global座標にして指に完全に吸い付くように設定
                                         isHomeEditMode ? DragGesture(coordinateSpace: .global)
                                             .onChanged { value in handleDragChange(value: value, item: item) }
                                             .onEnded { _ in handleDragEnded() }
@@ -266,60 +250,196 @@ struct ContentView: View {
     private var calendarTab: some View {
         NavigationView {
             CalendarView(transactions: $transactions, accounts: $accounts)
-                .navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline).toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+                .navigationTitle("カレンダー")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+                .toolbarBackground(.visible, for: .navigationBar, .tabBar)
         }
     }
 
+    // コンパイラの負担を減らすため、改行を入れて整理
     private var walletTab: some View {
         NavigationView {
             ZStack {
                 Color(hex: themeBG).ignoresSafeArea()
                 List {
                     Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) {
-                        ForEach(accounts) { acc in NavigationLink(destination: AccountEditView(account: binding(for: acc), transactions: $transactions, allAccounts: accounts)) { HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { accountToDelete = acc; isShowingAccountDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
+                        ForEach(accounts) { acc in
+                            NavigationLink(destination: AccountEditView(account: binding(for: acc), transactions: $transactions, allAccounts: accounts)) {
+                                HStack {
+                                    Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                    Text(acc.name).foregroundColor(Color(hex: themeBodyText))
+                                    Spacer()
+                                    Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                }
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) { accountToDelete = acc; isShowingAccountDeleteAlert = true } label: { Text("削除") }
+                            }
+                        }
+                        Button(action: { isShowingAccountCreator = true }) {
+                            Label("新しいお財布を追加", systemImage: "plus.circle")
+                        }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
 
                     Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) {
-                        NavigationLink(destination: TotalAssetEditView(isVisible: $showTotalAssets)) { HStack { Image(systemName: "sum").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text("総資産").foregroundColor(Color(hex: themeBodyText)); Spacer(); let totalB = accounts.reduce(0) { $0 + $1.balance }; Text("¥\(totalB)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }; ForEach(groups) { group in NavigationLink(destination: AccountGroupEditView(group: binding(for: group), accounts: $accounts)) { HStack { Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(group.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); let groupTotal = accounts.filter { group.accountIds.contains($0.id) }.reduce(0) { $0 + $1.balance }; Text("¥\(groupTotal)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { groupToDelete = group; isShowingGroupDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
+                        NavigationLink(destination: TotalAssetEditView(isVisible: $showTotalAssets)) {
+                            HStack {
+                                Image(systemName: "sum").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                Text("総資産").foregroundColor(Color(hex: themeBodyText))
+                                Spacer()
+                                let totalB = accounts.reduce(0) { $0 + $1.balance }
+                                Text("¥\(totalB)").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                            }
+                        }
+                        
+                        ForEach(groups) { group in
+                            NavigationLink(destination: AccountGroupEditView(group: binding(for: group), accounts: $accounts)) {
+                                HStack {
+                                    Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                    Text(group.name).foregroundColor(Color(hex: themeBodyText))
+                                    Spacer()
+                                    let groupTotal = accounts.filter { group.accountIds.contains($0.id) }.reduce(0) { $0 + $1.balance }
+                                    Text("¥\(groupTotal)").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                }
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) { groupToDelete = group; isShowingGroupDeleteAlert = true } label: { Text("削除") }
+                            }
+                        }
+                        Button(action: { isShowingGroupCreator = true }) {
+                            Label("新しいグループを追加", systemImage: "plus.circle")
+                        }.foregroundColor(Color(hex: themeMain))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
-                    Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
+                    Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) {
+                        NavigationLink(destination: WalletAnalysisView(transactions: transactions)) {
+                            Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText))
+                        }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                }
+                .scrollContentBackground(.hidden)
+                .listStyle(.insetGrouped)
             }
-            .navigationTitle("お財布").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }
-            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .navigationTitle("お財布")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if !lockManager.passcode.isEmpty {
+                        Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) {
+                            Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain))
+                        }
+                    }
+                }
+            }
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
             .sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }
-            .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel) { accountToDelete = nil }; Button("削除", role: .destructive) { if let acc = accountToDelete { for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == acc.id }) }; accounts.removeAll(where: { $0.id == acc.id }); recalculateBalances() }; accountToDelete = nil } }
-            .alert("グループの削除", isPresented: $isShowingGroupDeleteAlert) { Button("キャンセル", role: .cancel) { groupToDelete = nil }; Button("削除", role: .destructive) { if let grp = groupToDelete { groups.removeAll(where: { $0.id == grp.id }) }; groupToDelete = nil } }
+            .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) {
+                Button("キャンセル", role: .cancel) { accountToDelete = nil }
+                Button("削除", role: .destructive) {
+                    if let acc = accountToDelete {
+                        for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == acc.id }) }
+                        accounts.removeAll(where: { $0.id == acc.id })
+                        recalculateBalances()
+                    }
+                    accountToDelete = nil
+                }
+            }
+            .alert("グループの削除", isPresented: $isShowingGroupDeleteAlert) {
+                Button("キャンセル", role: .cancel) { groupToDelete = nil }
+                Button("削除", role: .destructive) {
+                    if let grp = groupToDelete { groups.removeAll(where: { $0.id == grp.id }) }
+                    groupToDelete = nil
+                }
+            }
         }
     }
 
+    // コンパイラの負担を減らすため、改行を入れて整理
     private var settingTab: some View {
         NavigationView {
             ZStack {
                 Color(hex: themeBG).ignoresSafeArea()
                 List {
-                    Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: UserProfileSettingView(transactions: $transactions)) { Label("表示ユーザー設定", systemImage: "person.2.circle").foregroundColor(Color(hex: themeBodyText)) }; NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("セキュリティ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: PasscodeSettingView()) { Label("パスコードロック設定", systemImage: "lock.shield").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("予算設定").foregroundColor(Color(hex: themeSubText))) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000).foregroundColor(Color(hex: themeBodyText)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { Button("手動保存") { activeAlert = .save }.foregroundColor(Color(hex: themeBodyText)); Button("手動保存から復元") { isRestoringManual = true; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("自動保存から復元") { isRestoringManual = false; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("すべてのデータを外部に書き出す") { exportBackup() }.foregroundColor(Color(hex: themeMain)); Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { Button("全データをリセット", role: .destructive) { activeAlert = .reset } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
+                    Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) {
+                        NavigationLink(destination: UserProfileSettingView(transactions: $transactions)) {
+                            Label("表示ユーザー設定", systemImage: "person.2.circle").foregroundColor(Color(hex: themeBodyText))
+                        }
+                        NavigationLink(destination: ThemeSettingView()) {
+                            Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText))
+                        }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
+                    Section(header: Text("セキュリティ").foregroundColor(Color(hex: themeSubText))) {
+                        NavigationLink(destination: PasscodeSettingView()) {
+                            Label("パスコードロック設定", systemImage: "lock.shield").foregroundColor(Color(hex: themeBodyText))
+                        }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
+                    Section(header: Text("予算設定").foregroundColor(Color(hex: themeSubText))) {
+                        Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000).foregroundColor(Color(hex: themeBodyText))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
+                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) {
+                        Button("手動保存") { activeAlert = .save }.foregroundColor(Color(hex: themeBodyText))
+                        Button("手動保存から復元") { isRestoringManual = true; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText))
+                        Button("自動保存から復元") { isRestoringManual = false; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText))
+                        Button("すべてのデータを外部に書き出す") { exportBackup() }.foregroundColor(Color(hex: themeMain))
+                        Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
+                    Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) {
+                        Button("全データをリセット", role: .destructive) { activeAlert = .reset }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                }
+                .scrollContentBackground(.hidden)
+                .listStyle(.insetGrouped)
             }
-            .navigationTitle("設定").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }
-            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
-            .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in if case .success(let url) = result { if url.startAccessingSecurityScopedResource() { handleImport(from: url); url.stopAccessingSecurityScopedResource() } } }
+            .navigationTitle("設定")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if !lockManager.passcode.isEmpty {
+                        Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) {
+                            Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain))
+                        }
+                    }
+                }
+            }
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in
+                if case .success(let url) = result {
+                    if url.startAccessingSecurityScopedResource() {
+                        handleImport(from: url)
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+            }
         }
+    }
+
+    // 【重要】消えてしまっていた binding(for:) 関数を復活させました！
+    private func binding(for account: Account) -> Binding<Account> {
+        Binding(
+            get: { self.accounts.first(where: { $0.id == account.id }) ?? account },
+            set: { if let i = self.accounts.firstIndex(where: { $0.id == account.id }) { self.accounts[i] = $0 } }
+        )
+    }
+    
+    private func binding(for group: AccountGroup) -> Binding<AccountGroup> {
+        Binding(
+            get: { self.groups.first(where: { $0.id == group.id }) ?? group },
+            set: { if let i = self.groups.firstIndex(where: { $0.id == group.id }) { self.groups[i] = $0 } }
+        )
     }
 
     func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images))
     }
-    
-    // 【変更】指に完璧に追従し、ヌルヌル動くドラッグアルゴリズム
+
     private func handleDragChange(value: DragGesture.Value, item: DisplayHomeItem) {
         if draggedItemId != item.id {
             draggedItemId = item.id
@@ -362,7 +482,6 @@ struct ContentView: View {
         homeDisplayOrder = homeItems.map { $0.id }
     }
 
-    // 【変更】データのキャッシュ化（重い計算をここだけで終わらせる）
     func syncHomeItems() {
         if draggedItemId != nil { return }
         var items: [DisplayHomeItem] = []
