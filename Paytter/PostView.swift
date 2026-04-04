@@ -1,7 +1,6 @@
 import SwiftUI
 import PhotosUI
 
-// 【変更】UIImageをキャッシュとして持たせ、ドラッグ中の超重い「再描画」を防ぎます
 struct PostAttachedImage: Identifiable, Equatable {
     let id = UUID()
     let data: Data
@@ -41,8 +40,7 @@ struct PostView: View {
     
     @State private var draggedImageId: UUID?
     @State private var dragImageOffset: CGFloat = 0
-    // 【変更】絶対座標追従のためのジャンプ距離記憶変数
-    @State private var dragImageTotalJump: CGFloat = 0
+    @State private var dragImageTotalJump: CGFloat = 0 // 絶対座標のズレ補正用
     
     var body: some View {
         NavigationView {
@@ -85,7 +83,6 @@ struct PostView: View {
                             HStack(spacing: 8) {
                                 ForEach(attachedImages) { item in
                                     ZStack(alignment: .topTrailing) {
-                                        // 【変更】キャッシュされたUIImageを直接使うことで負荷ゼロに
                                         Image(uiImage: item.image)
                                             .resizable()
                                             .scaledToFill()
@@ -127,7 +124,6 @@ struct PostView: View {
                                     if let data = try? await item.loadTransferable(type: Data.self),
                                        let uiImage = UIImage(data: data),
                                        let compressed = compressImage(uiImage),
-                                       // 【新規】再デコードしてキャッシュ用画像を作る
                                        let compressedImage = UIImage(data: compressed) {
                                         DispatchQueue.main.async {
                                             if attachedImages.count < 4 {
@@ -195,7 +191,6 @@ struct PostView: View {
             self.postDate = initialDate
             self.isExcluded = isExcludedInitial
             self.selectedProfileId = profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.first(where: { $0.isVisible })?.id ?? profiles.first?.id
-            // 【変更】初期表示時もUIImageを生成してキャッシュする
             self.attachedImages = (initialImages ?? []).compactMap { data in
                 if let img = UIImage(data: data) { return PostAttachedImage(data: data, image: img) }
                 return nil
@@ -203,7 +198,7 @@ struct PostView: View {
         }
     }
     
-    // 【変更】指に完璧に追従し、ヌルヌル動くドラッグアルゴリズム
+    // 【重要】カクつかないよう、バネのアニメーションと絶対座標での補正を完全に適応
     private func handleImageDragChange(_ value: DragGesture.Value, item: PostAttachedImage) {
         if draggedImageId != item.id {
             draggedImageId = item.id
