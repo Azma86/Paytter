@@ -72,7 +72,6 @@ struct ContentView: View {
     @ObservedObject var lockManager = LockManager.shared
     @Environment(\.scenePhase) var scenePhase
 
-    // 【変更】削除済みユーザーの投稿は見えるようにする
     var visibleTransactions: [Transaction] {
         transactions.filter { tx in
             let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
@@ -80,7 +79,6 @@ struct ContentView: View {
             let isPrivate = profile?.isPrivate ?? false
             let isDeleted = profile?.isDeleted ?? false
             
-            // 削除済みユーザーの投稿は設定に関わらず表示する
             if isDeleted { return true }
             if !isVisible { return false }
             
@@ -142,7 +140,11 @@ struct ContentView: View {
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .background {
                 lockManager.lock()
+                // 【修正】バックグラウンド移行時に強制的に再計算をねじ込む
+                recalculateBalances()
             } else if newPhase == .active {
+                // 【修正】アクティブ復帰時も状態を確実にあわせる
+                recalculateBalances()
                 if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
                     lockManager.promptUnlock()
                 }
@@ -577,7 +579,6 @@ struct ContentView: View {
             case .totalAssets:
                 let totalB = accounts.reduce(0) { $0 + $1.balance }
                 let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
-                // 【変更】フラグを渡してエフェクトのオンオフを制御
                 BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD, isSilent: lockManager.isSilentUpdate)
             case .account(let a):
                 if let currentAcc = accounts.first(where: { $0.id == a.id }) {
@@ -740,7 +741,6 @@ struct ContentView: View {
         activeAlert = .completion("リセット完了")
     }
     
-    // 【変更】残額反映のロジック修正
     func recalculateBalances() {
         var tempAccounts = accounts
         for i in 0..<tempAccounts.count {
@@ -752,13 +752,11 @@ struct ContentView: View {
                 let isPrivate = profile?.isPrivate ?? false
                 let isDeleted = profile?.isDeleted ?? false
                 
-                // 削除済みユーザーの投稿は計算に含める
                 if isDeleted {
                     cur += (tx.isIncome ? tx.amount : -tx.amount)
                     continue
                 }
                 
-                // ロック中で、かつ「残額に反映しない」設定の場合は計算から除外
                 if isPrivate && !lockManager.isUnlocked && !lockManager.reflectPrivateBalanceWhenLocked {
                     continue
                 }
@@ -769,7 +767,12 @@ struct ContentView: View {
             tempAccounts[i].balance = cur
         }
         accounts = tempAccounts
-        BackupManager.saveFullBackup(data: createFullBackupData(), isManual: false)
+        
+        // 【修正】バックアップ処理をバックグラウンドスレッドに逃がすことでフリーズを解消
+        let backupData = createFullBackupData()
+        DispatchQueue.global(qos: .background).async {
+            BackupManager.saveFullBackup(data: backupData, isManual: false)
+        }
     }
     
     func parseAmount(from text: String) -> Int {
