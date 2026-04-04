@@ -3,7 +3,6 @@ import SwiftUI
 import LocalAuthentication
 import Combine
 
-// アラートの種類を定義
 enum ActiveAlert: Identifiable {
     case reset, restore, save, importConfirm, completion(String)
     var id: String {
@@ -17,12 +16,14 @@ enum ActiveAlert: Identifiable {
     }
 }
 
-// アプリ全体のロック状態を管理するマネージャー
 class LockManager: ObservableObject {
     static let shared = LockManager()
     
     @Published var isUnlocked: Bool = true
     @Published var isShowingLockScreen: Bool = false
+    
+    // 【新規】ロック切り替えによる残高変動かどうかを判定するフラグ
+    @Published var isSilentUpdate: Bool = false
     
     var passcode: String {
         get { UserDefaults.standard.string(forKey: "app_passcode") ?? "" }
@@ -36,8 +37,6 @@ class LockManager: ObservableObject {
         get { UserDefaults.standard.bool(forKey: "use_biometrics") }
         set { UserDefaults.standard.set(newValue, forKey: "use_biometrics"); objectWillChange.send() }
     }
-    
-    // 【新規】ロック設定のカスタマイズ
     var lockBehavior: Int { // 0: 全画面ロック, 1: 鍵アカウントのみ非表示
         get { UserDefaults.standard.integer(forKey: "lock_behavior") }
         set { UserDefaults.standard.set(newValue, forKey: "lock_behavior"); objectWillChange.send() }
@@ -46,7 +45,7 @@ class LockManager: ObservableObject {
         get { UserDefaults.standard.integer(forKey: "private_post_display") }
         set { UserDefaults.standard.set(newValue, forKey: "private_post_display"); objectWillChange.send() }
     }
-    var reflectPrivateBalanceWhenLocked: Bool { // true: 反映する, false: 反映しない
+    var reflectPrivateBalanceWhenLocked: Bool {
         get { UserDefaults.standard.bool(forKey: "reflect_private_balance") }
         set { UserDefaults.standard.set(newValue, forKey: "reflect_private_balance"); objectWillChange.send() }
     }
@@ -59,10 +58,13 @@ class LockManager: ObservableObject {
     
     func lock() {
         if !passcode.isEmpty {
+            isSilentUpdate = true
             isUnlocked = false
             if lockBehavior == 0 {
                 isShowingLockScreen = true
             }
+            // 0.5秒後にSilentフラグを戻す
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.isSilentUpdate = false }
         }
     }
     
@@ -78,8 +80,10 @@ class LockManager: ObservableObject {
             context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "アプリのロックを解除します") { success, _ in
                 DispatchQueue.main.async {
                     if success {
+                        self.isSilentUpdate = true
                         self.isUnlocked = true
                         self.isShowingLockScreen = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.isSilentUpdate = false }
                     }
                 }
             }
@@ -88,8 +92,10 @@ class LockManager: ObservableObject {
     
     func unlock(with code: String) -> Bool {
         if code == passcode {
+            isSilentUpdate = true
             isUnlocked = true
             isShowingLockScreen = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.isSilentUpdate = false }
             return true
         }
         return false
@@ -152,6 +158,8 @@ struct UserProfile: Identifiable, Codable, Equatable {
     var iconData: Data?
     var isVisible: Bool = true
     var isPrivate: Bool?
+    // 【新規】削除済みユーザーかどうかのフラグ
+    var isDeleted: Bool?
 }
 
 struct Transaction: Identifiable, Codable, Equatable {
