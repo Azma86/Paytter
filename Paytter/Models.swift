@@ -16,12 +16,32 @@ enum ActiveAlert: Identifiable {
     }
 }
 
+// 【新規】スクロール負荷をゼロにするための画像メモリキャッシュシステム
+class ImageCache {
+    static let shared = ImageCache()
+    private var cache = NSCache<NSString, UIImage>()
+    
+    func image(for data: Data) -> UIImage? {
+        let key = NSString(string: String(data.hashValue))
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+        if let image = UIImage(data: data) {
+            cache.setObject(image, forKey: key)
+            return image
+        }
+        return nil
+    }
+}
+
 class LockManager: ObservableObject {
     static let shared = LockManager()
     
     @Published var isUnlocked: Bool = true
     @Published var isShowingLockScreen: Bool = false
     @Published var isSilentUpdate: Bool = false
+    // 【新規】ロック解除時などの「重い処理中」を管理するフラグ
+    @Published var isProcessing: Bool = false
     
     var passcode: String {
         get { UserDefaults.standard.string(forKey: "app_passcode") ?? "" }
@@ -103,7 +123,6 @@ class LockManager: ObservableObject {
     }
 }
 
-// 【変更】最も重かった処理を「超高速な変換アルゴリズム」へと一新しました
 extension Color {
     init(hex: String) {
         var hexStr = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
