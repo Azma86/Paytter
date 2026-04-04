@@ -27,8 +27,6 @@ struct FullBackupData: Codable {
 class BackupManager {
     static let manualFile = "paytter_fullbackup_manual.json"
     static let autoFile = "paytter_fullbackup_auto.json"
-    
-    // 互換性用（古いファイル）
     static let transAutoFile = "paytter_transactions_auto.json"
     static let accountsAutoFile = "paytter_accounts_auto.json"
     static let transManualFile = "paytter_transactions_manual.json"
@@ -58,10 +56,7 @@ class BackupManager {
     }
     
     static func getBackupDate(isManual: Bool) -> String {
-        if let backup = loadFullBackup(isManual: isManual) {
-            return backup.backupDate
-        }
-        // フォールバック（旧ファイル）
+        if let backup = loadFullBackup(isManual: isManual) { return backup.backupDate }
         let tName = isManual ? transManualFile : transAutoFile
         let url = getDocumentsDirectory().appendingPathComponent(tName)
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -71,7 +66,6 @@ class BackupManager {
         return formatter.string(from: date)
     }
     
-    // 互換性用（古いファイルの読み込み）
     static func loadTransactions(isManual: Bool) -> [Transaction]? {
         let tName = isManual ? transManualFile : transAutoFile
         let url = getDocumentsDirectory().appendingPathComponent(tName)
