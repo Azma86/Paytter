@@ -20,13 +20,16 @@ struct TransactionDetailView: View {
     @State private var isShowingDeleteConfirm = false
     
     var body: some View {
+        let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
+        let isPrivate = profile.isPrivate ?? false
+        let isLocked = !LockManager.shared.isUnlocked
+        let hideContent = isPrivate && isLocked && LockManager.shared.privatePostDisplayMode == 1
+        
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 12) {
-                        let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
-                        
                         if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
                             Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 56, height: 56).clipShape(Circle())
                         } else {
@@ -38,23 +41,32 @@ struct TransactionDetailView: View {
                             Text("@\(profile.userId)").font(.subheadline).foregroundColor(Color(hex: themeSubText))
                         }
                         Spacer()
-                        Text(item.source)
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color(hex: themeSubText).opacity(0.1))
-                            .cornerRadius(5)
-                            .foregroundColor(Color(hex: themeBodyText))
+                        
+                        if hideContent {
+                            Text("---").font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color(hex: themeSubText).opacity(0.1)).cornerRadius(5).foregroundColor(Color(hex: themeBodyText))
+                        } else {
+                            Text(item.source)
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color(hex: themeSubText).opacity(0.1))
+                                .cornerRadius(5)
+                                .foregroundColor(Color(hex: themeBodyText))
+                        }
                     }
                     
-                    HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
-                        .font(.title3)
-                        .foregroundColor(Color(hex: themeBodyText))
-                    
-                    if !item.tags.isEmpty {
-                        HStack(spacing: 12) {
-                            ForEach(item.tags, id: \.self) { tag in
-                                Text(tag).font(.subheadline).foregroundColor(Color(hex: themeMain))
+                    if hideContent {
+                        Text("鍵アカウントによる投稿です").font(.title3).foregroundColor(Color(hex: themeSubText))
+                    } else {
+                        HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
+                            .font(.title3)
+                            .foregroundColor(Color(hex: themeBodyText))
+                        
+                        if !item.tags.isEmpty {
+                            HStack(spacing: 12) {
+                                ForEach(item.tags, id: \.self) { tag in
+                                    Text(tag).font(.subheadline).foregroundColor(Color(hex: themeMain))
+                                }
                             }
                         }
                     }
@@ -275,6 +287,7 @@ struct UserProfileSettingView: View {
     }
 }
 
+// 【変更】パスコード設定画面にロック時の挙動のカスタマイズを追加
 struct PasscodeSettingView: View {
     @ObservedObject var lockManager = LockManager.shared
     @State private var newPasscode = ""
@@ -283,6 +296,7 @@ struct PasscodeSettingView: View {
     
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     
     @Environment(\.dismiss) var dismiss
 
@@ -300,8 +314,10 @@ struct PasscodeSettingView: View {
                         
                         SecureField("パスコードを入力", text: $newPasscode)
                             .keyboardType(selectedType == 2 ? .default : .numberPad)
+                            .foregroundColor(Color(hex: themeBodyText))
                         
                         Toggle("生体認証(TouchID/FaceID)を使用", isOn: $useBiometrics)
+                            .foregroundColor(Color(hex: themeBodyText))
                         
                         Button("設定する") {
                             if validate() {
@@ -317,11 +333,26 @@ struct PasscodeSettingView: View {
                     }
                 } else {
                     Section(header: Text("パスコード設定")) {
-                        Text("パスコードは設定済みです")
+                        Text("パスコードは設定済みです").foregroundColor(Color(hex: themeBodyText))
                         Button("パスコードをオフにする", role: .destructive) {
                             lockManager.passcode = ""
                             lockManager.isUnlocked = true
                         }
+                    }
+                    
+                    Section(header: Text("ロックの動作")) {
+                        Picker("ロック時の制限", selection: $lockManager.lockBehavior) {
+                            Text("全画面をロック").tag(0)
+                            Text("鍵アカウントのみ非表示").tag(1)
+                        }.pickerStyle(.menu)
+                        
+                        Picker("鍵投稿の非表示方法", selection: $lockManager.privatePostDisplayMode) {
+                            Text("完全に非表示").tag(0)
+                            Text("内容のみ隠す").tag(1)
+                        }.pickerStyle(.menu)
+                        
+                        Toggle("ロック時も鍵投稿を残額に反映", isOn: $lockManager.reflectPrivateBalanceWhenLocked)
+                            .foregroundColor(Color(hex: themeBodyText))
                     }
                 }
             }.scrollContentBackground(.hidden)
@@ -338,6 +369,7 @@ struct PasscodeSettingView: View {
     }
 }
 
+// 【変更】パスコード入力画面の表示から0.3秒後に生体認証を要求する
 struct PasscodeLockOverlay: View {
     @ObservedObject var lockManager = LockManager.shared
     @State private var inputCode = ""
@@ -363,6 +395,7 @@ struct PasscodeLockOverlay: View {
                     .keyboardType(lockManager.passcodeType == 2 ? .default : .numberPad)
                     .multilineTextAlignment(.center)
                     .font(.title)
+                    .foregroundColor(Color(hex: themeBodyText))
                     .padding()
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(12)
@@ -394,17 +427,23 @@ struct PasscodeLockOverlay: View {
                 
                 Spacer()
                 
-                Button("キャンセルして鍵アカウントを非表示") {
-                    lockManager.cancelUnlock()
+                // 全画面ロックじゃない場合だけキャンセル可能
+                if lockManager.lockBehavior == 1 {
+                    Button("キャンセルして鍵アカウントを非表示") {
+                        lockManager.cancelUnlock()
+                    }
+                    .font(.footnote)
+                    .foregroundColor(.gray)
+                    .padding(.bottom, 30)
                 }
-                .font(.footnote)
-                .foregroundColor(.gray)
-                .padding(.bottom, 30)
             }.padding(.top, 80)
         }
         .onAppear {
             if lockManager.useBiometrics {
-                lockManager.authenticateWithBiometrics()
+                // UIがレンダリングされてから生体認証を出すための遅延
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    lockManager.authenticateWithBiometrics()
+                }
             }
         }
     }
@@ -685,9 +724,23 @@ struct WalletAnalysisView: View {
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
+    @ObservedObject var lockManager = LockManager.shared
+    
+    // 【変更】分析画面でも鍵アカウントの残高反映設定を考慮
+    var validTransactions: [Transaction] {
+        if lockManager.isUnlocked || lockManager.reflectPrivateBalanceWhenLocked {
+            return transactions
+        } else {
+            return transactions.filter { tx in
+                let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
+                return !(profile?.isPrivate ?? false)
+            }
+        }
+    }
     
     var monthlyTotal: Int {
-        transactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount }
+        validTransactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount }
     }
     
     var body: some View {

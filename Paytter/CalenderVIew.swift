@@ -35,13 +35,26 @@ struct CalendarView: View {
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
 
-    var filteredTransactions: [Transaction] {
+    // 【変更】鍵アカウントの表示設定を反映（点表示やリストのため）
+    var validTransactionsForCalendar: [Transaction] {
         transactions.filter { tx in
             let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
             let isVisible = profile?.isVisible ?? true
             let isPrivate = profile?.isPrivate ?? false
-            return calendar.isDate(tx.date, inSameDayAs: selectedDate) && isVisible && (!isPrivate || lockManager.isUnlocked)
-        }.sorted(by: { $0.date > $1.date })
+            
+            if !isVisible { return false }
+            // 完全に非表示設定の場合はリストからも点からも消す
+            if isPrivate && !lockManager.isUnlocked && lockManager.privatePostDisplayMode == 0 {
+                return false
+            }
+            return true
+        }
+    }
+    
+    var filteredTransactions: [Transaction] {
+        validTransactionsForCalendar
+            .filter { calendar.isDate($0.date, inSameDayAs: selectedDate) }
+            .sorted(by: { $0.date > $1.date })
     }
 
     var body: some View {
@@ -300,7 +313,8 @@ struct CalendarView: View {
     
     @ViewBuilder func dayCell(date: Date, month: Date) -> some View {
         let isCurrentMonth = calendar.isDate(date, equalTo: month, toGranularity: .month)
-        let dayTransactions = transactions.filter { calendar.isDate($0.date, inSameDayAs: date) }
+        // 【変更】点の表示もフィルタリング済みの配列から生成する
+        let dayTransactions = validTransactionsForCalendar.filter { calendar.isDate($0.date, inSameDayAs: date) }
         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
         let isHoliday = checkIsHoliday(date)
         let weekday = calendar.component(.weekday, from: date)

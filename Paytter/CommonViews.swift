@@ -36,11 +36,15 @@ struct TwitterRow: View {
     let item: Transaction
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     
     var body: some View {
-        // 【重要】設定されているプロフィールを取得（見つからない場合はデフォルト）
         let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
+        let isPrivate = profile.isPrivate ?? false
+        let isLocked = !LockManager.shared.isUnlocked
+        // 【変更】内容のみ非表示モードの時のフラグ
+        let hideContent = isPrivate && isLocked && LockManager.shared.privatePostDisplayMode == 1
         
         HStack(alignment: .top, spacing: 12) {
             if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
@@ -54,11 +58,29 @@ struct TwitterRow: View {
                     Text(profile.name).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
                     Text("@\(profile.userId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                     Spacer()
-                    if item.isExcludedFromBalance == true { Image(systemName: "calculator.badge.minus").font(.system(size: 8)).foregroundColor(Color(hex: themeBodyText).opacity(0.4)) }
-                    Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText))
+                    
+                    if item.isExcludedFromBalance == true {
+                        Image(systemName: "calculator.badge.minus")
+                            .font(.system(size: 8))
+                            .foregroundColor(Color(hex: themeBodyText).opacity(0.4))
+                    }
+                    
+                    if hideContent {
+                        Text("---").font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText))
+                    } else {
+                        Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText))
+                    }
                 }
-                HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBodyText))
-                if !item.tags.isEmpty { HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } } }
+                
+                // 【変更】内容を隠す
+                if hideContent {
+                    Text("鍵アカウントによる投稿です")
+                        .font(.subheadline)
+                        .foregroundColor(Color(hex: themeSubText))
+                } else {
+                    HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBodyText))
+                    if !item.tags.isEmpty { HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } } }
+                }
             }
         }.padding(.vertical, 8).padding(.horizontal, 16)
     }
