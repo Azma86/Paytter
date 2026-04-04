@@ -70,23 +70,10 @@ struct TransactionDetailView: View {
                             }
                         }
                         
-                        // 【新規】詳細画面での画像グリッド表示（大きく表示）
+                        // 【変更】詳細画面では少し大きめのグリッドで表示
                         if let images = item.attachedImageDatas, !images.isEmpty {
-                            let cols = images.count == 1 ? 1 : 2
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: cols), spacing: 8) {
-                                ForEach(images.indices, id: \.self) { idx in
-                                    if let uiImage = UIImage(data: images[idx]) {
-                                        Image(uiImage: uiImage)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(height: images.count == 1 ? 250 : 150)
-                                            .clipped()
-                                            .cornerRadius(16)
-                                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.gray.opacity(0.2), lineWidth: 1))
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 8)
+                            TimelineImageGrid(images: images, maxHeight: 260)
+                                .padding(.vertical, 8)
                         }
                     }
                     
@@ -138,7 +125,6 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $isShowingEditSheet) {
-            // 【変更】編集時に既存の画像を引き継ぐ
             PostView(
                 inputText: $editLineText,
                 isPresented: $isShowingEditSheet,
@@ -151,6 +137,27 @@ struct TransactionDetailView: View {
             )
         }
     }
+    
+    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
+        if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
+            let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
+                .filter { $0.contains("¥") }
+                .reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
+            
+            var nSrc = item.source
+            for acc in accounts {
+                if editLineText.contains("@\(acc.name)") { nSrc = acc.name }
+            }
+            
+            transactions[idx] = Transaction(
+                id: item.id, amount: nAmt, date: nDate, note: editLineText,
+                source: nSrc, isIncome: isInc, isExcludedFromBalance: isExc,
+                profileId: profileId ?? item.profileId,
+                attachedImageDatas: images
+            )
+        }
+    }
+}
     
     // 【変更】画像データも保存できるように修正
     func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
