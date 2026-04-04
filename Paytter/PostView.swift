@@ -5,7 +5,6 @@ struct PostView: View {
     var initialDate: Date = Date()
     var isExcludedInitial: Bool = false
     
-    // 【変更】クロージャにユーザーIDを追加
     var onPost: (Bool, Date, Bool, UUID?) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
@@ -24,7 +23,6 @@ struct PostView: View {
     @State private var suggestions: [String] = []
     @State private var isExcluded = false
     
-    // 【新規】投稿するユーザーを選択する変数
     @State private var selectedProfileId: UUID?
     
     var body: some View {
@@ -34,7 +32,6 @@ struct PostView: View {
                 
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
-                        // 【新規】アイコンタップでユーザーを切り替え
                         Menu {
                             ForEach(profiles) { profile in
                                 Button(action: { selectedProfileId = profile.id }) { Text(profile.name) }
@@ -49,21 +46,44 @@ struct PostView: View {
                         }
                         
                         ZStack(alignment: .topLeading) {
-                            CustomTextEditor(text: $inputText) { sym in insertAtCursor(sym); DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() } }.frame(minHeight: 150).foregroundColor(Color(hex: themeBarText)).onChange(of: inputText) { _ in updateSuggestionsForCursor() }
-                            if inputText.isEmpty { Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) }
+                            CustomTextEditor(text: $inputText) { sym in 
+                                insertAtCursor(sym)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { updateSuggestionsForCursor() }
+                            }
+                            .frame(minHeight: 150)
+                            .foregroundColor(Color(hex: themeBarText))
+                            .onChange(of: inputText) { _ in updateSuggestionsForCursor() }
+                            
+                            if inputText.isEmpty { 
+                                Text("どんな買い物をしましたか？").foregroundColor(.gray.opacity(0.7)).padding(.top, 8).padding(.leading, 5).allowsHitTesting(false) 
+                            }
                         }
                     }.padding()
                     
+                    Spacer()
+                    
+                    // 【変更】縦リストをやめ、入力の邪魔をしない横スクロールのチップ型に変更
                     if !suggestions.isEmpty {
-                        ScrollView(.vertical, showsIndicators: false) {
-                            VStack(alignment: .leading, spacing: 0) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
                                 ForEach(suggestions, id: \.self) { suggestion in
                                     Button(action: { applySuggestion(suggestion) }) {
-                                        VStack(alignment: .leading) { Text(suggestion).font(.body).foregroundColor(Color(hex: themeBarText)).padding(.vertical, 12).padding(.horizontal, 20); Divider() }
+                                        Text(suggestion)
+                                            .font(.subheadline)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(Color(hex: themeMain))
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 10)
+                                            .background(Color(hex: themeMain).opacity(0.1))
+                                            .cornerRadius(20)
                                     }
                                 }
                             }
-                        }.frame(maxHeight: 150).background(Color(hex: themeBG).opacity(0.9))
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
+                        }
+                        .background(Color(hex: themeBG))
+                        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: -3)
                     }
                     
                     HStack {
@@ -74,8 +94,7 @@ struct PostView: View {
                         Spacer()
                         Toggle("残高計算から除外", isOn: $isExcluded).labelsHidden()
                         Text("計算除外").font(.footnote).foregroundColor(isExcluded ? Color(hex: themeMain) : .gray)
-                    }.padding(.horizontal)
-                    Spacer()
+                    }.padding(.horizontal).padding(.vertical, 8)
                 }
             }
             .navigationBarItems(
