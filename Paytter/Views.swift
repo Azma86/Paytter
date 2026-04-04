@@ -22,28 +22,45 @@ struct TransactionDetailView: View {
     var body: some View {
         let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
         let isPrivate = profile.isPrivate ?? false
+        let isDeleted = profile.isDeleted ?? false
         let isLocked = !LockManager.shared.isUnlocked
         let hideContent = isPrivate && isLocked && LockManager.shared.privatePostDisplayMode == 1
+        
+        let displayName = isDeleted ? "削除されたユーザー" : profile.name
+        let displayId = isDeleted ? "deleted_user" : profile.userId
         
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 12) {
-                        if let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
-                            Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 56, height: 56).clipShape(Circle())
+                        if !isDeleted, let iconData = profile.iconData, let uiImage = UIImage(data: iconData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 56, height: 56)
+                                .clipShape(Circle())
                         } else {
-                            Image(systemName: "person.circle.fill").resizable().frame(width: 56, height: 56).foregroundColor(Color(hex: themeSubText))
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .frame(width: 56, height: 56)
+                                .foregroundColor(Color(hex: themeSubText))
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(profile.name).font(.headline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
-                            Text("@\(profile.userId)").font(.subheadline).foregroundColor(Color(hex: themeSubText))
+                            Text(displayName).font(.headline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
+                            Text("@\(displayId)").font(.subheadline).foregroundColor(Color(hex: themeSubText))
                         }
                         Spacer()
                         
                         if hideContent {
-                            Text("---").font(.system(size: 10, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 3).background(Color(hex: themeSubText).opacity(0.1)).cornerRadius(5).foregroundColor(Color(hex: themeBodyText))
+                            Text("---")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color(hex: themeSubText).opacity(0.1))
+                                .cornerRadius(5)
+                                .foregroundColor(Color(hex: themeBodyText))
                         } else {
                             Text(item.source)
                                 .font(.system(size: 10, weight: .bold))
@@ -70,7 +87,6 @@ struct TransactionDetailView: View {
                             }
                         }
                         
-                        // 【変更】詳細画面では少し大きめのグリッドで表示
                         if let images = item.attachedImageDatas, !images.isEmpty {
                             TimelineImageGrid(images: images, maxHeight: 260)
                                 .padding(.vertical, 8)
@@ -138,27 +154,6 @@ struct TransactionDetailView: View {
         }
     }
     
-    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
-        if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
-            let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
-                .filter { $0.contains("¥") }
-                .reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
-            
-            var nSrc = item.source
-            for acc in accounts {
-                if editLineText.contains("@\(acc.name)") { nSrc = acc.name }
-            }
-            
-            transactions[idx] = Transaction(
-                id: item.id, amount: nAmt, date: nDate, note: editLineText,
-                source: nSrc, isIncome: isInc, isExcludedFromBalance: isExc,
-                profileId: profileId ?? item.profileId,
-                attachedImageDatas: images
-            )
-        }
-    }
-    
-    // 【変更】画像データも保存できるように修正
     func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
