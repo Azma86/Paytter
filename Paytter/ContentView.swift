@@ -3,26 +3,76 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum HomeItem: Identifiable, Equatable {
-    case totalAssets; case account(Account); case group(AccountGroup)
-    var id: String { switch self { case .totalAssets: return "TOTAL_ASSETS"; case .account(let a): return "ACCOUNT_\(a.id.uuidString)"; case .group(let g): return "GROUP_\(g.id.uuidString)" } }
+    case totalAssets
+    case account(Account)
+    case group(AccountGroup)
+    
+    var id: String {
+        switch self {
+        case .totalAssets: return "TOTAL_ASSETS"
+        case .account(let a): return "ACCOUNT_\(a.id.uuidString)"
+        case .group(let g): return "GROUP_\(g.id.uuidString)"
+        }
+    }
 }
 
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
-    @AppStorage("accounts_v2") var accounts: [Account] = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]
+    @AppStorage("accounts_v2") var accounts: [Account] = [
+        Account(name: "お財布", balance: 0, type: .wallet),
+        Account(name: "口座", balance: 0, type: .bank),
+        Account(name: "ポイント", balance: 0, type: .point)
+    ]
     @AppStorage("account_groups") var groups: [AccountGroup] = []
-    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]
+    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = [
+        UserProfile(name: "むつき", userId: "Mutsuki_dev")
+    ]
     
-    @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000; @AppStorage("isDarkMode") var isDarkMode: Bool = false
-    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"; @AppStorage("theme_income") var themeIncome: String = "#FF19B219"; @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"; @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"; @AppStorage("theme_saturday") var themeSaturday: String = "#FF007AFF"; @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"; @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"; @AppStorage("theme_barText") var themeBarText: String = "#FF000000"; @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"; @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"; @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @AppStorage("show_total_assets") var showTotalAssets: Bool = true; @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
+    @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
+    @AppStorage("isDarkMode") var isDarkMode: Bool = false
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    @AppStorage("theme_saturday") var themeSaturday: String = "#FF007AFF"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
+    @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
+    @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("show_total_assets") var showTotalAssets: Bool = true
+    @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
 
-    @State private var selection = 0; @State private var isShowingInputSheet = false; @State private var inputText: String = ""; @State private var isShowingSwipeDeleteAlert = false; @State private var transactionToDelete: Transaction?; @State private var isShowingAccountCreator = false; @State private var isShowingGroupCreator = false; @State private var isShowingAccountDeleteAlert = false; @State private var isShowingGroupDeleteAlert = false; @State private var accountToDelete: Account?; @State private var groupToDelete: AccountGroup?
-    @State private var isHomeEditMode = false; @State private var draggedItemId: String?; @State private var dragOffset: CGFloat = 0; @State private var dragLastX: CGFloat?; @State private var homeItems: [HomeItem] = []
-    @State private var activeAlert: ActiveAlert?; @State private var isRestoringManual = false; @State private var isShowingImporter = false; @State private var pendingImportData: FullBackupData?
+    @State private var selection = 0
+    @State private var isShowingInputSheet = false
+    @State private var inputText: String = ""
+    @State private var isShowingSwipeDeleteAlert = false
+    @State private var transactionToDelete: Transaction?
+    @State private var isShowingAccountCreator = false
+    @State private var isShowingGroupCreator = false
+    @State private var isShowingAccountDeleteAlert = false
+    @State private var isShowingGroupDeleteAlert = false
+    @State private var accountToDelete: Account?
+    @State private var groupToDelete: AccountGroup?
+    
+    @State private var isHomeEditMode = false
+    @State private var draggedItemId: String?
+    @State private var dragOffset: CGFloat = 0
+    // 【新規】ホームアイテム用の絶対座標トラッキング変数
+    @State private var dragHomeTotalJump: CGFloat = 0
+    
+    @State private var homeItems: [HomeItem] = []
+    
+    @State private var activeAlert: ActiveAlert?
+    @State private var isRestoringManual = false
+    @State private var isShowingImporter = false
+    @State private var pendingImportData: FullBackupData?
 
     let appearancePublisher = NotificationCenter.default.publisher(for: NSNotification.Name("UpdateAppearance"))
-    @ObservedObject var lockManager = LockManager.shared; @Environment(\.scenePhase) var scenePhase
+    
+    @ObservedObject var lockManager = LockManager.shared
+    @Environment(\.scenePhase) var scenePhase
 
     var visibleTransactions: [Transaction] {
         transactions.filter { tx in
@@ -33,7 +83,9 @@ struct ContentView: View {
             
             if isDeleted { return true }
             if !isVisible { return false }
-            if isPrivate && !lockManager.isUnlocked && lockManager.privatePostDisplayMode == 0 { return false }
+            if isPrivate && !lockManager.isUnlocked && lockManager.privatePostDisplayMode == 0 {
+                return false
+            }
             return true
         }.sorted(by: { $0.date > $1.date })
     }
@@ -42,18 +94,42 @@ struct ContentView: View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             TabView(selection: $selection) {
-                homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }
-                calendarTab.tag(1).tabItem { Label("カレンダー", systemImage: "calendar") }
-                walletTab.tag(2).tabItem { Label("お財布", systemImage: "wallet.pass") }
-                settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") }
+                homeTab
+                    .tag(0)
+                    .tabItem { Label("ホーム", systemImage: "house") }
+                
+                calendarTab
+                    .tag(1)
+                    .tabItem { Label("カレンダー", systemImage: "calendar") }
+                
+                walletTab
+                    .tag(2)
+                    .tabItem { Label("お財布", systemImage: "wallet.pass") }
+                
+                settingTab
+                    .tag(3)
+                    .tabItem { Label("設定", systemImage: "gearshape") }
             }
             .accentColor(Color(hex: themeTabAccent))
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in self.selection = 0 }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in
+                self.selection = 0
+            }
             
-            if lockManager.isShowingLockScreen { PasscodeLockOverlay().zIndex(200).transition(.opacity) }
+            if lockManager.isShowingLockScreen {
+                PasscodeLockOverlay()
+                    .zIndex(200)
+                    .transition(.opacity)
+            }
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
-        .onAppear { recalculateBalances(); updateAppearance(); syncHomeItems(); if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 { lockManager.promptUnlock() } }
+        .onAppear {
+            recalculateBalances()
+            updateAppearance()
+            syncHomeItems()
+            if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
+                lockManager.promptUnlock()
+            }
+        }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances() }
         .onChange(of: lockManager.isUnlocked) { _ in recalculateBalances() }
@@ -62,18 +138,43 @@ struct ContentView: View {
         .onChange(of: showTotalAssets) { _ in syncHomeItems() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
-        .onChange(of: scenePhase) { newPhase in if newPhase == .background { lockManager.lock(); recalculateBalances() } else if newPhase == .active { recalculateBalances(); if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 { lockManager.promptUnlock() } } }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .background {
+                lockManager.lock()
+                recalculateBalances()
+            } else if newPhase == .active {
+                recalculateBalances()
+                if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
+                    lockManager.promptUnlock()
+                }
+            }
+        }
         .alert(item: $activeAlert) { type in
             switch type {
-            case .reset: return Alert(title: Text("全リセット"), message: Text("全てのデータとユーザー設定を初期化します。"), primaryButton: .destructive(Text("リセット")) { resetAll() }, secondaryButton: .cancel(Text("キャンセル")))
-            case .restore: let dateStr = BackupManager.getBackupDate(isManual: isRestoringManual); return Alert(title: Text("バックアップの復元"), message: Text("保存日時: \(dateStr)\nデータを復元しますか？"), primaryButton: .destructive(Text("復元")) { if let b = BackupManager.loadFullBackup(isManual: isRestoringManual) { applyFullBackup(b); activeAlert = .completion("復元完了") } else if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); activeAlert = .completion("復元完了(旧形式)") } }, secondaryButton: .cancel(Text("キャンセル")))
-            case .save: return Alert(title: Text("バックアップの保存"), message: Text("現在のすべてのデータで上書きしますか？"), primaryButton: .default(Text("保存")) { BackupManager.saveFullBackup(data: createFullBackupData(), isManual: true); activeAlert = .completion("保存完了") }, secondaryButton: .cancel(Text("キャンセル")))
-            case .importConfirm: return Alert(title: Text("外部データの読込"), message: Text("保存日時: \(pendingImportData?.backupDate ?? "")\nデータを上書きしますか？"), primaryButton: .destructive(Text("読み込む")) { if let d = pendingImportData { applyFullBackup(d); activeAlert = .completion("読込完了") }; pendingImportData = nil }, secondaryButton: .cancel(Text("キャンセル")) { pendingImportData = nil })
-            case .completion(let msg): return Alert(title: Text("完了"), message: Text(msg), dismissButton: .default(Text("OK")))
+            case .reset:
+                return Alert(title: Text("全リセット"), message: Text("全てのデータとユーザー設定を初期化します。"), primaryButton: .destructive(Text("リセット")) { resetAll() }, secondaryButton: .cancel(Text("キャンセル")))
+            case .restore:
+                let dateStr = BackupManager.getBackupDate(isManual: isRestoringManual)
+                return Alert(title: Text("バックアップの復元"), message: Text("保存日時: \(dateStr)\nデータを復元しますか？"), primaryButton: .destructive(Text("復元")) { if let b = BackupManager.loadFullBackup(isManual: isRestoringManual) { applyFullBackup(b); activeAlert = .completion("復元完了") } else if let t = BackupManager.loadTransactions(isManual: isRestoringManual), let a = BackupManager.loadAccounts(isManual: isRestoringManual) { transactions = t; accounts = a; recalculateBalances(); activeAlert = .completion("復元完了(旧形式)") } }, secondaryButton: .cancel(Text("キャンセル")))
+            case .save:
+                return Alert(title: Text("バックアップの保存"), message: Text("現在のすべてのデータで上書きしますか？"), primaryButton: .default(Text("保存")) { BackupManager.saveFullBackup(data: createFullBackupData(), isManual: true); activeAlert = .completion("保存完了") }, secondaryButton: .cancel(Text("キャンセル")))
+            case .importConfirm:
+                return Alert(title: Text("外部データの読込"), message: Text("保存日時: \(pendingImportData?.backupDate ?? "")\nデータを上書きしますか？"), primaryButton: .destructive(Text("読み込む")) { if let d = pendingImportData { applyFullBackup(d); activeAlert = .completion("読込完了") }; pendingImportData = nil }, secondaryButton: .cancel(Text("キャンセル")) { pendingImportData = nil })
+            case .completion(let msg):
+                return Alert(title: Text("完了"), message: Text(msg), dismissButton: .default(Text("OK")))
             }
         }
         .sheet(isPresented: $isShowingInputSheet) {
-            PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), isExcludedInitial: false, initialImages: nil, onPost: handlePostTransaction, transactions: transactions, accounts: accounts)
+            PostView(
+                inputText: $inputText,
+                isPresented: $isShowingInputSheet,
+                initialDate: Date(),
+                isExcludedInitial: false,
+                initialImages: nil,
+                onPost: handlePostTransaction,
+                transactions: transactions,
+                accounts: accounts
+            )
         }
     }
 
@@ -81,74 +182,225 @@ struct ContentView: View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
                 Color(hex: themeBG).ignoresSafeArea()
+                
                 VStack(spacing: 0) {
                     VStack(spacing: 8) {
-                        HStack(spacing: 10) { ForEach(homeItems) { item in homeHeaderItem(for: item).background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear).cornerRadius(8).overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil).offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0).zIndex(draggedItemId == item.id ? 100 : 0).gesture(isHomeEditMode ? DragGesture(minimumDistance: 0, coordinateSpace: .global).onChanged { value in handleDragChange(value: value, item: item) }.onEnded { _ in handleDragEnded() } : nil) } }.padding()
-                        if isHomeEditMode { Text("横にスライドして並べ替えられます").font(.caption2).foregroundColor(Color(hex: themeMain)).padding(.bottom, 4) }
-                    }.background(Color(hex: themeBarBG).opacity(0.8))
+                        HStack(spacing: 10) {
+                            ForEach(homeItems) { item in
+                                homeHeaderItem(for: item)
+                                    .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+                                    .cornerRadius(8)
+                                    .overlay(
+                                        isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil
+                                    )
+                                    .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
+                                    .zIndex(draggedItemId == item.id ? 100 : 0)
+                                    .gesture(
+                                        isHomeEditMode ? DragGesture(coordinateSpace: .global)
+                                            .onChanged { value in handleDragChange(value: value, item: item) }
+                                            .onEnded { _ in handleDragEnded() }
+                                        : nil
+                                    )
+                            }
+                        }
+                        .padding()
+                        
+                        if isHomeEditMode {
+                            Text("横にスライドして並べ替えられます")
+                                .font(.caption2)
+                                .foregroundColor(Color(hex: themeMain))
+                                .padding(.bottom, 4)
+                        }
+                    }
+                    .background(Color(hex: themeBarBG).opacity(0.8))
+                    
                     Divider()
-                    List { ForEach(visibleTransactions) { item in let isFuture = item.date > Date(); ZStack { NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0); TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0) }.listRowInsets(EdgeInsets()).listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG)).swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red) } } }.listStyle(.plain).scrollContentBackground(.hidden).refreshable { NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil) }
+                    
+                    List {
+                        ForEach(visibleTransactions) { item in
+                            let isFuture = item.date > Date()
+                            ZStack {
+                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
+                                TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0)
+                            }
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red)
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .refreshable { NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil) }
                 }
-                if !isHomeEditMode { Button(action: { inputText = ""; isShowingInputSheet = true }) { Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle()) }.padding(20).padding(.bottom, 10) }
+                
+                if !isHomeEditMode {
+                    Button(action: { inputText = ""; isShowingInputSheet = true }) {
+                        Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle())
+                    }
+                    .padding(20).padding(.bottom, 10)
+                }
             }
-            .navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("ホーム")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } }
-                ToolbarItem(placement: .navigationBarTrailing) { Button(action: { withAnimation(.spring()) { isHomeEditMode.toggle() } }) { Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.left.and.right.circle").foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain)) } }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if !lockManager.passcode.isEmpty {
+                        Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) {
+                            Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain))
+                        }
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { withAnimation(.spring()) { isHomeEditMode.toggle() } }) {
+                        Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.left.and.right.circle").foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain))
+                    }
+                }
             }
-            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) { Button("キャンセル", role: .cancel) {}; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } } }
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) {
+                Button("キャンセル", role: .cancel) {}
+                Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } }
+            }
         }
     }
     
-    private var calendarTab: some View { NavigationView { CalendarView(transactions: $transactions, accounts: $accounts).navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline).toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar) } }
+    private var calendarTab: some View {
+        NavigationView {
+            CalendarView(transactions: $transactions, accounts: $accounts)
+                .navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline).toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+        }
+    }
 
-    private var walletTab: some View { 
-        NavigationView { 
+    private var walletTab: some View {
+        NavigationView {
             ZStack {
                 Color(hex: themeBG).ignoresSafeArea()
-                List { 
-                    Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) { ForEach(accounts) { acc in NavigationLink(destination: AccountEditView(account: binding(for: acc), transactions: $transactions, allAccounts: accounts)) { HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { accountToDelete = acc; isShowingAccountDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: TotalAssetEditView(isVisible: $showTotalAssets)) { HStack { Image(systemName: "sum").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text("総資産").foregroundColor(Color(hex: themeBodyText)); Spacer(); let totalB = accounts.reduce(0) { $0 + $1.balance }; Text("¥\(totalB)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }; ForEach(groups) { group in NavigationLink(destination: AccountGroupEditView(group: binding(for: group), accounts: $accounts)) { HStack { Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(group.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); let groupTotal = accounts.filter { group.accountIds.contains($0.id) }.reduce(0) { $0 + $1.balance }; Text("¥\(groupTotal)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { groupToDelete = group; isShowingGroupDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                List {
+                    Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) {
+                        ForEach(accounts) { acc in NavigationLink(destination: AccountEditView(account: binding(for: acc), transactions: $transactions, allAccounts: accounts)) { HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { accountToDelete = acc; isShowingAccountDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+
+                    Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) {
+                        NavigationLink(destination: TotalAssetEditView(isVisible: $showTotalAssets)) { HStack { Image(systemName: "sum").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text("総資産").foregroundColor(Color(hex: themeBodyText)); Spacer(); let totalB = accounts.reduce(0) { $0 + $1.balance }; Text("¥\(totalB)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }; ForEach(groups) { group in NavigationLink(destination: AccountGroupEditView(group: binding(for: group), accounts: $accounts)) { HStack { Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(group.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); let groupTotal = accounts.filter { group.accountIds.contains($0.id) }.reduce(0) { $0 + $1.balance }; Text("¥\(groupTotal)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { groupToDelete = group; isShowingGroupDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
                     Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
+                }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
             }
             .navigationTitle("お財布").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }
-            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }.sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }.alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel) { accountToDelete = nil }; Button("削除", role: .destructive) { if let acc = accountToDelete { for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == acc.id }) }; accounts.removeAll(where: { $0.id == acc.id }); recalculateBalances() }; accountToDelete = nil } }.alert("グループの削除", isPresented: $isShowingGroupDeleteAlert) { Button("キャンセル", role: .cancel) { groupToDelete = nil }; Button("削除", role: .destructive) { if let grp = groupToDelete { groups.removeAll(where: { $0.id == grp.id }) }; groupToDelete = nil } }
-        } 
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }
+            .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel) { accountToDelete = nil }; Button("削除", role: .destructive) { if let acc = accountToDelete { for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == acc.id }) }; accounts.removeAll(where: { $0.id == acc.id }); recalculateBalances() }; accountToDelete = nil } }
+            .alert("グループの削除", isPresented: $isShowingGroupDeleteAlert) { Button("キャンセル", role: .cancel) { groupToDelete = nil }; Button("削除", role: .destructive) { if let grp = groupToDelete { groups.removeAll(where: { $0.id == grp.id }) }; groupToDelete = nil } }
+        }
     }
 
-    private var settingTab: some View { 
-        NavigationView { 
-            ZStack { 
+    private var settingTab: some View {
+        NavigationView {
+            ZStack {
                 Color(hex: themeBG).ignoresSafeArea()
-                List { 
+                List {
                     Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: UserProfileSettingView(transactions: $transactions)) { Label("表示ユーザー設定", systemImage: "person.2.circle").foregroundColor(Color(hex: themeBodyText)) }; NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("セキュリティ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: PasscodeSettingView()) { Label("パスコードロック設定", systemImage: "lock.shield").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("予算設定").foregroundColor(Color(hex: themeSubText))) { Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000).foregroundColor(Color(hex: themeBodyText)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { Button("手動保存") { activeAlert = .save }.foregroundColor(Color(hex: themeBodyText)); Button("手動保存から復元") { isRestoringManual = true; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("自動保存から復元") { isRestoringManual = false; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("すべてのデータを外部に書き出す") { exportBackup() }.foregroundColor(Color(hex: themeMain)); Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { Button("全データをリセット", role: .destructive) { activeAlert = .reset } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
+                }.scrollContentBackground(.hidden).listStyle(.insetGrouped)
             }
             .navigationTitle("設定").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }
-            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in if case .success(let url) = result { if url.startAccessingSecurityScopedResource() { handleImport(from: url); url.stopAccessingSecurityScopedResource() } } }
-        } 
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in if case .success(let url) = result { if url.startAccessingSecurityScopedResource() { handleImport(from: url); url.stopAccessingSecurityScopedResource() } } }
+        }
     }
 
-    // 【変更】画像データ配列を受け取れるようにシグネチャを修正
     func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images))
     }
     
-    @ViewBuilder private func homeHeaderItem(for item: HomeItem) -> some View { Group { switch item { case .totalAssets: let b = accounts.reduce(0) { $0 + $1.balance }; let d = accounts.reduce(0) { $0 + $1.diffAmount }; BalanceView(title: "総資産", amount: b, color: Color(hex: themeBodyText), diff: d, isSilent: lockManager.isSilentUpdate); case .account(let a): if let c = accounts.first(where: { $0.id == a.id }) { BalanceView(title: c.name, amount: c.balance, color: Color(hex: themeBodyText), diff: c.diffAmount, isSilent: lockManager.isSilentUpdate) }; case .group(let g): if let c = groups.first(where: { $0.id == g.id }) { let accs = accounts.filter { c.accountIds.contains($0.id) }; let b = accs.reduce(0) { $0 + $1.balance }; let d = accs.reduce(0) { $0 + $1.diffAmount }; BalanceView(title: c.name, amount: b, color: Color(hex: themeBodyText), diff: d, isSilent: lockManager.isSilentUpdate) } } } }
+    @ViewBuilder
+    private func homeHeaderItem(for item: HomeItem) -> some View {
+        Group {
+            switch item {
+            case .totalAssets:
+                let totalB = accounts.reduce(0) { $0 + $1.balance }; let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
+                BalanceView(title: "総資産", amount: totalB, color: Color(hex: themeBodyText), diff: totalD, isSilent: lockManager.isSilentUpdate)
+            case .account(let a):
+                if let currentAcc = accounts.first(where: { $0.id == a.id }) { BalanceView(title: currentAcc.name, amount: currentAcc.balance, color: Color(hex: themeBodyText), diff: currentAcc.diffAmount, isSilent: lockManager.isSilentUpdate) }
+            case .group(let g):
+                if let currentGroup = groups.first(where: { $0.id == g.id }) {
+                    let groupAccounts = accounts.filter { currentGroup.accountIds.contains($0.id) }; let totalBalance = groupAccounts.reduce(0) { $0 + $1.balance }; let totalDiff = groupAccounts.reduce(0) { $0 + $1.diffAmount }
+                    BalanceView(title: currentGroup.name, amount: totalBalance, color: Color(hex: themeBodyText), diff: totalDiff, isSilent: lockManager.isSilentUpdate)
+                }
+            }
+        }
+    }
 
-    private func handleDragChange(value: DragGesture.Value, item: HomeItem) { if draggedItemId != item.id { draggedItemId = item.id; dragLastX = value.location.x; dragOffset = 0 }; guard let lastX = dragLastX else { return }; dragOffset += value.location.x - lastX; dragLastX = value.location.x; if let idx = homeItems.firstIndex(where: { $0.id == item.id }) { let spacing: CGFloat = 10; let padding: CGFloat = 32; let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing; let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal; let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1)); let jumpDistance = itemWidth + spacing; let threshold = jumpDistance * 0.5; if dragOffset > threshold && idx < homeItems.count - 1 { withAnimation(.easeInOut(duration: 0.2)) { homeItems.swapAt(idx, idx + 1); dragOffset -= jumpDistance } } else if dragOffset < -threshold && idx > 0 { withAnimation(.easeInOut(duration: 0.2)) { homeItems.swapAt(idx, idx - 1); dragOffset += jumpDistance } } } }
-    private func handleDragEnded() { withAnimation(.easeInOut(duration: 0.2)) { draggedItemId = nil; dragOffset = 0; dragLastX = nil }; homeDisplayOrder = homeItems.map { $0.id } }
+    // 【変更】ホームアイテムも画像ドラッグと同じ完璧な追従ロジックへと修正
+    private func handleDragChange(value: DragGesture.Value, item: HomeItem) {
+        if draggedItemId != item.id {
+            draggedItemId = item.id
+            dragHomeTotalJump = 0
+        }
+        
+        dragOffset = value.translation.width - dragHomeTotalJump
+        
+        if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
+            let spacing: CGFloat = 10
+            let padding: CGFloat = 32
+            let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing
+            let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal
+            let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1))
+            let jumpDistance = itemWidth + spacing
+            let threshold = jumpDistance * 0.5
+            
+            if dragOffset > threshold && idx < homeItems.count - 1 {
+                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
+                    homeItems.swapAt(idx, idx + 1)
+                    dragHomeTotalJump += jumpDistance
+                    dragOffset -= jumpDistance
+                }
+            } else if dragOffset < -threshold && idx > 0 {
+                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
+                    homeItems.swapAt(idx, idx - 1)
+                    dragHomeTotalJump -= jumpDistance
+                    dragOffset += jumpDistance
+                }
+            }
+        }
+    }
+    
+    private func handleDragEnded() {
+        withAnimation(.interactiveSpring()) {
+            draggedItemId = nil
+            dragOffset = 0
+            dragHomeTotalJump = 0
+        }
+        homeDisplayOrder = homeItems.map { $0.id }
+    }
+
     private func binding(for account: Account) -> Binding<Account> { Binding( get: { self.accounts.first(where: { $0.id == account.id }) ?? account }, set: { if let i = self.accounts.firstIndex(where: { $0.id == account.id }) { self.accounts[i] = $0 } } ) }
     private func binding(for group: AccountGroup) -> Binding<AccountGroup> { Binding( get: { self.groups.first(where: { $0.id == group.id }) ?? group }, set: { if let i = self.groups.firstIndex(where: { $0.id == group.id }) { self.groups[i] = $0 } } ) }
 
-    func syncHomeItems() { if draggedItemId != nil { return }; var items: [HomeItem] = []; if showTotalAssets { items.append(.totalAssets) }; items.append(contentsOf: accounts.filter({ $0.isVisible }).map { .account($0) }); items.append(contentsOf: groups.filter({ $0.isVisible }).map { .group($0) }); items.sort { item1, item2 in let idx1 = homeDisplayOrder.firstIndex(of: item1.id) ?? Int.max; let idx2 = homeDisplayOrder.firstIndex(of: item2.id) ?? Int.max; return idx1 < idx2 }; homeItems = items }
+    func syncHomeItems() {
+        if draggedItemId != nil { return }
+        var items: [HomeItem] = []
+        if showTotalAssets { items.append(.totalAssets) }
+        items.append(contentsOf: accounts.filter({ $0.isVisible }).map { .account($0) })
+        items.append(contentsOf: groups.filter({ $0.isVisible }).map { .group($0) })
+        
+        items.sort { item1, item2 in
+            let idx1 = homeDisplayOrder.firstIndex(of: item1.id) ?? Int.max
+            let idx2 = homeDisplayOrder.firstIndex(of: item2.id) ?? Int.max
+            return idx1 < idx2
+        }
+        homeItems = items
+    }
 
     func createFullBackupData() -> FullBackupData { return FullBackupData( transactions: transactions, accounts: accounts, groups: groups, profiles: profiles, monthlyBudget: monthlyBudget, isDarkMode: isDarkMode, themeMain: themeMain, themeIncome: themeIncome, themeExpense: themeExpense, themeHoliday: themeHoliday, themeSaturday: themeSaturday, themeBG: themeBG, themeBarBG: themeBarBG, themeBarText: themeBarText, themeTabAccent: themeTabAccent, themeBodyText: themeBodyText, themeSubText: themeSubText, showTotalAssets: showTotalAssets, homeDisplayOrder: homeDisplayOrder, backupDate: BackupManager.currentDateString() ) }
     
