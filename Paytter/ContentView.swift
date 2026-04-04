@@ -72,12 +72,19 @@ struct ContentView: View {
     @ObservedObject var lockManager = LockManager.shared
     @Environment(\.scenePhase) var scenePhase
 
+    // 【変更】鍵アカウントの表示ロジック
     var visibleTransactions: [Transaction] {
         transactions.filter { tx in
             let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
             let isVisible = profile?.isVisible ?? true
             let isPrivate = profile?.isPrivate ?? false
-            return isVisible && (!isPrivate || lockManager.isUnlocked)
+            
+            if !isVisible { return false }
+            // ロック中で、かつ「完全に非表示」設定の場合は見せない
+            if isPrivate && !lockManager.isUnlocked && lockManager.privatePostDisplayMode == 0 {
+                return false
+            }
+            return true
         }.sorted(by: { $0.date > $1.date })
     }
 
@@ -117,22 +124,26 @@ struct ContentView: View {
             recalculateBalances()
             updateAppearance()
             syncHomeItems()
-            if !lockManager.isUnlocked && !lockManager.passcode.isEmpty {
+            if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
                 lockManager.promptUnlock()
             }
         }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances() }
+        // 【新規】ロック状態が変わったときも残高を再計算する
+        .onChange(of: lockManager.isUnlocked) { _ in recalculateBalances() }
         .onChange(of: accounts) { _ in syncHomeItems() }
         .onChange(of: groups) { _ in syncHomeItems() }
         .onChange(of: showTotalAssets) { _ in syncHomeItems() }
         .onChange(of: themeBarBG) { _ in updateAppearance() }
         .onChange(of: isDarkMode) { _ in updateAppearance() }
+        // 【変更】アプリを離れた時のロック挙動
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .background {
                 lockManager.lock()
             } else if newPhase == .active {
-                if !lockManager.isUnlocked && !lockManager.passcode.isEmpty {
+                // 全画面ロック設定の時だけ解除画面を出す
+                if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
                     lockManager.promptUnlock()
                 }
             }
@@ -728,12 +739,19 @@ struct ContentView: View {
         activeAlert = .completion("リセット完了")
     }
     
+    // 【変更】鍵アカウントの残高をロック時に反映するかどうかの設定を適用
     func recalculateBalances() {
         var tempAccounts = accounts
         for i in 0..<tempAccounts.count {
             var cur = 0
             for tx in transactions where tx.source == tempAccounts[i].name {
                 if tx.isExcludedFromBalance == true { continue }
+                
+                if !lockManager.isUnlocked && !lockManager.reflectPrivateBalanceWhenLocked {
+                    let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
+                    if profile?.isPrivate == true { continue }
+                }
+                
                 cur += (tx.isIncome ? tx.amount : -tx.amount)
             }
             tempAccounts[i].diffAmount = cur - tempAccounts[i].balance
