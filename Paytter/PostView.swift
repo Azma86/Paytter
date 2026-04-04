@@ -1,9 +1,11 @@
 import SwiftUI
 import PhotosUI
 
+// 【変更】UIImageをキャッシュとして持たせ、ドラッグ中の超重い「再描画」を防ぎます
 struct PostAttachedImage: Identifiable, Equatable {
     let id = UUID()
     let data: Data
+    let image: UIImage
 }
 
 struct PostView: View {
@@ -39,8 +41,8 @@ struct PostView: View {
     
     @State private var draggedImageId: UUID?
     @State private var dragImageOffset: CGFloat = 0
-    // 【変更】画像のドラッグも以前の軽いアルゴリズム用に戻す
-    @State private var dragImageLastX: CGFloat?
+    // 【変更】絶対座標追従のためのジャンプ距離記憶変数
+    @State private var dragImageTotalJump: CGFloat = 0
     
     var body: some View {
         NavigationView {
@@ -83,13 +85,12 @@ struct PostView: View {
                             HStack(spacing: 8) {
                                 ForEach(attachedImages) { item in
                                     ZStack(alignment: .topTrailing) {
-                                        if let uiImage = UIImage(data: item.data) {
-                                            Image(uiImage: uiImage)
-                                                .resizable()
-                                                .scaledToFill()
-                                                .frame(width: 80, height: 80)
-                                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                        }
+                                        // 【変更】キャッシュされたUIImageを直接使うことで負荷ゼロに
+                                        Image(uiImage: item.image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 80, height: 80)
+                                            .clipShape(RoundedRectangle(cornerRadius: 12))
                                         
                                         Button(action: { attachedImages.removeAll(where: { $0.id == item.id }) }) {
                                             Image(systemName: "xmark.circle.fill")
@@ -101,8 +102,8 @@ struct PostView: View {
                                     .offset(x: draggedImageId == item.id ? dragImageOffset : 0)
                                     .zIndex(draggedImageId == item.id ? 100 : 0)
                                     .gesture(
-                                        // 【修正】最も軽くてスムーズな以前のアルゴリズムに差し戻し
-                                        DragGesture(minimumDistance: 0)
+                                        // 【変更】global座標にして指に完全に吸い付くように設定
+                                        DragGesture(coordinateSpace: .global)
                                             .onChanged { val in handleImageDragChange(val, item: item) }
                                             .onEnded { _ in handleImageDragEnded() }
                                     )
@@ -125,10 +126,12 @@ struct PostView: View {
                                 for item in newItems {
                                     if let data = try? await item.loadTransferable(type: Data.self),
                                        let uiImage = UIImage(data: data),
-                                       let compressed = compressImage(uiImage) {
+                                       let compressed = compressImage(uiImage),
+                                       // 【新規】再デコードしてキャッシュ用画像を作る
+                                       let compressedImage = UIImage(data: compressed) {
                                         DispatchQueue.main.async {
                                             if attachedImages.count < 4 {
-                                                attachedImages.append(PostAttachedImage(data: compressed))
+                                                attachedImages.append(PostAttachedImage(data: compressed, image: compressedImage))
                                             }
                                         }
                                     }
@@ -192,33 +195,37 @@ struct PostView: View {
             self.postDate = initialDate
             self.isExcluded = isExcludedInitial
             self.selectedProfileId = profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.first(where: { $0.isVisible })?.id ?? profiles.first?.id
-            self.attachedImages = (initialImages ?? []).map { PostAttachedImage(data: $0) }
+            // 【変更】初期表示時もUIImageを生成してキャッシュする
+            self.attachedImages = (initialImages ?? []).compactMap { data in
+                if let img = UIImage(data: data) { return PostAttachedImage(data: data, image: img) }
+                return nil
+            }
         }
     }
     
-    // 【修正】最も軽くてスムーズな以前のアルゴリズムに差し戻し
+    // 【変更】指に完璧に追従し、ヌルヌル動くドラッグアルゴリズム
     private func handleImageDragChange(_ value: DragGesture.Value, item: PostAttachedImage) {
         if draggedImageId != item.id {
             draggedImageId = item.id
-            dragImageLastX = value.location.x
-            dragImageOffset = 0
+            dragImageTotalJump = 0
         }
-        guard let lastX = dragImageLastX else { return }
-        dragImageOffset += value.location.x - lastX
-        dragImageLastX = value.location.x
+        
+        dragImageOffset = value.translation.width - dragImageTotalJump
         
         if let idx = attachedImages.firstIndex(where: { $0.id == item.id }) {
             let jumpDistance: CGFloat = 88 // 画像幅80 + 余白8
             let threshold = jumpDistance * 0.5
             
             if dragImageOffset > threshold && idx < attachedImages.count - 1 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     attachedImages.swapAt(idx, idx + 1)
+                    dragImageTotalJump += jumpDistance
                     dragImageOffset -= jumpDistance
                 }
             } else if dragImageOffset < -threshold && idx > 0 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     attachedImages.swapAt(idx, idx - 1)
+                    dragImageTotalJump -= jumpDistance
                     dragImageOffset += jumpDistance
                 }
             }
@@ -226,10 +233,10 @@ struct PostView: View {
     }
     
     private func handleImageDragEnded() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.interactiveSpring()) {
             draggedImageId = nil
             dragImageOffset = 0
-            dragImageLastX = nil
+            dragImageTotalJump = 0
         }
     }
     
