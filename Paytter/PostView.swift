@@ -17,6 +17,9 @@ struct PostView: View {
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     
+    // 【新規】ロック状態を取得
+    @ObservedObject var lockManager = LockManager.shared
+    
     @State private var postDate = Date()
     @State private var isShowingDatePicker = false
     @State private var isPickingTime = false
@@ -33,7 +36,8 @@ struct PostView: View {
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
                         Menu {
-                            ForEach(profiles) { profile in
+                            // 【重要】ロック中は鍵アカウントを選択できないようにフィルター
+                            ForEach(profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }) { profile in
                                 Button(action: { selectedProfileId = profile.id }) { Text(profile.name) }
                             }
                         } label: {
@@ -62,7 +66,6 @@ struct PostView: View {
                     
                     Spacer()
                     
-                    // 【変更】縦リストをやめ、入力の邪魔をしない横スクロールのチップ型に変更
                     if !suggestions.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
@@ -114,7 +117,7 @@ struct PostView: View {
         }.onAppear { 
             self.postDate = initialDate
             self.isExcluded = isExcludedInitial
-            self.selectedProfileId = profiles.first(where: { $0.isVisible })?.id ?? profiles.first?.id
+            self.selectedProfileId = profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.first(where: { $0.isVisible })?.id ?? profiles.first?.id
         }
     }
     
