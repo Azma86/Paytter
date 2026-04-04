@@ -1,11 +1,15 @@
 import SwiftUI
+import PhotosUI // 【新規】画像選択に必要
 
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool
     var initialDate: Date = Date()
     var isExcludedInitial: Bool = false
+    // 【新規】編集時用の初期画像
+    var initialImages: [Data]? = nil
     
-    var onPost: (Bool, Date, Bool, UUID?) -> Void
+    // 【変更】画像のデータ配列も渡すようにクロージャを変更
+    var onPost: (Bool, Date, Bool, UUID?, [Data]?) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
@@ -27,9 +31,13 @@ struct PostView: View {
     
     @State private var selectedProfileId: UUID?
     
+    // 【新規】画像添付用のState
+    @State private var selectedItems: [PhotosPickerItem] = []
+    @State private var attachedImages: [Data] = []
+    
     var body: some View {
         NavigationView {
-            ZStack(alignment: .bottom) { // 【変更】ZStackを使って浮かせる
+            ZStack(alignment: .bottom) {
                 Color(hex: themeBG).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
@@ -64,7 +72,60 @@ struct PostView: View {
                     
                     Spacer()
                     
+                    // 【新規】選択した画像のプレビュー
+                    if !attachedImages.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(attachedImages.indices, id: \.self) { idx in
+                                    ZStack(alignment: .topTrailing) {
+                                        if let uiImage = UIImage(data: attachedImages[idx]) {
+                                            Image(uiImage: uiImage)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 80, height: 80)
+                                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                        }
+                                        
+                                        Button(action: { attachedImages.remove(at: idx) }) {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.white)
+                                                .background(Circle().fill(Color.black.opacity(0.6)))
+                                        }
+                                        .padding(4)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                        .padding(.bottom, 8)
+                    }
+                    
                     HStack {
+                        // 【新規】画像追加ボタン（Twitter風に左下に配置）
+                        PhotosPicker(selection: $selectedItems, maxSelectionCount: 4, matching: .images) {
+                            Image(systemName: "photo.on.rectangle")
+                                .font(.system(size: 20))
+                                .foregroundColor(Color(hex: themeMain))
+                                .padding(.trailing, 8)
+                        }
+                        .onChange(of: selectedItems) { newItems in
+                            Task {
+                                for item in newItems {
+                                    if let data = try? await item.loadTransferable(type: Data.self),
+                                       let uiImage = UIImage(data: data),
+                                       let compressed = compressImage(uiImage) {
+                                        DispatchQueue.main.async {
+                                            // 最大4枚までに制限
+                                            if attachedImages.count < 4 {
+                                                attachedImages.append(compressed)
+                                            }
+                                        }
+                                    }
+                                }
+                                selectedItems.removeAll()
+                            }
+                        }
+                        
                         Button(action: { isPickingTime = false; isShowingDatePicker = true }) {
                             HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text(formatDate(postDate)) }
                             .font(.footnote).padding(.horizontal, 12).padding(.vertical, 6).background(Color(hex: themeMain).opacity(0.1)).foregroundColor(Color(hex: themeMain)).cornerRadius(12)
@@ -75,7 +136,6 @@ struct PostView: View {
                     }.padding(.horizontal).padding(.vertical, 8)
                 }
                 
-                // 【変更】サジェストリストをキーボードのすぐ上に「浮く」ように配置
                 if !suggestions.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
@@ -98,15 +158,16 @@ struct PostView: View {
                     }
                     .background(Color(hex: themeBG).opacity(0.95))
                     .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: -2)
-                    .offset(y: -44) // ボトムのボタンエリアの上に配置
+                    .offset(y: -44)
                     .zIndex(10)
                 }
             }
             .navigationBarItems(
                 leading: Button("キャンセル") { isPresented = false }.foregroundColor(Color(hex: themeBarText)), 
                 trailing: HStack(spacing: 12) {
-                    Button(action: { onPost(false, postDate, isExcluded, selectedProfileId); isPresented = false }) { Text("支出").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeExpense).opacity(0.8)).foregroundColor(.white).cornerRadius(17) }
-                    Button(action: { onPost(true, postDate, isExcluded, selectedProfileId); isPresented = false }) { Text("収入").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeIncome)).foregroundColor(.white).cornerRadius(17) }
+                    // 【変更】画像データも一緒に渡す
+                    Button(action: { onPost(false, postDate, isExcluded, selectedProfileId, attachedImages); isPresented = false }) { Text("支出").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeExpense).opacity(0.8)).foregroundColor(.white).cornerRadius(17) }
+                    Button(action: { onPost(true, postDate, isExcluded, selectedProfileId, attachedImages); isPresented = false }) { Text("収入").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeIncome)).foregroundColor(.white).cornerRadius(17) }
                 }
             )
             .sheet(isPresented: $isShowingDatePicker) {
@@ -120,7 +181,25 @@ struct PostView: View {
             self.postDate = initialDate
             self.isExcluded = isExcludedInitial
             self.selectedProfileId = profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.first(where: { $0.isVisible })?.id ?? profiles.first?.id
+            // 【新規】編集モードの時は既存の画像をセット
+            self.attachedImages = initialImages ?? []
         }
+    }
+    
+    // 【新規】画像を自動で縮小・圧縮する関数（UserDefaults保護のため）
+    func compressImage(_ image: UIImage) -> Data? {
+        let maxSize: CGFloat = 800 // 長辺最大800pxに縮小
+        var targetSize = image.size
+        if targetSize.width > maxSize || targetSize.height > maxSize {
+            let ratio = min(maxSize / targetSize.width, maxSize / targetSize.height)
+            targetSize = CGSize(width: targetSize.width * ratio, height: targetSize.height * ratio)
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: targetSize)) }
+        // 画質を半分まで落としてJPEGで書き出し（容量を劇的に削減）
+        return resized.jpegData(compressionQuality: 0.5)
     }
     
     func formatDate(_ date: Date) -> String { let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = "yyyy年MM月dd日 HH:mm"; return f.string(from: date) }

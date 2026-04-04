@@ -21,15 +21,13 @@ class LockManager: ObservableObject {
     
     @Published var isUnlocked: Bool = true
     @Published var isShowingLockScreen: Bool = false
-    
-    // 【新規】ロック切り替えによる残高変動かどうかを判定するフラグ
     @Published var isSilentUpdate: Bool = false
     
     var passcode: String {
         get { UserDefaults.standard.string(forKey: "app_passcode") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "app_passcode"); objectWillChange.send() }
     }
-    var passcodeType: Int { // 0: 4桁, 1: 6桁, 2: 自由入力
+    var passcodeType: Int {
         get { UserDefaults.standard.integer(forKey: "passcode_type") }
         set { UserDefaults.standard.set(newValue, forKey: "passcode_type"); objectWillChange.send() }
     }
@@ -37,11 +35,11 @@ class LockManager: ObservableObject {
         get { UserDefaults.standard.bool(forKey: "use_biometrics") }
         set { UserDefaults.standard.set(newValue, forKey: "use_biometrics"); objectWillChange.send() }
     }
-    var lockBehavior: Int { // 0: 全画面ロック, 1: 鍵アカウントのみ非表示
+    var lockBehavior: Int {
         get { UserDefaults.standard.integer(forKey: "lock_behavior") }
         set { UserDefaults.standard.set(newValue, forKey: "lock_behavior"); objectWillChange.send() }
     }
-    var privatePostDisplayMode: Int { // 0: 完全に非表示, 1: 内容のみ非表示
+    var privatePostDisplayMode: Int {
         get { UserDefaults.standard.integer(forKey: "private_post_display") }
         set { UserDefaults.standard.set(newValue, forKey: "private_post_display"); objectWillChange.send() }
     }
@@ -63,7 +61,6 @@ class LockManager: ObservableObject {
             if lockBehavior == 0 {
                 isShowingLockScreen = true
             }
-            // 0.5秒後にSilentフラグを戻す
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.isSilentUpdate = false }
         }
     }
@@ -158,7 +155,6 @@ struct UserProfile: Identifiable, Codable, Equatable {
     var iconData: Data?
     var isVisible: Bool = true
     var isPrivate: Bool?
-    // 【新規】削除済みユーザーかどうかのフラグ
     var isDeleted: Bool?
 }
 
@@ -166,6 +162,8 @@ struct Transaction: Identifiable, Codable, Equatable {
     var id = UUID(); var amount: Int; var date: Date; var note: String; var source: String; var isIncome: Bool
     var isExcludedFromBalance: Bool?
     var profileId: UUID?
+    // 【新規】添付画像のデータ配列
+    var attachedImageDatas: [Data]? = nil
     
     var tags: [String] { note.components(separatedBy: .whitespacesAndNewlines).filter { $0.hasPrefix("#") } }
     var cleanNote: String {
@@ -174,6 +172,62 @@ struct Transaction: Identifiable, Codable, Equatable {
             line.components(separatedBy: .whitespaces).filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }.joined(separator: " ")
         }
         return cleanedLines.joined(separator: "\n")
+    }
+}
+
+struct FullBackupData: Codable {
+    var transactions: [Transaction]; var accounts: [Account]; var groups: [AccountGroup]; var profiles: [UserProfile]
+    var monthlyBudget: Int; var isDarkMode: Bool
+    var themeMain: String; var themeIncome: String; var themeExpense: String; var themeHoliday: String; var themeSaturday: String
+    var themeBG: String; var themeBarBG: String; var themeBarText: String; var themeTabAccent: String; var themeBodyText: String; var themeSubText: String
+    var showTotalAssets: Bool; var homeDisplayOrder: [String]
+    var backupDate: String
+}
+
+class BackupManager {
+    static let manualFile = "paytter_fullbackup_manual.json"
+    static let autoFile = "paytter_fullbackup_auto.json"
+    static let transAutoFile = "paytter_transactions_auto.json"
+    static let accountsAutoFile = "paytter_accounts_auto.json"
+    static let transManualFile = "paytter_transactions_manual.json"
+    static let accountsManualFile = "paytter_accounts_manual.json"
+    
+    static func getDocumentsDirectory() -> URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
+    static func currentDateString() -> String { let formatter = DateFormatter(); formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"; return formatter.string(from: Date()) }
+    
+    static func saveFullBackup(data: FullBackupData, isManual: Bool) {
+        let fName = isManual ? manualFile : autoFile
+        let url = getDocumentsDirectory().appendingPathComponent(fName)
+        try? JSONEncoder().encode(data).write(to: url)
+    }
+    
+    static func loadFullBackup(isManual: Bool) -> FullBackupData? {
+        let fName = isManual ? manualFile : autoFile
+        let url = getDocumentsDirectory().appendingPathComponent(fName)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(FullBackupData.self, from: data)
+    }
+    
+    static func getBackupDate(isManual: Bool) -> String {
+        if let backup = loadFullBackup(isManual: isManual) { return backup.backupDate }
+        let tName = isManual ? transManualFile : transAutoFile
+        let url = getDocumentsDirectory().appendingPathComponent(tName)
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path), let date = attributes[.modificationDate] as? Date else { return "なし" }
+        let formatter = DateFormatter(); formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"; return formatter.string(from: date)
+    }
+    
+    static func loadTransactions(isManual: Bool) -> [Transaction]? {
+        let tName = isManual ? transManualFile : transAutoFile
+        let url = getDocumentsDirectory().appendingPathComponent(tName)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode([Transaction].self, from: data)
+    }
+    
+    static func loadAccounts(isManual: Bool) -> [Account]? {
+        let aName = isManual ? accountsManualFile : accountsAutoFile
+        let url = getDocumentsDirectory().appendingPathComponent(aName)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode([Account].self, from: data)
     }
 }
 

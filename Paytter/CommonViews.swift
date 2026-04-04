@@ -3,7 +3,6 @@ import UIKit
 
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int
-    // 【新規】エフェクトを鳴らすかどうかのフラグ
     let isSilent: Bool
     
     @State private var showDiff = false; @State private var lastAmount: Int = 0 
@@ -28,7 +27,6 @@ struct BalanceView: View {
         .frame(maxWidth: .infinity)
         .onChange(of: amount) { newValue in 
             if newValue != lastAmount { 
-                // 【変更】Silentフラグが立っているときはアニメーションしない
                 if isSilent {
                     showDiff = true
                     lastAmount = newValue
@@ -52,13 +50,11 @@ struct TwitterRow: View {
     
     var body: some View {
         let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
-        
         let isPrivate = profile.isPrivate ?? false
         let isDeleted = profile.isDeleted ?? false
         let isLocked = !LockManager.shared.isUnlocked
         let hideContent = isPrivate && isLocked && LockManager.shared.privatePostDisplayMode == 1
         
-        // 【変更】削除済みユーザーの名前を上書き
         let displayName = isDeleted ? "削除されたユーザー" : profile.name
         let displayId = isDeleted ? "deleted_user" : profile.userId
         
@@ -94,7 +90,27 @@ struct TwitterRow: View {
                         .foregroundColor(Color(hex: themeSubText))
                 } else {
                     HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBodyText))
+                    
                     if !item.tags.isEmpty { HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } } }
+                    
+                    // 【新規】画像のグリッド表示（Twitter風）
+                    if let images = item.attachedImageDatas, !images.isEmpty {
+                        let cols = images.count == 1 ? 1 : 2
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: cols), spacing: 6) {
+                            ForEach(images.indices, id: \.self) { idx in
+                                if let uiImage = UIImage(data: images[idx]) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(height: images.count == 1 ? 160 : 100)
+                                        .clipped()
+                                        .cornerRadius(12)
+                                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+                                }
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
                 }
             }
         }.padding(.vertical, 8).padding(.horizontal, 16)
