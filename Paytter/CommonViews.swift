@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 import AVKit
-import PDFKit // 【新規】PDFプレビューを表示するために必須のライブラリ
+import PDFKit
 
 struct TimelineMediaGrid: View {
     let mediaItems: [AttachedMediaItem]
@@ -265,6 +265,25 @@ struct MediaFullScreenView: View {
     }
 }
 
+// 【新規】動画の読み込み完了（Ready）を監視するためのオブザーバークラス
+class VideoReadyObserver: ObservableObject {
+    @Published var isReady: Bool = false
+    private var observation: NSKeyValueObservation?
+    
+    func observe(playerItem: AVPlayerItem) {
+        observation = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            if item.status == .readyToPlay {
+                DispatchQueue.main.async {
+                    self?.isReady = true
+                }
+            }
+        }
+    }
+    deinit {
+        observation?.invalidate()
+    }
+}
+
 struct SingleMediaZoomView: View {
     let media: AttachedMediaItem
     @Binding var showUI: Bool
@@ -275,6 +294,8 @@ struct SingleMediaZoomView: View {
     @State private var lastOffset: CGSize = .zero
     
     @State private var loadedImage: UIImage? = nil
+    @StateObject private var readyObserver = VideoReadyObserver()
+    
     @State private var player: AVPlayer?
     @State private var isPlaying: Bool = false
     @State private var currentTime: Double = 0
@@ -287,22 +308,54 @@ struct SingleMediaZoomView: View {
         GeometryReader { proxy in
             ZStack {
                 if media.type == .video {
-                    if let player = player {
-                        CustomVideoPlayerLayer(player: player)
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                            .onTapGesture { withAnimation { showUI.toggle() } }
+                    ZStack {
+                        // 【新規】動画が準備できるまでサムネイルと暗転＋ローディングを表示
+                        if !readyObserver.isReady {
+                            if let data = media.thumbnailData, let thumb = UIImage(data: data) {
+                                Image(uiImage: thumb)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: proxy.size.width, height: proxy.size.height)
+                            }
+                            Color.black.opacity(0.4).ignoresSafeArea()
+                            ProgressView().scaleEffect(1.5).tint(.white)
+                        }
+                        
+                        if let player = player {
+                            CustomVideoPlayerLayer(player: player)
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                                .opacity(readyObserver.isReady ? 1.0 : 0.0) // 準備できたら表示
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation { showUI.toggle() }
                     }
                 } else {
-                    if let img = loadedImage {
-                        Image(uiImage: img)
-                            .resizable().scaledToFit().scaleEffect(scale).offset(offset)
-                            .gesture(MagnificationGesture().onChanged { val in let delta = val / lastScale; lastScale = val; scale = min(max(scale * delta, 1), 5) }.onEnded { _ in lastScale = 1.0; if scale <= 1.0 { withAnimation { offset = .zero; lastOffset = .zero } } })
-                            .simultaneousGesture(DragGesture().onChanged { val in if scale > 1.0 { offset = CGSize(width: lastOffset.width + val.translation.width, height: lastOffset.height + val.translation.height) } }.onEnded { _ in lastOffset = offset })
-                            .onTapGesture(count: 2) { withAnimation { if scale > 1.0 { scale = 1.0; offset = .zero; lastOffset = .zero } else { scale = 2.0; offset = .zero; lastOffset = .zero } } }
-                            .onTapGesture(count: 1) { withAnimation { showUI.toggle() } }
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                    } else {
-                        ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ZStack {
+                        // 画像がロード完了したらフル画質で表示
+                        if let img = loadedImage {
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFit()
+                                .scaleEffect(scale)
+                                .offset(offset)
+                                .gesture(MagnificationGesture().onChanged { val in let delta = val / lastScale; lastScale = val; scale = min(max(scale * delta, 1), 5) }.onEnded { _ in lastScale = 1.0; if scale <= 1.0 { withAnimation { offset = .zero; lastOffset = .zero } } })
+                                .simultaneousGesture(DragGesture().onChanged { val in if scale > 1.0 { offset = CGSize(width: lastOffset.width + val.translation.width, height: lastOffset.height + val.translation.height) } }.onEnded { _ in lastOffset = offset })
+                                .onTapGesture(count: 2) { withAnimation { if scale > 1.0 { scale = 1.0; offset = .zero; lastOffset = .zero } else { scale = 2.0; offset = .zero; lastOffset = .zero } } }
+                                .onTapGesture(count: 1) { withAnimation { showUI.toggle() } }
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                        } else {
+                            // 【新規】画像がロードされるまでの間、サムネイルと暗転＋ローディングを表示
+                            if let data = media.thumbnailData, let thumb = UIImage(data: data) {
+                                Image(uiImage: thumb)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: proxy.size.width, height: proxy.size.height)
+                            }
+                            Color.black.opacity(0.4).ignoresSafeArea()
+                            ProgressView().scaleEffect(1.5).tint(.white)
+                        }
                     }
                 }
                 
@@ -341,7 +394,10 @@ struct SingleMediaZoomView: View {
     
     func setupPlayer() {
         let url = MediaManager.shared.getMediaURL(fileName: media.localFileName)
-        let newPlayer = AVPlayer(url: url)
+        let item = AVPlayerItem(url: url)
+        readyObserver.observe(playerItem: item) // 準備完了の監視を開始
+        
+        let newPlayer = AVPlayer(playerItem: item)
         self.player = newPlayer
         timeObserver = newPlayer.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak newPlayer] time in
             guard let currentPlayer = newPlayer else { return }
@@ -371,7 +427,6 @@ class PlayerView: UIView {
     override static var layerClass: AnyClass { return AVPlayerLayer.self }
 }
 
-// 【新規】PDFをプレビュー表示するためのビュー
 struct PDFKitView: UIViewRepresentable {
     let url: URL
     func makeUIView(context: Context) -> PDFView {
@@ -388,7 +443,6 @@ struct PDFKitView: UIViewRepresentable {
     }
 }
 
-// 【新規】ファイルの詳細をフルスクリーンで表示する画面
 struct FileFullScreenView: View {
     let file: AttachedFile
     @Environment(\.presentationMode) var presentationMode
@@ -397,7 +451,6 @@ struct FileFullScreenView: View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             
-            // PDFの場合はプレビューを表示し、それ以外はアイコンを表示
             if file.fileExtension.lowercased() == "pdf" {
                 let url = MediaManager.shared.getMediaURL(fileName: file.localFileName)
                 PDFKitView(url: url)
@@ -430,7 +483,7 @@ struct FileFullScreenView: View {
                 }
             }
             
-            // ヘッダーUI（PDF時にも見えるように黒いグラデーションを追加）
+            // 【新規】ファイル保存ボタンを追加
             HStack(spacing: 16) {
                 Button(action: { presentationMode.wrappedValue.dismiss() }) {
                     Image(systemName: "chevron.left")
@@ -444,6 +497,14 @@ struct FileFullScreenView: View {
                 
                 Button(action: shareFile) {
                     Image(systemName: "square.and.arrow.up")
+                        .font(.title3)
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Color.black.opacity(0.4).clipShape(Circle()))
+                }
+                
+                Button(action: saveFile) {
+                    Image(systemName: "arrow.down.to.line")
                         .font(.title3)
                         .foregroundColor(.white)
                         .padding(10)
@@ -471,6 +532,17 @@ struct FileFullScreenView: View {
             if let topVC = UIApplication.shared.topViewController {
                 av.popoverPresentationController?.sourceView = topVC.view
                 topVC.present(av, animated: true)
+            }
+        }
+    }
+    
+    // 【新規】ファイルアプリなどにエクスポートする保存機能
+    func saveFile() {
+        let url = MediaManager.shared.getMediaURL(fileName: file.localFileName)
+        if FileManager.default.fileExists(atPath: url.path) {
+            let picker = UIDocumentPickerViewController(forExporting: [url])
+            if let topVC = UIApplication.shared.topViewController {
+                topVC.present(picker, animated: true)
             }
         }
     }
