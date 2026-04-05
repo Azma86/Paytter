@@ -5,7 +5,15 @@ import Combine
 
 enum ActiveAlert: Identifiable {
     case reset, restore, save, importConfirm, completion(String)
-    var id: String { switch self { case .reset: return "reset"; case .restore: return "restore"; case .save: return "save"; case .importConfirm: return "import"; case .completion(let m): return m } }
+    var id: String {
+        switch self {
+        case .reset: return "reset"
+        case .restore: return "restore"
+        case .save: return "save"
+        case .importConfirm: return "import"
+        case .completion(let m): return m
+        }
+    }
 }
 
 class ImageCache {
@@ -67,17 +75,18 @@ struct AccountGroup: Identifiable, Codable, Equatable { var id = UUID(); var nam
 struct Account: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var balance: Int; var type: AccountType; var isVisible: Bool = true; var payday: Int? = nil; var withdrawalAccountId: UUID? = nil; var diffAmount: Int = 0 }
 struct UserProfile: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var userId: String; var iconData: Data?; var isVisible: Bool = true; var isPrivate: Bool?; var isDeleted: Bool? }
 
-// 【新規】画像と動画を統合する新しいメディアモデル
 enum MediaType: String, Codable {
     case image, video
 }
 
+// 【修正】ここに `originalFileName` を追加しました！
 struct AttachedMediaItem: Identifiable, Codable, Equatable {
     var id = UUID()
     var type: MediaType
-    var localFileName: String // オリジナル画像や動画のファイル名
-    var thumbnailData: Data?  // プレビュー用の軽い画像
-    var durationText: String? // 動画の長さ
+    var localFileName: String
+    var originalFileName: String? // ← これが抜けていました！
+    var thumbnailData: Data?
+    var durationText: String?
 }
 
 struct AttachedVideo: Codable, Equatable { var id = UUID(); var localFileName: String; var thumbnailData: Data? }
@@ -97,13 +106,11 @@ class MediaManager {
         let destURL = getDocumentsDirectory().appendingPathComponent(fileName)
         do { try FileManager.default.copyItem(at: url, to: destURL); return fileName } catch { return nil }
     }
-    // 【新規】オリジナル画像データ（Data）を直接保存する
     func saveData(_ data: Data, extension ext: String) -> String? {
         let fileName = UUID().uuidString + ".\(ext)"
         let destURL = getDocumentsDirectory().appendingPathComponent(fileName)
         do { try data.write(to: destURL); return fileName } catch { return nil }
     }
-    // 【新規】保存されたオリジナル画像を読み込む
     func loadImage(fileName: String) -> UIImage? {
         if fileName.isEmpty { return nil }
         let url = getMediaURL(fileName: fileName)
@@ -117,11 +124,8 @@ struct Transaction: Identifiable, Codable, Equatable {
     var isExcludedFromBalance: Bool?
     var profileId: UUID?
     
-    // 古いデータとの互換性用
     var attachedImageDatas: [Data]? = nil
     var attachedVideos: [AttachedVideo]? = nil
-    
-    // 【新規】画像と動画を統合した配列
     var attachedMediaItems: [AttachedMediaItem]? = nil
     var attachedFiles: [AttachedFile]? = nil
     
@@ -129,16 +133,15 @@ struct Transaction: Identifiable, Codable, Equatable {
     var cleanNote: String { let lines = note.components(separatedBy: .newlines); let cleanedLines = lines.map { line in line.components(separatedBy: .whitespaces).filter { !$0.hasPrefix("#") && !$0.hasPrefix("@") }.joined(separator: " ") }; return cleanedLines.joined(separator: "\n") }
 }
 
-// 【新規】古いデータ（DataやVideo）を、新しい表示用のMediaItemに変換するフォールバック
 extension Transaction {
     var displayMediaItems: [AttachedMediaItem] {
         if let items = attachedMediaItems, !items.isEmpty { return items }
         var fallback: [AttachedMediaItem] = []
         if let datas = attachedImageDatas {
-            for data in datas { fallback.append(AttachedMediaItem(type: .image, localFileName: "", thumbnailData: data)) }
+            for data in datas { fallback.append(AttachedMediaItem(type: .image, localFileName: "", originalFileName: nil, thumbnailData: data)) }
         }
         if let vids = attachedVideos {
-            for v in vids { fallback.append(AttachedMediaItem(type: .video, localFileName: v.localFileName, thumbnailData: v.thumbnailData)) }
+            for v in vids { fallback.append(AttachedMediaItem(type: .video, localFileName: v.localFileName, originalFileName: nil, thumbnailData: v.thumbnailData)) }
         }
         return fallback
     }
