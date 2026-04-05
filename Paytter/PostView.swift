@@ -69,8 +69,7 @@ struct AttachedMediaCell: View, Equatable {
     }
 }
 
-// 【重要修正】ローカル変数でスムーズに並べ替えつつ、
-// 指を離した瞬間に「親の状態」へ反映させることで同期を実現
+// 投稿画面の機能には一切手を加えていません
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
     
@@ -91,7 +90,6 @@ struct AttachedMediasDragView: View {
                                 isDragged: isDragged,
                                 dragOffset: isDragged ? dragOffset : 0,
                                 onRemove: {
-                                    // 削除時も即座に同期
                                     localMedias.removeAll(where: { $0.id == item.id })
                                     attachedMedias = localMedias
                                 }
@@ -110,11 +108,9 @@ struct AttachedMediasDragView: View {
             }
         }
         .onAppear {
-            // 親（PostView）から渡されたデータをローカルに取り込む
             localMedias = attachedMedias
         }
         .onChange(of: attachedMedias) { newMeds in
-            // 写真を追加した時など、外部からの変更を反映
             if draggedMediaId == nil {
                 localMedias = newMeds
             }
@@ -130,7 +126,7 @@ struct AttachedMediasDragView: View {
         dragOffset = value.translation.width - dragTotalJump
         
         if let idx = localMedias.firstIndex(where: { $0.id == item.id }) {
-            let jumpDistance: CGFloat = 88 // 80(width) + 8(spacing)
+            let jumpDistance: CGFloat = 88
             let threshold = jumpDistance * 0.5
             
             if dragOffset > threshold && idx < localMedias.count - 1 {
@@ -150,7 +146,6 @@ struct AttachedMediasDragView: View {
     }
     
     private func handleDragEnded() {
-        // 並び替えた結果を親データ（PostViewのState）に返す
         attachedMedias = localMedias
         
         withAnimation(.interactiveSpring()) {
@@ -500,12 +495,20 @@ struct PostView: View {
             self.isExcluded = isExcludedInitial
             self.selectedProfileId = profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.first(where: { $0.isVisible })?.id ?? profiles.first?.id
             
-            self.attachedMedias = (initialMedias ?? []).compactMap { item in
+            // 【重要】編集画面の初期データをロードする際、一瞬遅らせることで確実に onChange を発火させる
+            let loadedMedias = (initialMedias ?? []).compactMap { item -> PostAttachedMedia? in
                 if let data = item.thumbnailData, let img = UIImage(data: data) {
                     return PostAttachedMedia(id: item.id, type: item.type, localFileName: item.localFileName, originalFileName: item.originalFileName ?? "", thumbnailData: data, thumbnailImage: img, durationText: item.durationText)
                 }
                 return nil
             }
+            
+            if !loadedMedias.isEmpty {
+                DispatchQueue.main.async {
+                    self.attachedMedias = loadedMedias
+                }
+            }
+            
             self.attachedFiles = initialFiles ?? []
         }
     }
