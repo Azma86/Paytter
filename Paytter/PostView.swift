@@ -31,46 +31,26 @@ struct AttachedMediaCell: View, Equatable {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             ZStack(alignment: .bottomLeading) {
-                // 1. 一番下：プレースホルダー（背景とビデオ/写真マーク）
-                ZStack {
-                    Color.gray.opacity(0.3)
-                    Image(systemName: media.type == .video ? "video.fill" : "photo.fill")
-                        .font(.largeTitle)
-                        .foregroundColor(Color.gray.opacity(0.4))
-                }
-                .frame(width: 80, height: 80)
-                
-                // 2. 真ん中：サムネイル画像（取得されたらプレースホルダーの上に被さる）
+                // 1. 一番下：サムネイル画像 or プレースホルダー
                 if media.thumbnailImage.size != .zero {
                     Image(uiImage: media.thumbnailImage)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 80, height: 80)
-                    
-                    // 読み込み完了後の動画にのみ、再生マークなどを表示
-                    if media.type == .video && !media.isLoading {
-                        Color.black.opacity(0.2)
-                        Image(systemName: "play.circle.fill")
-                            .foregroundColor(.white.opacity(0.8))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        
-                        if let dur = media.durationText {
-                            Text(dur)
-                                .font(.caption2)
-                                .bold()
-                                .foregroundColor(.white)
-                                .padding(4)
-                                .background(Color.black.opacity(0.6))
-                                .cornerRadius(4)
-                                .padding(4)
-                        }
+                } else {
+                    ZStack {
+                        Color.gray.opacity(0.3)
+                        Image(systemName: media.type == .video ? "video.fill" : "photo.fill")
+                            .font(.largeTitle)
+                            .foregroundColor(Color.gray.opacity(0.4))
                     }
+                    .frame(width: 80, height: 80)
                 }
                 
-                // 3. 一番上：ロードアイコン（ロード中のみ表示）
+                // 2. ロード中（暗転とアイコン）
                 if media.isLoading {
                     ZStack {
-                        // サムネイルが表示されている場合は暗転させる
+                        // サムネイルがある場合は暗転させる
                         if media.thumbnailImage.size != .zero {
                             Color.black.opacity(0.4)
                         }
@@ -79,6 +59,34 @@ struct AttachedMediaCell: View, Equatable {
                             .tint(.white)
                     }
                     .frame(width: 80, height: 80)
+                    
+                    // ロード中の動画には左下にビデオアイコン
+                    if media.type == .video && media.thumbnailImage.size != .zero {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white)
+                            .padding(6)
+                    }
+                } 
+                // 3. ロード完了後（動画のみ再生ボタンと時間）
+                else if media.type == .video {
+                    Color.black.opacity(0.2)
+                        .frame(width: 80, height: 80)
+                    
+                    Image(systemName: "play.circle.fill")
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(width: 80, height: 80) // 中央配置用
+                    
+                    if let dur = media.durationText {
+                        Text(dur)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.black.opacity(0.6))
+                            .cornerRadius(4)
+                            .padding(6)
+                    }
                 }
             }
             .frame(width: 80, height: 80)
@@ -182,12 +190,15 @@ struct AttachedMediasDragView: View {
     }
 }
 
-// 【新規】動画などから最速でサムネイル画像だけを引き抜くための転送定義
-struct FastThumbnailTransferable: Transferable {
-    let data: Data
+// 【新規】動画から最速でサムネイル画像だけを引き抜くための秘密兵器
+struct FastImageTransferable: Transferable {
+    let image: UIImage
     static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(importedContentType: .image) { data in
-            FastThumbnailTransferable(data: data)
+            guard let uiImage = UIImage(data: data) else {
+                throw URLError(.cannotDecodeRawData)
+            }
+            return FastImageTransferable(image: uiImage)
         }
     }
 }
@@ -356,14 +367,17 @@ struct PostView: View {
                                     let isVideo = item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) })
                                     
                                     if attachedMedias.count < 4 {
-                                        // 枠だけを即座に追加
                                         attachedMedias.append(PostAttachedMedia(id: tempId, type: isVideo ? .video : .image, localFileName: "", originalFileName: "読み込み中...", thumbnailData: Data(), thumbnailImage: UIImage(), durationText: nil, isLoading: true))
                                     } else {
                                         continue
                                     }
                                     
-                                    // 【最重要】動画をダウンロードする前に、最速でサムネイルだけを引っこ抜いて表示させる
-                                    if let fastThumbData = try? await item.loadTransferable(type: FastThumbnailTransferable.self), let fastThumb = UIImage(data: fastThumbData.data) {
+                                    // 【最重要】動画本体のダウンロードを待たずに、最速でサムネイルだけを引っこ抜く！
+                                    var fastThumb = UIImage()
+                                    if let preview = try? await item.loadTransferable(type: FastImageTransferable.self) {
+                                        fastThumb = preview.image
+                                        
+                                        // サムネイルが手に入った瞬間に画面を更新（暗転＋くるくる＋アイコンが即座に表示されます）
                                         DispatchQueue.main.async {
                                             if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
                                                 attachedMedias[idx] = PostAttachedMedia(id: tempId, type: isVideo ? .video : .image, localFileName: "", originalFileName: "読み込み中...", thumbnailData: Data(), thumbnailImage: fastThumb, durationText: nil, isLoading: true)
@@ -371,21 +385,23 @@ struct PostView: View {
                                         }
                                     }
                                     
-                                    // その後、重い動画や画像の本体ダウンロードを開始する
+                                    // その後、裏側で重い動画や画像の本体ダウンロードを開始する
                                     if isVideo {
                                         if let movie = try? await item.loadTransferable(type: MovieTransferable.self) {
                                             let tempURL = movie.url
                                             let originalName = tempURL.lastPathComponent
                                             
+                                            // 万が一最速サムネイルが取得できなかった場合はここで生成
+                                            let finalThumb = fastThumb.size == .zero ? (generateVideoThumbnail(for: tempURL) ?? UIImage()) : fastThumb
+                                            
                                             if let savedName = MediaManager.shared.saveMedia(from: tempURL),
-                                               let thumb = generateVideoThumbnail(for: tempURL),
-                                               let thumbData = compressImage(thumb) {
+                                               let thumbData = compressImage(finalThumb) {
                                                 let duration = getVideoDuration(url: tempURL)
                                                 
+                                                // 読み込み完了！isLoadingをfalseにして再生ボタンを出す
                                                 DispatchQueue.main.async {
                                                     if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
-                                                        // 読み込み完了！isLoadingをfalseにして再生ボタンを出す
-                                                        attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration, isLoading: false)
+                                                        attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: finalThumb, durationText: duration, isLoading: false)
                                                     }
                                                 }
                                             } else {
@@ -402,14 +418,15 @@ struct PostView: View {
                                             if let originalData = try? Data(contentsOf: tempURL),
                                                let uiImage = UIImage(data: originalData) {
                                                 
-                                                if let thumbData = compressImage(uiImage),
-                                                   let thumbImage = UIImage(data: thumbData),
+                                                let finalThumb = fastThumb.size == .zero ? uiImage : fastThumb
+                                                
+                                                if let thumbData = compressImage(finalThumb),
                                                    let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension) {
                                                     
+                                                    // 完了
                                                     DispatchQueue.main.async {
                                                         if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
-                                                            // 画像の読み込み完了
-                                                            attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil, isLoading: false)
+                                                            attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: finalThumb, durationText: nil, isLoading: false)
                                                         }
                                                     }
                                                 } else {
