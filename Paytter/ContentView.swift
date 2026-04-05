@@ -9,28 +9,7 @@ struct DisplayHomeItem: Identifiable, Equatable {
     let diffAmount: Int
 }
 
-// 【新規】お財布の描画負荷をゼロにするEquatableセル
-struct HomeHeaderCell: View, Equatable {
-    let item: DisplayHomeItem
-    let themeMain: String
-    let themeBodyText: String
-    let isSilentUpdate: Bool
-    let isDragged: Bool
-    let dragOffset: CGFloat
-
-    static func == (lhs: HomeHeaderCell, rhs: HomeHeaderCell) -> Bool {
-        lhs.item.id == rhs.item.id && lhs.item.amount == rhs.item.amount && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset
-    }
-
-    var body: some View {
-        BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: isSilentUpdate)
-            .background(isDragged ? Color(hex: themeMain).opacity(0.1) : Color.clear)
-            .cornerRadius(8)
-            .offset(x: isDragged ? dragOffset : 0, y: 0)
-            .zIndex(isDragged ? 100 : 0)
-    }
-}
-
+// 【修正】無駄な動きを生んでいた複雑な状態同期を排除し、シンプルで最速の処理にしました
 struct HomeHeaderView: View {
     @Binding var homeItems: [DisplayHomeItem]
     @Binding var isHomeEditMode: Bool
@@ -40,64 +19,62 @@ struct HomeHeaderView: View {
     let themeBodyText: String
     let isSilentUpdate: Bool
     
-    // 【新規】ドラッグ中、親ビューを再描画させないためのローカル状態
-    @State private var localItems: [DisplayHomeItem] = []
     @State private var draggedItemId: String?
     @State private var dragOffset: CGFloat = 0
-    @State private var dragHomeTotalJump: CGFloat = 0
+    @State private var dragLastX: CGFloat? // 以前の「一番軽かった」相対座標アルゴリズムを復活
     
     var body: some View {
         HStack(spacing: 10) {
-            ForEach(localItems) { item in
-                let isDragged = draggedItemId == item.id
-                
-                HomeHeaderCell(
-                    item: item,
-                    themeMain: themeMain,
-                    themeBodyText: themeBodyText,
-                    isSilentUpdate: isSilentUpdate,
-                    isDragged: isDragged,
-                    dragOffset: isDragged ? dragOffset : 0
-                )
-                .equatable() // これで再描画負荷が実質ゼロになります
-                .overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil)
-                .gesture(
-                    isHomeEditMode ? DragGesture(coordinateSpace: .global)
-                        .onChanged { value in handleDragChange(value: value, item: item) }
-                        .onEnded { _ in handleDragEnded() }
-                    : nil
-                )
+            ForEach(homeItems) { item in
+                BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: isSilentUpdate)
+                    .background(draggedItemId == item.id ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+                    .cornerRadius(8)
+                    .overlay(
+                        isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil
+                    )
+                    .offset(x: draggedItemId == item.id ? dragOffset : 0, y: 0)
+                    .zIndex(draggedItemId == item.id ? 100 : 0)
+                    .gesture(
+                        // .global を外し、指の動きにダイレクトに追従させる
+                        isHomeEditMode ? DragGesture(minimumDistance: 0)
+                            .onChanged { value in handleDragChange(value: value, item: item) }
+                            .onEnded { _ in handleDragEnded() }
+                        : nil
+                    )
             }
         }
         .padding()
-        .onAppear { localItems = homeItems }
-        .onChange(of: homeItems) { newItems in
-            if draggedItemId == nil { localItems = newItems }
-        }
     }
     
     private func handleDragChange(value: DragGesture.Value, item: DisplayHomeItem) {
         if draggedItemId != item.id {
             draggedItemId = item.id
-            dragHomeTotalJump = 0
+            dragLastX = value.location.x
+            dragOffset = 0
         }
         
-        dragOffset = value.translation.width - dragHomeTotalJump
+        guard let lastX = dragLastX else { return }
+        dragOffset += value.location.x - lastX
+        dragLastX = value.location.x
         
-        if let idx = localItems.firstIndex(where: { $0.id == item.id }) {
-            let jumpDistance: CGFloat = 88 // おおよそのアイテム幅（端末に合わせて調整可能）
+        if let idx = homeItems.firstIndex(where: { $0.id == item.id }) {
+            let spacing: CGFloat = 10
+            let padding: CGFloat = 32
+            let spacingTotal = CGFloat(max(homeItems.count - 1, 0)) * spacing
+            let availableWidth = UIScreen.main.bounds.width - padding - spacingTotal
+            let itemWidth = availableWidth / CGFloat(max(homeItems.count, 1))
+            let jumpDistance = itemWidth + spacing
             let threshold = jumpDistance * 0.5
             
-            if dragOffset > threshold && idx < localItems.count - 1 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    localItems.swapAt(idx, idx + 1)
-                    dragHomeTotalJump += jumpDistance
+            // バネの動きをやめ、元の「スッと入れ替わる」動き（easeInOut）に戻しました
+            if dragOffset > threshold && idx < homeItems.count - 1 {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    homeItems.swapAt(idx, idx + 1)
                     dragOffset -= jumpDistance
                 }
             } else if dragOffset < -threshold && idx > 0 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    localItems.swapAt(idx, idx - 1)
-                    dragHomeTotalJump -= jumpDistance
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    homeItems.swapAt(idx, idx - 1)
                     dragOffset += jumpDistance
                 }
             }
@@ -105,13 +82,12 @@ struct HomeHeaderView: View {
     }
     
     private func handleDragEnded() {
-        withAnimation(.interactiveSpring()) {
+        withAnimation(.easeInOut(duration: 0.2)) {
             draggedItemId = nil
             dragOffset = 0
-            dragHomeTotalJump = 0
+            dragLastX = nil
         }
-        homeDisplayOrder = localItems.map { $0.id }
-        homeItems = localItems // 親ビューに結果だけを返す
+        homeDisplayOrder = homeItems.map { $0.id }
     }
 }
 
@@ -136,7 +112,6 @@ struct ContentView: View {
     let appearancePublisher = NotificationCenter.default.publisher(for: NSNotification.Name("UpdateAppearance"))
     @ObservedObject var lockManager = LockManager.shared; @Environment(\.scenePhase) var scenePhase
 
-    // 【重要】UIをブロックしないバックグラウンド計算
     func updateVisibleTransactions() {
         let currentTx = transactions; let currentProf = profiles; let isUn = lockManager.isUnlocked; let hidePriv = lockManager.privatePostDisplayMode == 0
         DispatchQueue.global(qos: .userInitiated).async {
@@ -169,13 +144,17 @@ struct ContentView: View {
             .accentColor(Color(hex: themeTabAccent))
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in self.selection = 0 }
             
+            if lockManager.isProcessing {
+                ZStack { Color.black.opacity(0.3).ignoresSafeArea(); VStack(spacing: 16) { ProgressView().scaleEffect(1.5).tint(.white); Text("データ更新中...").font(.subheadline).foregroundColor(.white).bold() }.padding(30).background(Color(hex: themeBarBG).opacity(0.9)).cornerRadius(16) }.zIndex(300).transition(.opacity)
+            }
+            
             if lockManager.isShowingLockScreen { PasscodeLockOverlay().zIndex(200).transition(.opacity) }
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { recalculateBalances(saveBackup: false); updateVisibleTransactions(); updateAppearance(); syncHomeItems(); if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 { lockManager.promptUnlock() } }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances(); updateVisibleTransactions() }
-        .onChange(of: lockManager.isUnlocked) { _ in recalculateBalances(saveBackup: false); updateVisibleTransactions() }
+        .onChange(of: lockManager.isUnlocked) { _ in lockManager.isProcessing = true; DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { recalculateBalances(saveBackup: false); updateVisibleTransactions(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { withAnimation { lockManager.isProcessing = false } } } }
         .onChange(of: profiles) { _ in updateVisibleTransactions() }
         .onChange(of: accounts) { _ in syncHomeItems() }
         .onChange(of: groups) { _ in syncHomeItems() }
@@ -290,7 +269,6 @@ struct ContentView: View {
     
     func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("リセット完了") }
     
-    // 【重要】UIをブロックしないバックグラウンド計算
     func recalculateBalances(saveBackup: Bool = true) {
         let currentAccounts = accounts; let currentTransactions = transactions; let currentProfiles = profiles
         let isUn = lockManager.isUnlocked; let reflectPriv = lockManager.reflectPrivateBalanceWhenLocked
