@@ -17,7 +17,12 @@ struct PostAttachedMedia: Identifiable, Equatable {
 
 struct AttachedMediaCell: View, Equatable {
     let media: PostAttachedMedia; let isDragged: Bool; let dragOffset: CGFloat; let onRemove: () -> Void
-    static func == (lhs: AttachedImageCell, rhs: AttachedImageCell) -> Bool { lhs.media.id == rhs.media.id && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset }
+    
+    // 【修正】ここが古い名前のままになっていたエラーの原因です。正しく AttachedMediaCell に修正しました！
+    static func == (lhs: AttachedMediaCell, rhs: AttachedMediaCell) -> Bool { 
+        lhs.media.id == rhs.media.id && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset 
+    }
+    
     var body: some View {
         ZStack(alignment: .topTrailing) {
             ZStack(alignment: .bottomLeading) {
@@ -82,10 +87,9 @@ struct MovieTransferable: Transferable {
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool
     var initialDate: Date = Date(); var isExcludedInitial: Bool = false
-    var initialMedias: [AttachedMediaItem]? = nil // 【変更】初期データも統合モデルで受け取る
+    var initialMedias: [AttachedMediaItem]? = nil
     var initialFiles: [AttachedFile]? = nil
     
-    // 【変更】保存引数も統合された MediaItem で渡す
     var onPost: (Bool, Date, Bool, UUID?, [AttachedMediaItem]?, [AttachedFile]?) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
@@ -134,7 +138,7 @@ struct PostView: View {
                                         }
                                     } else {
                                         if let data = try? await item.loadTransferable(type: Data.self), let uiImage = UIImage(data: data), let thumbData = compressImage(uiImage), let thumbImage = UIImage(data: thumbData) {
-                                            // 【変更】オリジナル画像を保存する
+                                            // オリジナル画像を保存する
                                             if let savedName = MediaManager.shared.saveData(data, extension: "jpg") {
                                                 DispatchQueue.main.async { if attachedMedias.count < 4 { attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil)) } }
                                             }
@@ -158,7 +162,6 @@ struct PostView: View {
             .navigationBarItems(
                 leading: Button("キャンセル") { isPresented = false }.foregroundColor(Color(hex: themeBarText)), 
                 trailing: HStack(spacing: 12) {
-                    // 【変更】保存用のモデルに変換して渡す
                     let finalMedias = attachedMedias.map { AttachedMediaItem(id: $0.id, type: $0.type, localFileName: $0.localFileName, thumbnailData: $0.thumbnailData, durationText: $0.durationText) }
                     Button(action: { onPost(false, postDate, isExcluded, selectedProfileId, finalMedias, attachedFiles); isPresented = false }) { Text("支出").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeExpense).opacity(0.8)).foregroundColor(.white).cornerRadius(17) }
                     Button(action: { onPost(true, postDate, isExcluded, selectedProfileId, finalMedias, attachedFiles); isPresented = false }) { Text("収入").font(.subheadline).fontWeight(.bold).frame(width: 60, height: 34).background(Color(hex: themeIncome)).foregroundColor(.white).cornerRadius(17) }
@@ -180,7 +183,6 @@ struct PostView: View {
         }
     }
     
-    // 【新規】動画の長さ（Duration）を取得する関数
     func getVideoDuration(url: URL) -> String? {
         let asset = AVAsset(url: url)
         let seconds = CMTimeGetSeconds(asset.duration)
