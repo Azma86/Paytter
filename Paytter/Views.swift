@@ -87,14 +87,10 @@ struct TransactionDetailView: View {
                             }
                         }
                         
-                        if let images = item.attachedImageDatas, !images.isEmpty {
-                            TimelineImageGrid(images: images, maxHeight: 260)
-                                .padding(.vertical, 8)
-                        }
-                        
-                        // 【新規】動画とファイルの表示機能
-                        if let videos = item.attachedVideos, !videos.isEmpty {
-                            TimelineVideoGrid(videos: videos, maxHeight: 260)
+                        // 【変更】詳細画面でも統合メディアグリッドを表示
+                        let displayMedias = item.displayMediaItems
+                        if !displayMedias.isEmpty {
+                            TimelineMediaGrid(mediaItems: displayMedias, maxHeight: 260)
                                 .padding(.vertical, 8)
                         }
                         
@@ -164,13 +160,13 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $isShowingEditSheet) {
+            // 【変更】統合モデルで編集画面へ引き渡し
             PostView(
                 inputText: $editLineText,
                 isPresented: $isShowingEditSheet,
                 initialDate: item.date,
                 isExcludedInitial: item.isExcludedFromBalance ?? false,
-                initialImages: item.attachedImageDatas,
-                initialVideos: item.attachedVideos,
+                initialMedias: item.displayMediaItems, // ここが重要
                 initialFiles: item.attachedFiles,
                 onPost: handleEditTransaction,
                 transactions: transactions,
@@ -179,8 +175,7 @@ struct TransactionDetailView: View {
         }
     }
     
-    // 【変更】編集保存時の引数に動画とファイルを追加
-    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, images: [Data]?, videos: [AttachedVideo]?, files: [AttachedFile]?) {
+    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, medias: [AttachedMediaItem]?, files: [AttachedFile]?) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
                 .filter { $0.contains("¥") }
@@ -195,8 +190,7 @@ struct TransactionDetailView: View {
                 id: item.id, amount: nAmt, date: nDate, note: editLineText,
                 source: nSrc, isIncome: isInc, isExcludedFromBalance: isExc,
                 profileId: profileId ?? item.profileId,
-                attachedImageDatas: images,
-                attachedVideos: videos,
+                attachedMediaItems: medias, // 統合モデルを保存
                 attachedFiles: files
             )
         }
