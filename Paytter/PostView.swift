@@ -6,43 +6,70 @@ struct PostAttachedImage: Identifiable, Equatable {
     let data: Data
     let image: UIImage
     
-    // データの中身ではなくIDだけを比較させることで軽量化を維持
     static func == (lhs: PostAttachedImage, rhs: PostAttachedImage) -> Bool {
         return lhs.id == rhs.id
     }
 }
 
-// 画像のドラッグ専用の独立したView
+// 【新規】画像の描画負荷を完全にゼロにするEquatableセル
+struct AttachedImageCell: View, Equatable {
+    let id: UUID
+    let image: UIImage
+    let isDragged: Bool
+    let dragOffset: CGFloat
+    let onRemove: () -> Void // ClosureはEquatableで比較できないため、ID等のみで判定する
+    
+    static func == (lhs: AttachedImageCell, rhs: AttachedImageCell) -> Bool {
+        lhs.id == rhs.id && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset
+    }
+    
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.white)
+                    .background(Circle().fill(Color.black.opacity(0.6)))
+            }
+            .padding(4)
+        }
+        .offset(x: isDragged ? dragOffset : 0)
+        .zIndex(isDragged ? 100 : 0)
+    }
+}
+
 struct AttachedImagesDragView: View {
     @Binding var attachedImages: [PostAttachedImage]
     
+    // 【新規】親ビューに影響を与えないローカル状態
+    @State private var localImages: [PostAttachedImage] = []
     @State private var draggedImageId: UUID?
     @State private var dragImageOffset: CGFloat = 0
     @State private var dragImageTotalJump: CGFloat = 0
     
     var body: some View {
-        if !attachedImages.isEmpty {
+        if !localImages.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(attachedImages) { item in
-                        ZStack(alignment: .topTrailing) {
-                            Image(uiImage: item.image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 80, height: 80)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                            
-                            Button(action: { attachedImages.removeAll(where: { $0.id == item.id }) }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.white)
-                                    .background(Circle().fill(Color.black.opacity(0.6)))
+                    ForEach(localImages) { item in
+                        let isDragged = draggedImageId == item.id
+                        
+                        AttachedImageCell(
+                            id: item.id,
+                            image: item.image,
+                            isDragged: isDragged,
+                            dragOffset: isDragged ? dragImageOffset : 0,
+                            onRemove: {
+                                localImages.removeAll(where: { $0.id == item.id })
+                                attachedImages = localImages
                             }
-                            .padding(4)
-                        }
-                        // 【変更】お財布一覧（HomeHeaderView）と全く同じモーション設計に統一
-                        // 余計な拡大（scaleEffect）や影の演出を削除し、ソリッドな動きにしました
-                        .offset(x: draggedImageId == item.id ? dragImageOffset : 0, y: 0)
-                        .zIndex(draggedImageId == item.id ? 100 : 0)
+                        )
+                        .equatable() // これで再描画負荷が実質ゼロになります
                         .gesture(
                             DragGesture(coordinateSpace: .global)
                                 .onChanged { val in handleImageDragChange(val, item: item) }
@@ -53,6 +80,10 @@ struct AttachedImagesDragView: View {
                 .padding(.horizontal)
             }
             .padding(.bottom, 8)
+            .onAppear { localImages = attachedImages }
+            .onChange(of: attachedImages) { newImages in
+                if draggedImageId == nil { localImages = newImages }
+            }
         }
     }
     
@@ -64,20 +95,19 @@ struct AttachedImagesDragView: View {
         
         dragImageOffset = value.translation.width - dragImageTotalJump
         
-        if let idx = attachedImages.firstIndex(where: { $0.id == item.id }) {
+        if let idx = localImages.firstIndex(where: { $0.id == item.id }) {
             let jumpDistance: CGFloat = 88 // 画像幅80 + 余白8
             let threshold = jumpDistance * 0.5
             
-            // 【変更】お財布一覧と全く同じ「バネの強さと速さ（response: 0.25, dampingFraction: 0.8）」に設定
-            if dragImageOffset > threshold && idx < attachedImages.count - 1 {
+            if dragImageOffset > threshold && idx < localImages.count - 1 {
                 withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    attachedImages.swapAt(idx, idx + 1)
+                    localImages.swapAt(idx, idx + 1)
                     dragImageTotalJump += jumpDistance
                     dragImageOffset -= jumpDistance
                 }
             } else if dragImageOffset < -threshold && idx > 0 {
                 withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    attachedImages.swapAt(idx, idx - 1)
+                    localImages.swapAt(idx, idx - 1)
                     dragImageTotalJump -= jumpDistance
                     dragImageOffset += jumpDistance
                 }
@@ -91,6 +121,7 @@ struct AttachedImagesDragView: View {
             dragImageOffset = 0
             dragImageTotalJump = 0
         }
+        attachedImages = localImages // 親ビューに結果を同期
     }
 }
 
