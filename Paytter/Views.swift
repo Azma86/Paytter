@@ -83,10 +83,23 @@ struct TransactionDetailView: View {
                             .font(.title3)
                             .foregroundColor(Color(hex: themeBodyText))
                         
+                        // 【重要】詳細画面のタグもタップで検索画面へ飛ぶように変更！
                         if !currentItem.tags.isEmpty {
                             HStack(spacing: 12) {
                                 ForEach(currentItem.tags, id: \.self) { tag in
-                                    Text(tag).font(.subheadline).foregroundColor(Color(hex: themeMain))
+                                    Button(action: {
+                                        NotificationCenter.default.post(name: NSNotification.Name("SearchTag"), object: tag)
+                                        dismiss() // 詳細画面を閉じて検索タブを見せる
+                                    }) {
+                                        Text(tag)
+                                            .font(.subheadline)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(Color(hex: themeMain))
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(Color(hex: themeMain).opacity(0.1))
+                                            .cornerRadius(10)
+                                    }
                                 }
                             }
                         }
@@ -100,7 +113,6 @@ struct TransactionDetailView: View {
                         if let files = currentItem.attachedFiles, !files.isEmpty {
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(files, id: \.id) { file in
-                                    // 【変更】ファイルをタップして開けるように共通部品を使用
                                     AttachedFileRowView(file: file, themeBodyText: themeBodyText, font: .subheadline, padding: 12)
                                 }
                             }.padding(.vertical, 8)
