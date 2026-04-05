@@ -48,7 +48,6 @@ struct ContentView: View {
     @State private var isHomeEditMode = false; @State private var homeItems: [DisplayHomeItem] = []; @State private var cachedVisibleTransactions: [Transaction] = []
     @State private var activeAlert: ActiveAlert?; @State private var isRestoringManual = false; @State private var isShowingImporter = false; @State private var pendingImportData: FullBackupData?
     
-    // 【新規】検索用のキーワードを保持する変数
     @State private var searchText = ""
 
     let appearancePublisher = NotificationCenter.default.publisher(for: NSNotification.Name("UpdateAppearance"))
@@ -56,12 +55,10 @@ struct ContentView: View {
 
     func updateVisibleTransactions() { let currentTx = transactions; let currentProf = profiles; let isUn = lockManager.isUnlocked; let hidePriv = lockManager.privatePostDisplayMode == 0; DispatchQueue.global(qos: .userInitiated).async { let profileDict = Dictionary(uniqueKeysWithValues: currentProf.map { ($0.id, $0) }); let defaultProfile = currentProf.first; let filtered = currentTx.filter { tx in let profile = profileDict[tx.profileId ?? UUID()] ?? defaultProfile; let isVisible = profile?.isVisible ?? true; let isPrivate = profile?.isPrivate ?? false; let isDeleted = profile?.isDeleted ?? false; if isDeleted { return true }; if !isVisible { return false }; if isPrivate && !isUn && hidePriv { return false }; return true }; let sorted = filtered.sorted(by: { $0.date > $1.date }); DispatchQueue.main.async { self.cachedVisibleTransactions = sorted } } }
     
-    // 【新規】検索キーワードに基づいて絞り込んだ投稿リストを返す
     var filteredSearchTransactions: [Transaction] {
         if searchText.isEmpty { return [] }
         let lower = searchText.lowercased()
         return cachedVisibleTransactions.filter { tx in
-            // テキスト、ソース（お財布名）、タグのいずれかに部分一致すれば表示
             tx.note.lowercased().contains(lower) || 
             tx.source.lowercased().contains(lower) || 
             tx.tags.contains(where: { $0.lowercased().contains(lower) })
@@ -72,7 +69,6 @@ struct ContentView: View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             
-            // 【変更】タブメニューの2番目に「検索（searchTab）」を追加
             TabView(selection: $selection) { 
                 homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }; 
                 searchTab.tag(1).tabItem { Label("検索", systemImage: "magnifyingglass") }; 
@@ -82,6 +78,13 @@ struct ContentView: View {
             }
             .accentColor(Color(hex: themeTabAccent))
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in self.selection = 0 }
+            // 【重要】タグがタップされたら検索タブに飛ぶ処理
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SearchTag"))) { notification in
+                if let tag = notification.object as? String {
+                    self.selection = 1 // 検索タブに切り替え
+                    self.searchText = tag // 検索バーにタグを入力
+                }
+            }
             
             if lockManager.isShowingLockScreen { PasscodeLockOverlay().zIndex(200).transition(.opacity) }
         }.preferredColorScheme(isDarkMode ? .dark : .light)
@@ -111,13 +114,11 @@ struct ContentView: View {
         }
     }
     
-    // 【新規】検索用のタブ画面（検索バーと検索結果のリスト表示）
     private var searchTab: some View {
         NavigationView {
             ZStack {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
-                    // 検索バー
                     HStack {
                         Image(systemName: "magnifyingglass").foregroundColor(Color(hex: themeSubText))
                         TextField("キーワード、タグ、お財布を検索", text: $searchText)
@@ -133,7 +134,6 @@ struct ContentView: View {
                     .cornerRadius(10)
                     .padding()
                     
-                    // 検索結果の表示エリア
                     if searchText.isEmpty {
                         Spacer()
                         Image(systemName: "magnifyingglass")
