@@ -7,6 +7,86 @@ struct PostAttachedImage: Identifiable, Equatable {
     let image: UIImage
 }
 
+// 【新規】画像のドラッグ専用の独立したViewを作成し、再描画の負荷を最小限に抑えます
+struct AttachedImagesDragView: View {
+    @Binding var attachedImages: [PostAttachedImage]
+    
+    // ドラッグ用の変数をPostViewからこちらにお引越し
+    @State private var draggedImageId: UUID?
+    @State private var dragImageOffset: CGFloat = 0
+    @State private var dragImageTotalJump: CGFloat = 0
+    
+    var body: some View {
+        if !attachedImages.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(attachedImages) { item in
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: item.image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 80, height: 80)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            
+                            Button(action: { attachedImages.removeAll(where: { $0.id == item.id }) }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.white)
+                                    .background(Circle().fill(Color.black.opacity(0.6)))
+                            }
+                            .padding(4)
+                        }
+                        .offset(x: draggedImageId == item.id ? dragImageOffset : 0)
+                        .zIndex(draggedImageId == item.id ? 100 : 0)
+                        .gesture(
+                            DragGesture(coordinateSpace: .global)
+                                .onChanged { val in handleImageDragChange(val, item: item) }
+                                .onEnded { _ in handleImageDragEnded() }
+                        )
+                    }
+                }
+                .padding(.horizontal)
+            }
+            .padding(.bottom, 8)
+        }
+    }
+    
+    private func handleImageDragChange(_ value: DragGesture.Value, item: PostAttachedImage) {
+        if draggedImageId != item.id {
+            draggedImageId = item.id
+            dragImageTotalJump = 0
+        }
+        
+        dragImageOffset = value.translation.width - dragImageTotalJump
+        
+        if let idx = attachedImages.firstIndex(where: { $0.id == item.id }) {
+            let jumpDistance: CGFloat = 88 // 画像幅80 + 余白8
+            let threshold = jumpDistance * 0.5
+            
+            if dragImageOffset > threshold && idx < attachedImages.count - 1 {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
+                    attachedImages.swapAt(idx, idx + 1)
+                    dragImageTotalJump += jumpDistance
+                    dragImageOffset -= jumpDistance
+                }
+            } else if dragImageOffset < -threshold && idx > 0 {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
+                    attachedImages.swapAt(idx, idx - 1)
+                    dragImageTotalJump -= jumpDistance
+                    dragImageOffset += jumpDistance
+                }
+            }
+        }
+    }
+    
+    private func handleImageDragEnded() {
+        withAnimation(.interactiveSpring()) {
+            draggedImageId = nil
+            dragImageOffset = 0
+            dragImageTotalJump = 0
+        }
+    }
+}
+
 struct PostView: View {
     @Binding var inputText: String; @Binding var isPresented: Bool
     var initialDate: Date = Date()
@@ -37,10 +117,6 @@ struct PostView: View {
     
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var attachedImages: [PostAttachedImage] = []
-    
-    @State private var draggedImageId: UUID?
-    @State private var dragImageOffset: CGFloat = 0
-    @State private var dragImageTotalJump: CGFloat = 0 // 絶対座標のズレ補正用
     
     var body: some View {
         NavigationView {
@@ -78,38 +154,8 @@ struct PostView: View {
                     .padding()
                     .frame(maxHeight: .infinity)
                     
-                    if !attachedImages.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(attachedImages) { item in
-                                    ZStack(alignment: .topTrailing) {
-                                        Image(uiImage: item.image)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 80, height: 80)
-                                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                                        
-                                        Button(action: { attachedImages.removeAll(where: { $0.id == item.id }) }) {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .foregroundColor(.white)
-                                                .background(Circle().fill(Color.black.opacity(0.6)))
-                                        }
-                                        .padding(4)
-                                    }
-                                    .offset(x: draggedImageId == item.id ? dragImageOffset : 0)
-                                    .zIndex(draggedImageId == item.id ? 100 : 0)
-                                    .gesture(
-                                        // 【変更】global座標にして指に完全に吸い付くように設定
-                                        DragGesture(coordinateSpace: .global)
-                                            .onChanged { val in handleImageDragChange(val, item: item) }
-                                            .onEnded { _ in handleImageDragEnded() }
-                                    )
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
-                        .padding(.bottom, 8)
-                    }
+                    // 【変更】独立させたドラッグ専用のViewを呼び出す
+                    AttachedImagesDragView(attachedImages: $attachedImages)
                     
                     HStack {
                         PhotosPicker(selection: $selectedItems, maxSelectionCount: 4, matching: .images) {
@@ -195,43 +241,6 @@ struct PostView: View {
                 if let img = UIImage(data: data) { return PostAttachedImage(data: data, image: img) }
                 return nil
             }
-        }
-    }
-    
-    // 【重要】カクつかないよう、バネのアニメーションと絶対座標での補正を完全に適応
-    private func handleImageDragChange(_ value: DragGesture.Value, item: PostAttachedImage) {
-        if draggedImageId != item.id {
-            draggedImageId = item.id
-            dragImageTotalJump = 0
-        }
-        
-        dragImageOffset = value.translation.width - dragImageTotalJump
-        
-        if let idx = attachedImages.firstIndex(where: { $0.id == item.id }) {
-            let jumpDistance: CGFloat = 88 // 画像幅80 + 余白8
-            let threshold = jumpDistance * 0.5
-            
-            if dragImageOffset > threshold && idx < attachedImages.count - 1 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    attachedImages.swapAt(idx, idx + 1)
-                    dragImageTotalJump += jumpDistance
-                    dragImageOffset -= jumpDistance
-                }
-            } else if dragImageOffset < -threshold && idx > 0 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    attachedImages.swapAt(idx, idx - 1)
-                    dragImageTotalJump -= jumpDistance
-                    dragImageOffset += jumpDistance
-                }
-            }
-        }
-    }
-    
-    private func handleImageDragEnded() {
-        withAnimation(.interactiveSpring()) {
-            draggedImageId = nil
-            dragImageOffset = 0
-            dragImageTotalJump = 0
         }
     }
     
