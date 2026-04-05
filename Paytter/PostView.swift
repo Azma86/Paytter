@@ -70,7 +70,6 @@ struct AttachedMediaCell: View, Equatable {
     }
 }
 
-// 【重要修正】空の時でもViewが存在し続け、後から追加されたのを検知できるように VStack で囲みました
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
     
@@ -80,7 +79,7 @@ struct AttachedMediasDragView: View {
     @State private var dragLastX: CGFloat?
     
     var body: some View {
-        VStack(spacing: 0) {
+        Group {
             if !localMedias.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -157,33 +156,16 @@ struct AttachedMediasDragView: View {
     }
 }
 
-// 【新規追加】画像ファイルのオリジナル名を安全に抽出するためのTransferable
-struct ImageTransferable: Transferable {
-    let url: URL
-    let originalName: String
-    
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(importedContentType: .image) { received in
-            let originalName = received.file.lastPathComponent
-            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + originalName)
-            try? FileManager.default.removeItem(at: copy)
-            try FileManager.default.copyItem(at: received.file, to: copy)
-            return ImageTransferable(url: copy, originalName: originalName)
-        }
-    }
-}
-
 struct MovieTransferable: Transferable {
     let url: URL
-    let originalName: String
     
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .movie) { received in
-            let originalName = received.file.lastPathComponent
-            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + originalName)
+            let fileName = received.file.lastPathComponent
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
             try? FileManager.default.removeItem(at: copy)
             try FileManager.default.copyItem(at: received.file, to: copy)
-            return MovieTransferable(url: copy, originalName: originalName)
+            return MovieTransferable(url: copy)
         }
     }
 }
@@ -322,11 +304,10 @@ struct PostView: View {
                         .onChange(of: selectedItems, perform: { newItems in
                             Task {
                                 for item in newItems {
-                                    if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
-                                        // 【変更】動画もオリジナルファイル名を抽出して引き渡す
+                                    if item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) }) {
                                         if let movie = try? await item.loadTransferable(type: MovieTransferable.self) {
                                             let tempURL = movie.url
-                                            let originalName = movie.originalName
+                                            let originalName = tempURL.lastPathComponent
                                             DispatchQueue.main.async {
                                                 if let savedName = MediaManager.shared.saveMedia(from: tempURL),
                                                    let thumb = generateVideoThumbnail(for: tempURL),
@@ -337,20 +318,20 @@ struct PostView: View {
                                             }
                                         }
                                     } else {
-                                        // 【変更】画像の場合も URL を使って取得し、オリジナル名を抽出する
-                                        if let imageFile = try? await item.loadTransferable(type: ImageTransferable.self) {
-                                            let tempURL = imageFile.url
-                                            let originalName = imageFile.originalName
-                                            if let originalData = try? Data(contentsOf: tempURL),
-                                               let uiImage = UIImage(data: originalData),
-                                               let thumbData = compressImage(uiImage),
-                                               let thumbImage = UIImage(data: thumbData) {
-                                                
-                                                if let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension.isEmpty ? "jpg" : tempURL.pathExtension) {
-                                                    DispatchQueue.main.async {
-                                                        if attachedMedias.count < 4 {
-                                                            attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil))
-                                                        }
+                                        if let data = try? await item.loadTransferable(type: Data.self),
+                                           let uiImage = UIImage(data: data),
+                                           let thumbData = compressImage(uiImage),
+                                           let thumbImage = UIImage(data: thumbData) {
+                                            
+                                            // 【修正】画像に綺麗なファイル名を自動生成する
+                                            let df = DateFormatter()
+                                            df.dateFormat = "yyyyMMdd_HHmmss"
+                                            let originalName = "IMG_\(df.string(from: Date())).jpg"
+                                            
+                                            if let savedName = MediaManager.shared.saveData(data, extension: "jpg") {
+                                                DispatchQueue.main.async {
+                                                    if attachedMedias.count < 4 {
+                                                        attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil))
                                                     }
                                                 }
                                             }
