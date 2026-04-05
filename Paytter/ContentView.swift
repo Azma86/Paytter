@@ -175,7 +175,6 @@ struct ContentView: View {
                 self.selection = 0
             }
             
-            // 【新規】処理の重さをユーザーに納得させるローディングUI（フリーズ回避）
             if lockManager.isProcessing {
                 ZStack {
                     Color.black.opacity(0.3).ignoresSafeArea()
@@ -210,16 +209,11 @@ struct ContentView: View {
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances(); updateVisibleTransactions() }
         
-        // 【変更】ロック状態が変わったとき、UIを固めずにローディングを出してから処理する
         .onChange(of: lockManager.isUnlocked) { _ in
-            lockManager.isProcessing = true // ローディング画面を出す
-            
-            // 0.1秒遅らせて画面の描画を間に合わせ、その後で重い処理を実行
+            lockManager.isProcessing = true 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 recalculateBalances(saveBackup: false)
                 updateVisibleTransactions()
-                
-                // 処理が終わったらローディングを消す
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     withAnimation { lockManager.isProcessing = false }
                 }
@@ -263,7 +257,7 @@ struct ContentView: View {
                 initialDate: Date(),
                 isExcludedInitial: false,
                 initialImages: nil,
-                onPost: handlePostTransaction,
+                onPost: handlePostTransaction, // 修正された引数に対応
                 transactions: transactions,
                 accounts: accounts
             )
@@ -403,8 +397,9 @@ struct ContentView: View {
     private func binding(for account: Account) -> Binding<Account> { Binding( get: { self.accounts.first(where: { $0.id == account.id }) ?? account }, set: { if let i = self.accounts.firstIndex(where: { $0.id == account.id }) { self.accounts[i] = $0 } } ) }
     private func binding(for group: AccountGroup) -> Binding<AccountGroup> { Binding( get: { self.groups.first(where: { $0.id == group.id }) ?? group }, set: { if let i = self.groups.firstIndex(where: { $0.id == group.id }) { self.groups[i] = $0 } } ) }
 
-    func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
-        transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images))
+    // 【変更】動画とファイルを保存する引数を追加しました
+    func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, images: [Data]?, videos: [AttachedVideo]?, files: [AttachedFile]?) {
+        transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images, attachedVideos: videos, attachedFiles: files))
     }
 
     func syncHomeItems() {
