@@ -19,8 +19,13 @@ struct TransactionDetailView: View {
     @State private var editLineText = ""
     @State private var isShowingDeleteConfirm = false
     
+    // 【重要修正】常にグローバル変数（最新の保存データ）から自分自身のデータを引っ張ってくるように変更
+    var currentItem: Transaction {
+        transactions.first(where: { $0.id == item.id }) ?? item
+    }
+    
     var body: some View {
-        let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
+        let profile = profiles.first(where: { $0.id == currentItem.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
         let isPrivate = profile.isPrivate ?? false
         let isDeleted = profile.isDeleted ?? false
         let isLocked = !LockManager.shared.isUnlocked
@@ -62,7 +67,7 @@ struct TransactionDetailView: View {
                                 .cornerRadius(5)
                                 .foregroundColor(Color(hex: themeBodyText))
                         } else {
-                            Text(item.source)
+                            Text(currentItem.source)
                                 .font(.system(size: 10, weight: .bold))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
@@ -75,26 +80,25 @@ struct TransactionDetailView: View {
                     if hideContent {
                         Text("鍵アカウントによる投稿です").font(.title3).foregroundColor(Color(hex: themeSubText))
                     } else {
-                        HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
+                        HighlightedText(text: currentItem.cleanNote, isIncome: currentItem.isIncome)
                             .font(.title3)
                             .foregroundColor(Color(hex: themeBodyText))
                         
-                        if !item.tags.isEmpty {
+                        if !currentItem.tags.isEmpty {
                             HStack(spacing: 12) {
-                                ForEach(item.tags, id: \.self) { tag in
+                                ForEach(currentItem.tags, id: \.self) { tag in
                                     Text(tag).font(.subheadline).foregroundColor(Color(hex: themeMain))
                                 }
                             }
                         }
                         
-                        // 【変更】詳細画面でも統合メディアグリッドを表示
-                        let displayMedias = item.displayMediaItems
+                        let displayMedias = currentItem.displayMediaItems
                         if !displayMedias.isEmpty {
                             TimelineMediaGrid(mediaItems: displayMedias, maxHeight: 260)
                                 .padding(.vertical, 8)
                         }
                         
-                        if let files = item.attachedFiles, !files.isEmpty {
+                        if let files = currentItem.attachedFiles, !files.isEmpty {
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(files, id: \.id) { file in
                                     HStack {
@@ -112,13 +116,13 @@ struct TransactionDetailView: View {
                         }
                     }
                     
-                    if item.isExcludedFromBalance == true {
+                    if currentItem.isExcludedFromBalance == true {
                         Label("この投稿は残高計算から除外されています", systemImage: "calculator.badge.minus")
                             .font(.caption)
                             .foregroundColor(Color(hex: themeSubText))
                     }
 
-                    Text(item.date, style: .date) + Text(" " ) + Text(item.date, style: .time)
+                    Text(currentItem.date, style: .date) + Text(" " ) + Text(currentItem.date, style: .time)
                     Divider().background(Color(hex: themeSubText).opacity(0.2))
                     HStack(spacing: 60) {
                         Image(systemName: "bubble.left")
@@ -139,7 +143,7 @@ struct TransactionDetailView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack {
                     Button(action: {
-                        editLineText = item.note
+                        editLineText = currentItem.note
                         isShowingEditSheet = true
                     }) {
                         Image(systemName: "pencil.line")
@@ -160,14 +164,14 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $isShowingEditSheet) {
-            // 【変更】統合モデルで編集画面へ引き渡し
+            // 【重要修正】編集画面を開く際、必ず「最新のグローバル変数」をローカル変数にコピーして渡す
             PostView(
                 inputText: $editLineText,
                 isPresented: $isShowingEditSheet,
-                initialDate: item.date,
-                isExcludedInitial: item.isExcludedFromBalance ?? false,
-                initialMedias: item.displayMediaItems, // ここが重要
-                initialFiles: item.attachedFiles,
+                initialDate: currentItem.date,
+                isExcludedInitial: currentItem.isExcludedFromBalance ?? false,
+                initialMedias: currentItem.displayMediaItems,
+                initialFiles: currentItem.attachedFiles,
                 onPost: handleEditTransaction,
                 transactions: transactions,
                 accounts: accounts
@@ -175,13 +179,14 @@ struct TransactionDetailView: View {
         }
     }
     
+    // 編集完了後、グローバル変数を上書き保存する処理
     func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, medias: [AttachedMediaItem]?, files: [AttachedFile]?) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
                 .filter { $0.contains("¥") }
                 .reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
             
-            var nSrc = item.source
+            var nSrc = currentItem.source
             for acc in accounts {
                 if editLineText.contains("@\(acc.name)") { nSrc = acc.name }
             }
@@ -189,8 +194,8 @@ struct TransactionDetailView: View {
             transactions[idx] = Transaction(
                 id: item.id, amount: nAmt, date: nDate, note: editLineText,
                 source: nSrc, isIncome: isInc, isExcludedFromBalance: isExc,
-                profileId: profileId ?? item.profileId,
-                attachedMediaItems: medias, // 統合モデルを保存
+                profileId: profileId ?? currentItem.profileId,
+                attachedMediaItems: medias,
                 attachedFiles: files
             )
         }
