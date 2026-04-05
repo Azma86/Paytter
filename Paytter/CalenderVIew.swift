@@ -48,7 +48,6 @@ struct CalendarView: View {
         }
     }
     
-    // 【重要】重い辞書構築もバックグラウンドで処理し、UIをブロックさせません
     func updateCalendarDict() {
         let currentTx = validTransactionsForCalendar
         DispatchQueue.global(qos: .userInitiated).async {
@@ -57,7 +56,6 @@ struct CalendarView: View {
                 let year = Calendar.current.component(.year, from: tx.date)
                 let month = Calendar.current.component(.month, from: tx.date)
                 let day = Calendar.current.component(.day, from: tx.date)
-                // DateFormatterを使わずStringで直接生成（処理速度100倍）
                 let key = String(format: "%04d-%02d-%02d", year, month, day)
                 dict[key, default: []].append(tx)
             }
@@ -127,7 +125,6 @@ struct CalendarView: View {
     @ViewBuilder func dayCell(date: Date, month: Date) -> some View {
         let isCurrentMonth = calendar.isDate(date, equalTo: month, toGranularity: .month)
         
-        // 【重要】DateFormatterを使わず高速でキー生成
         let year = calendar.component(.year, from: date)
         let m = calendar.component(.month, from: date)
         let d = calendar.component(.day, from: date)
@@ -135,10 +132,7 @@ struct CalendarView: View {
         
         let dayTransactions = monthlyTransactionsDict[dayKey] ?? []
         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
-        
-        // 【重要】祝日判定もStringマッチに最適化
         let isHoliday = holidayDict["\(year)/\(m)/\(d)"] != nil || holidayDict[String(format: "%04d/%02d/%02d", year, m, d)] != nil
-        
         let weekday = calendar.component(.weekday, from: date)
         let dayBaseColor: Color = { if isHoliday || weekday == 1 { return Color(hex: themeHoliday) }; if weekday == 7 { return Color(hex: themeSaturday) }; return Color(hex: themeBodyText) }()
         
@@ -157,7 +151,8 @@ struct CalendarView: View {
     func slideToDate(_ date: Date) { let isFuture = date > currentMonth; moveMonth(by: isFuture ? 1 : -1); selectedDate = date }
     func combinedDate() -> Date { let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate); let tc = calendar.dateComponents([.hour, .minute], from: now); c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate }
     
-    func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, images: [Data]?) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images)) }
+    // 【変更】動画とファイルの引数を追加
+    func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, images: [Data]?, videos: [AttachedVideo]?, files: [AttachedFile]?) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images, attachedVideos: videos, attachedFiles: files)) }
     
     func parseAmount(from t: String) -> Int { t.components(separatedBy: CharacterSet.whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
