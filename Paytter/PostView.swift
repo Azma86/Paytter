@@ -57,7 +57,6 @@ struct PostView: View {
     var initialVideos: [AttachedVideo]? = nil
     var initialFiles: [AttachedFile]? = nil
     
-    // 【変更】動画とファイルの引数を追加
     var onPost: (Bool, Date, Bool, UUID?, [Data]?, [AttachedVideo]?, [AttachedFile]?) -> Void
     var transactions: [Transaction]; var accounts: [Account]
     
@@ -67,6 +66,8 @@ struct PostView: View {
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    // 【修正】エラーの原因だった「テーマのテキスト色」の読み込みを追加
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     
@@ -103,11 +104,11 @@ struct PostView: View {
                     
                     AttachedImagesDragView(attachedImages: $attachedImages)
                     
-                    // 【新規】動画のプレビュー
                     if !attachedVideos.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack {
-                                ForEach(attachedVideos) { video in
+                                // 【修正】id: \.id を追加してForEachエラーを解消
+                                ForEach(attachedVideos, id: \.id) { video in
                                     ZStack(alignment: .topTrailing) {
                                         if let data = video.thumbnailData, let img = UIImage(data: data) {
                                             Image(uiImage: img).resizable().scaledToFill().frame(width: 80, height: 80).clipShape(RoundedRectangle(cornerRadius: 12))
@@ -122,10 +123,10 @@ struct PostView: View {
                         }.padding(.bottom, 8)
                     }
 
-                    // 【新規】ファイルのプレビュー（タグ一覧風）
                     if !attachedFiles.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            ForEach(attachedFiles) { file in
+                            // 【修正】id: \.id を追加してForEachエラーを解消
+                            ForEach(attachedFiles, id: \.id) { file in
                                 HStack {
                                     Image(systemName: "doc.fill").foregroundColor(.gray)
                                     Text(file.originalFileName).lineLimit(1).truncationMode(.middle).foregroundColor(Color(hex: themeBodyText))
@@ -138,7 +139,6 @@ struct PostView: View {
                     }
                     
                     HStack {
-                        // 【変更】動画も選択できるように .any(of: [.images, .videos]) を指定
                         PhotosPicker(selection: $selectedItems, maxSelectionCount: 4, matching: .any(of: [.images, .videos])) {
                             Image(systemName: "photo.on.rectangle").font(.system(size: 20)).foregroundColor(Color(hex: themeMain)).padding(.trailing, 8)
                         }
@@ -169,7 +169,6 @@ struct PostView: View {
                             }
                         }
                         
-                        // 【新規】ファイル添付ボタン
                         Button(action: { isShowingFileImporter = true }) {
                             Image(systemName: "doc.badge.plus").font(.system(size: 20)).foregroundColor(Color(hex: themeMain)).padding(.trailing, 8)
                         }
@@ -194,7 +193,6 @@ struct PostView: View {
                 }
             )
             .sheet(isPresented: $isShowingDatePicker) { NavigationView { ZStack { Color(hex: themeBG).ignoresSafeArea(); VStack { DatePicker("日時を選択", selection: $postDate, displayedComponents: isPickingTime ? .hourAndMinute : .date).datePickerStyle(.wheel).labelsHidden().environment(\.locale, Locale(identifier: "ja_JP")).background(Color.clear) } }.navigationTitle(isPickingTime ? "時刻の指定" : "日付の指定").navigationBarTitleDisplayMode(.inline).navigationBarItems(leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") { withAnimation { isPickingTime.toggle() } }.foregroundColor(Color(hex: themeMain)), trailing: Button("完了") { isShowingDatePicker = false }.foregroundColor(Color(hex: themeMain))) }.preferredColorScheme(isDarkMode ? .dark : .light).presentationDetents([.height(350)]) }
-            // 【新規】ファイル選択シート
             .fileImporter(isPresented: $isShowingFileImporter, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result {
                     for url in urls {
