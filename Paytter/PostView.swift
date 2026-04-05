@@ -5,43 +5,10 @@ struct PostAttachedImage: Identifiable, Equatable {
     let id = UUID()
     let data: Data
     let image: UIImage
-}
-
-// 【新規】再描画を防ぐための「超軽量化された専用画像セル」
-struct AttachedImageCell: View, Equatable {
-    let id: UUID
-    let image: UIImage
-    let isDragged: Bool
-    let dragOffset: CGFloat
-    let onRemove: () -> Void
     
-    // 【重要】ここで「IDとドラッグ状態だけ比較すればOK」と指示することで、
-    // 重い画像データ自体の比較処理をスキップさせ、カクつきを完全排除します。
-    static func == (lhs: AttachedImageCell, rhs: AttachedImageCell) -> Bool {
-        lhs.id == rhs.id && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset
-    }
-    
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 80, height: 80)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .drawingGroup() // さらにMetal描画を強制して高速化
-            
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.white)
-                    .background(Circle().fill(Color.black.opacity(0.6)))
-            }
-            .padding(4)
-        }
-        .offset(x: isDragged ? dragOffset : 0)
-        // ドラッグ中は少し浮かせることで、より直感的に
-        .scaleEffect(isDragged ? 1.05 : 1.0)
-        .shadow(color: isDragged ? Color.black.opacity(0.15) : Color.clear, radius: 4, y: 2)
-        .zIndex(isDragged ? 100 : 0)
+    // データの中身ではなくIDだけを比較させることで軽量化を維持
+    static func == (lhs: PostAttachedImage, rhs: PostAttachedImage) -> Bool {
+        return lhs.id == rhs.id
     }
 }
 
@@ -58,17 +25,24 @@ struct AttachedImagesDragView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(attachedImages) { item in
-                        let isDragged = draggedImageId == item.id
-                        
-                        // 超軽量セルを呼び出し、.equatable() で保護する
-                        AttachedImageCell(
-                            id: item.id,
-                            image: item.image,
-                            isDragged: isDragged,
-                            dragOffset: isDragged ? dragImageOffset : 0,
-                            onRemove: { attachedImages.removeAll(where: { $0.id == item.id }) }
-                        )
-                        .equatable() // 魔法の修飾子：これで再描画負荷がゼロになります
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: item.image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 80, height: 80)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            
+                            Button(action: { attachedImages.removeAll(where: { $0.id == item.id }) }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.white)
+                                    .background(Circle().fill(Color.black.opacity(0.6)))
+                            }
+                            .padding(4)
+                        }
+                        // 【変更】お財布一覧（HomeHeaderView）と全く同じモーション設計に統一
+                        // 余計な拡大（scaleEffect）や影の演出を削除し、ソリッドな動きにしました
+                        .offset(x: draggedImageId == item.id ? dragImageOffset : 0, y: 0)
+                        .zIndex(draggedImageId == item.id ? 100 : 0)
                         .gesture(
                             DragGesture(coordinateSpace: .global)
                                 .onChanged { val in handleImageDragChange(val, item: item) }
@@ -94,15 +68,15 @@ struct AttachedImagesDragView: View {
             let jumpDistance: CGFloat = 88 // 画像幅80 + 余白8
             let threshold = jumpDistance * 0.5
             
-            // より滑らかで自然なスプリングアニメーションに調整
+            // 【変更】お財布一覧と全く同じ「バネの強さと速さ（response: 0.25, dampingFraction: 0.8）」に設定
             if dragImageOffset > threshold && idx < attachedImages.count - 1 {
-                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.7, blendDuration: 0)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     attachedImages.swapAt(idx, idx + 1)
                     dragImageTotalJump += jumpDistance
                     dragImageOffset -= jumpDistance
                 }
             } else if dragImageOffset < -threshold && idx > 0 {
-                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.7, blendDuration: 0)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     attachedImages.swapAt(idx, idx - 1)
                     dragImageTotalJump -= jumpDistance
                     dragImageOffset += jumpDistance
