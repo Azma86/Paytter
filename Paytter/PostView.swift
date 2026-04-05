@@ -47,10 +47,10 @@ struct AttachedMediaCell: View, Equatable {
                     .frame(width: 80, height: 80)
                 }
                 
-                // 2. ロード中（暗転とアイコン）
+                // 2. ロード中（暗転とくるくるアイコン）
                 if media.isLoading {
                     ZStack {
-                        // サムネイルがある場合は暗転させる
+                        // サムネイルが取得済みの場合は暗転させる
                         if media.thumbnailImage.size != .zero {
                             Color.black.opacity(0.4)
                         }
@@ -60,7 +60,7 @@ struct AttachedMediaCell: View, Equatable {
                     }
                     .frame(width: 80, height: 80)
                     
-                    // ロード中の動画には左下にビデオアイコン
+                    // モックアップ通り、ロード中の動画には左下にビデオアイコン
                     if media.type == .video && media.thumbnailImage.size != .zero {
                         Image(systemName: "video.fill")
                             .font(.system(size: 10))
@@ -75,7 +75,7 @@ struct AttachedMediaCell: View, Equatable {
                     
                     Image(systemName: "play.circle.fill")
                         .foregroundColor(.white.opacity(0.8))
-                        .frame(width: 80, height: 80) // 中央配置用
+                        .frame(width: 80, height: 80)
                     
                     if let dur = media.durationText {
                         Text(dur)
@@ -190,14 +190,17 @@ struct AttachedMediasDragView: View {
     }
 }
 
-// 【新規】動画から最速でサムネイル画像だけを引き抜くための秘密兵器
+// 【新規】動画の重いダウンロードを待たずに最速でサムネイルだけを引き抜く転送定義
 struct FastImageTransferable: Transferable {
     let image: UIImage
     static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(importedContentType: .image) { data in
-            guard let uiImage = UIImage(data: data) else {
-                throw URLError(.cannotDecodeRawData)
-            }
+            guard let uiImage = UIImage(data: data) else { throw URLError(.cannotDecodeRawData) }
+            return FastImageTransferable(image: uiImage)
+        }
+        FileRepresentation(importedContentType: .image) { received in
+            let data = try Data(contentsOf: received.file)
+            guard let uiImage = UIImage(data: data) else { throw URLError(.cannotDecodeRawData) }
             return FastImageTransferable(image: uiImage)
         }
     }
@@ -361,46 +364,48 @@ struct PostView: View {
                                 .padding(.trailing, 8)
                         }
                         .onChange(of: selectedItems, perform: { newItems in
-                            Task {
-                                for item in newItems {
-                                    let tempId = UUID()
-                                    let isVideo = item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) })
-                                    
-                                    if attachedMedias.count < 4 {
-                                        attachedMedias.append(PostAttachedMedia(id: tempId, type: isVideo ? .video : .image, localFileName: "", originalFileName: "読み込み中...", thumbnailData: Data(), thumbnailImage: UIImage(), durationText: nil, isLoading: true))
-                                    } else {
-                                        continue
-                                    }
-                                    
-                                    // 【最重要】動画本体のダウンロードを待たずに、最速でサムネイルだけを引っこ抜く！
+                            guard !newItems.isEmpty else { return }
+                            
+                            // 【完全修正】各アイテムの「プレースホルダー枠」をメインスレッドで即座にすべて作る
+                            for item in newItems {
+                                let tempId = UUID()
+                                let isVideo = item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) || $0.conforms(to: UTType.video) || $0.conforms(to: UTType.audiovisualContent) })
+                                
+                                if attachedMedias.count < 4 {
+                                    // この瞬間、画面に即座にグレー枠（読み込み中）が表示されます
+                                    attachedMedias.append(PostAttachedMedia(id: tempId, type: isVideo ? .video : .image, localFileName: "", originalFileName: "読み込み中...", thumbnailData: Data(), thumbnailImage: UIImage(), durationText: nil, isLoading: true))
+                                } else {
+                                    continue
+                                }
+                                
+                                // その後、各アイテムごとに独立して重い処理（ダウンロード等）を非同期で開始
+                                Task {
                                     var fastThumb = UIImage()
+                                    
+                                    // 最速でプレビュー画像（サムネイル）だけを引っこ抜く
                                     if let preview = try? await item.loadTransferable(type: FastImageTransferable.self) {
                                         fastThumb = preview.image
-                                        
-                                        // サムネイルが手に入った瞬間に画面を更新（暗転＋くるくる＋アイコンが即座に表示されます）
                                         DispatchQueue.main.async {
                                             if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
+                                                // サムネイルが手に入った瞬間に暗転＋くるくるに切り替える
                                                 attachedMedias[idx] = PostAttachedMedia(id: tempId, type: isVideo ? .video : .image, localFileName: "", originalFileName: "読み込み中...", thumbnailData: Data(), thumbnailImage: fastThumb, durationText: nil, isLoading: true)
                                             }
                                         }
                                     }
                                     
-                                    // その後、裏側で重い動画や画像の本体ダウンロードを開始する
                                     if isVideo {
                                         if let movie = try? await item.loadTransferable(type: MovieTransferable.self) {
                                             let tempURL = movie.url
                                             let originalName = tempURL.lastPathComponent
-                                            
-                                            // 万が一最速サムネイルが取得できなかった場合はここで生成
                                             let finalThumb = fastThumb.size == .zero ? (generateVideoThumbnail(for: tempURL) ?? UIImage()) : fastThumb
                                             
                                             if let savedName = MediaManager.shared.saveMedia(from: tempURL),
                                                let thumbData = compressImage(finalThumb) {
                                                 let duration = getVideoDuration(url: tempURL)
                                                 
-                                                // 読み込み完了！isLoadingをfalseにして再生ボタンを出す
                                                 DispatchQueue.main.async {
                                                     if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
+                                                        // 全て完了したら暗転を解除し、再生ボタンを表示
                                                         attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: finalThumb, durationText: duration, isLoading: false)
                                                     }
                                                 }
@@ -417,13 +422,11 @@ struct PostView: View {
                                             
                                             if let originalData = try? Data(contentsOf: tempURL),
                                                let uiImage = UIImage(data: originalData) {
-                                                
                                                 let finalThumb = fastThumb.size == .zero ? uiImage : fastThumb
                                                 
                                                 if let thumbData = compressImage(finalThumb),
                                                    let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension) {
                                                     
-                                                    // 完了
                                                     DispatchQueue.main.async {
                                                         if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
                                                             attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: finalThumb, durationText: nil, isLoading: false)
@@ -440,8 +443,8 @@ struct PostView: View {
                                         }
                                     }
                                 }
-                                selectedItems.removeAll()
                             }
+                            selectedItems.removeAll()
                         })
                         
                         Button(action: { isShowingFileImporter = true }) {
