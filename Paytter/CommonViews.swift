@@ -1,58 +1,83 @@
 import SwiftUI
 import UIKit
+import AVKit
 
-struct TimelineImageGrid: View {
-    let images: [Data]
+// 【新規】画像と動画を統合して表示するグリッド
+struct TimelineMediaGrid: View {
+    let mediaItems: [AttachedMediaItem]
     var cornerRadius: CGFloat = 12
     var maxHeight: CGFloat = 160
     
+    // フルスクリーン表示用の状態
+    @State private var selectedMedia: AttachedMediaItem? = nil
+    
     var body: some View {
-        let count = images.count
+        let count = mediaItems.count
         Group {
-            if count == 1 { imgView(images[0]) }
-            else if count == 2 { HStack(spacing: 4) { imgView(images[0]); imgView(images[1]) } }
-            else if count == 3 { HStack(spacing: 4) { imgView(images[0]); VStack(spacing: 4) { imgView(images[1]); imgView(images[2]) } } }
-            else if count >= 4 { VStack(spacing: 4) { HStack(spacing: 4) { imgView(images[0]); imgView(images[1]) }; HStack(spacing: 4) { imgView(images[2]); imgView(images[3]) } } }
+            if count == 1 { mediaView(mediaItems[0]) }
+            else if count == 2 { HStack(spacing: 4) { mediaView(mediaItems[0]); mediaView(mediaItems[1]) } }
+            else if count == 3 { HStack(spacing: 4) { mediaView(mediaItems[0]); VStack(spacing: 4) { mediaView(mediaItems[1]); mediaView(mediaItems[2]) } } }
+            else if count >= 4 { VStack(spacing: 4) { HStack(spacing: 4) { mediaView(mediaItems[0]); mediaView(mediaItems[1]) }; HStack(spacing: 4) { mediaView(mediaItems[2]); mediaView(mediaItems[3]) } } }
         }
         .frame(height: maxHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+        // 【新規】タップでフルスクリーン表示
+        .fullScreenCover(item: $selectedMedia) { media in
+            MediaFullScreenView(media: media)
+        }
     }
     
-    @ViewBuilder func imgView(_ data: Data) -> some View {
-        if let uiImage = ImageCache.shared.image(for: data) {
-            Image(uiImage: uiImage).resizable().scaledToFill().frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity).clipped()
-        } else { Color.gray.opacity(0.1) }
+    @ViewBuilder func mediaView(_ item: AttachedMediaItem) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            // 背景（サムネイル画像）
+            if let data = item.thumbnailData, let uiImage = ImageCache.shared.image(for: data) {
+                Image(uiImage: uiImage).resizable().scaledToFill().frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity).clipped()
+            } else { Color.black.opacity(0.8) }
+            
+            // 動画の場合のオーバーレイ
+            if item.type == .video {
+                Color.black.opacity(0.2)
+                Image(systemName: "play.circle.fill").font(.system(size: 30)).foregroundColor(.white.opacity(0.8)).frame(maxWidth: .infinity, maxHeight: .infinity)
+                
+                // 左下の動画の長さ表示
+                if let duration = item.durationText {
+                    Text(duration).font(.caption2).bold().foregroundColor(.white).padding(4).background(Color.black.opacity(0.6)).cornerRadius(4).padding(6)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { selectedMedia = item }
     }
 }
 
-// 【新規】動画用のグリッド表示（再生マーク付き）
-struct TimelineVideoGrid: View {
-    let videos: [AttachedVideo]
-    var cornerRadius: CGFloat = 12
-    var maxHeight: CGFloat = 160
+// 【新規】タップした画像や動画をフルスクリーンで表示・再生する画面
+struct MediaFullScreenView: View {
+    let media: AttachedMediaItem
+    @Environment(\.presentationMode) var presentationMode
     
     var body: some View {
-        let count = videos.count
-        Group {
-            if count == 1 { vidView(videos[0]) }
-            else if count == 2 { HStack(spacing: 4) { vidView(videos[0]); vidView(videos[1]) } }
-            else if count == 3 { HStack(spacing: 4) { vidView(videos[0]); VStack(spacing: 4) { vidView(videos[1]); vidView(videos[2]) } } }
-            else if count >= 4 { VStack(spacing: 4) { HStack(spacing: 4) { vidView(videos[0]); vidView(videos[1]) }; HStack(spacing: 4) { vidView(videos[2]); vidView(videos[3]) } } }
-        }
-        .frame(height: maxHeight)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color.gray.opacity(0.2), lineWidth: 1))
-    }
-    
-    @ViewBuilder func vidView(_ video: AttachedVideo) -> some View {
-        ZStack {
-            if let data = video.thumbnailData, let uiImage = ImageCache.shared.image(for: data) {
-                Image(uiImage: uiImage).resizable().scaledToFill().frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity).clipped()
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            
+            if media.type == .video {
+                let url = MediaManager.shared.getMediaURL(fileName: media.localFileName)
+                VideoPlayer(player: AVPlayer(url: url)).ignoresSafeArea()
             } else {
-                Color.black.opacity(0.8)
+                // 画像の場合はオリジナルを高画質で表示
+                if let originalImage = MediaManager.shared.loadImage(fileName: media.localFileName) {
+                    Image(uiImage: originalImage).resizable().scaledToFit().ignoresSafeArea()
+                } else {
+                    // 古いデータ用のフォールバック
+                    if let data = media.thumbnailData, let img = UIImage(data: data) {
+                        Image(uiImage: img).resizable().scaledToFit().ignoresSafeArea()
+                    } else { Text("画像を読み込めません").foregroundColor(.white) }
+                }
             }
-            Image(systemName: "play.circle.fill").font(.system(size: 30)).foregroundColor(.white.opacity(0.8))
+            
+            Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                Image(systemName: "xmark.circle.fill").font(.title).foregroundColor(.white).padding()
+            }
         }
     }
 }
@@ -64,23 +89,12 @@ struct BalanceView: View {
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
-    var body: some View {
-        VStack {
-            Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
-            ZStack(alignment: .topTrailing) {
-                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
-                if diff != 0 { Text(diff > 0 ? "+\(diff)" : "\(diff)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense)).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) }
-            }
-        }.frame(maxWidth: .infinity).onChange(of: amount) { newValue in if newValue != lastAmount { if isSilent { showDiff = true; lastAmount = newValue } else { showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }; lastAmount = newValue } } }.onAppear { lastAmount = amount }
-    }
+    var body: some View { VStack { Text(title).font(.caption).foregroundColor(Color(hex: themeSubText)); ZStack(alignment: .topTrailing) { Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4); if diff != 0 { Text(diff > 0 ? "+\(diff)" : "\(diff)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense)).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) } } }.frame(maxWidth: .infinity).onChange(of: amount) { newValue in if newValue != lastAmount { if isSilent { showDiff = true; lastAmount = newValue } else { showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }; lastAmount = newValue } } }.onAppear { lastAmount = amount } }
 }
 
 struct TwitterRow: View {
     let item: Transaction
-    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"; @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"; @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"; @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     
     var body: some View {
         let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
@@ -91,41 +105,21 @@ struct TwitterRow: View {
             if !isDeleted, let iconData = profile.iconData, let uiImage = ImageCache.shared.image(for: iconData) { Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(Circle()) } else { Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray) }
             
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(displayName).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText))
-                    Text("@\(displayId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
-                    Spacer()
-                    if item.isExcludedFromBalance == true { Image(systemName: "calculator.badge.minus").font(.system(size: 8)).foregroundColor(Color(hex: themeBodyText).opacity(0.4)) }
-                    if hideContent { Text("---").font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText)) } else { Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText)) }
-                }
+                HStack { Text(displayName).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText)); Text("@\(displayId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Spacer(); if item.isExcludedFromBalance == true { Image(systemName: "calculator.badge.minus").font(.system(size: 8)).foregroundColor(Color(hex: themeBodyText).opacity(0.4)) }; if hideContent { Text("---").font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText)) } else { Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText)) } }
                 
-                if hideContent {
-                    Text("鍵アカウントによる投稿です").font(.subheadline).foregroundColor(Color(hex: themeSubText))
-                } else {
+                if hideContent { Text("鍵アカウントによる投稿です").font(.subheadline).foregroundColor(Color(hex: themeSubText)) } else {
                     HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBodyText))
                     if !item.tags.isEmpty { HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } } }
                     
-                    // 【新規】各種添付ファイルの表示
-                    if let images = item.attachedImageDatas, !images.isEmpty {
-                        TimelineImageGrid(images: images, maxHeight: 160).padding(.top, 4)
+                    // 【変更】画像と動画を統合した表示
+                    let mediaItems = item.displayMediaItems
+                    if !mediaItems.isEmpty {
+                        TimelineMediaGrid(mediaItems: mediaItems, maxHeight: 160).padding(.top, 4)
                     }
-                    if let videos = item.attachedVideos, !videos.isEmpty {
-                        TimelineVideoGrid(videos: videos, maxHeight: 160).padding(.top, 4)
-                    }
+                    
                     if let files = item.attachedFiles, !files.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            ForEach(files, id: \.id) { file in
-                                HStack {
-                                    Image(systemName: "doc.fill").foregroundColor(.gray)
-                                    Text(file.originalFileName).lineLimit(1).truncationMode(.middle).foregroundColor(Color(hex: themeBodyText))
-                                    Spacer()
-                                    Text("\(file.fileExtension) · \(file.formattedSize)").foregroundColor(.gray)
-                                }
-                                .font(.caption)
-                                .padding(8)
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(8)
-                            }
+                            ForEach(files, id: \.id) { file in HStack { Image(systemName: "doc.fill").foregroundColor(.gray); Text(file.originalFileName).lineLimit(1).truncationMode(.middle).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("\(file.fileExtension) · \(file.formattedSize)").foregroundColor(.gray) }.font(.caption).padding(8).background(Color.gray.opacity(0.1)).cornerRadius(8) }
                         }.padding(.top, 4)
                     }
                 }
