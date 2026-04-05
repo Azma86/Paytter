@@ -69,64 +69,76 @@ struct AttachedMediaCell: View, Equatable {
     }
 }
 
-// 【重要】編集時にも必ず指に追従して並べ替えができるようにアルゴリズムを統一
+// 【修正】最も滑らかだった「指に吸い付くバネアルゴリズム」を復元し、編集時も反映されるようにしました
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
+    
+    @State private var localMedias: [PostAttachedMedia] = []
     @State private var draggedMediaId: UUID?
     @State private var dragOffset: CGFloat = 0
-    @State private var dragLastX: CGFloat?
+    @State private var dragTotalJump: CGFloat = 0
     
     var body: some View {
-        if !attachedMedias.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(attachedMedias) { item in
-                        let isDragged = draggedMediaId == item.id
-                        AttachedMediaCell(
-                            media: item,
-                            isDragged: isDragged,
-                            dragOffset: isDragged ? dragOffset : 0,
-                            onRemove: {
-                                attachedMedias.removeAll(where: { $0.id == item.id })
-                            }
-                        )
-                        .equatable()
-                        .gesture(
-                            DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                                .onChanged { val in handleDragChange(val, item: item) }
-                                .onEnded { _ in handleDragEnded() }
-                        )
+        Group {
+            if !localMedias.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(localMedias) { item in
+                            let isDragged = draggedMediaId == item.id
+                            AttachedMediaCell(
+                                media: item,
+                                isDragged: isDragged,
+                                dragOffset: isDragged ? dragOffset : 0,
+                                onRemove: {
+                                    localMedias.removeAll(where: { $0.id == item.id })
+                                    attachedMedias = localMedias
+                                }
+                            )
+                            .equatable()
+                            .gesture(
+                                DragGesture(coordinateSpace: .global)
+                                    .onChanged { val in handleDragChange(val, item: item) }
+                                    .onEnded { _ in handleDragEnded() }
+                            )
+                        }
                     }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
+                .padding(.bottom, 8)
             }
-            .padding(.bottom, 8)
+        }
+        .onAppear {
+            localMedias = attachedMedias
+        }
+        .onChange(of: attachedMedias) { newMeds in
+            if draggedMediaId == nil {
+                localMedias = newMeds
+            }
         }
     }
     
     private func handleDragChange(_ value: DragGesture.Value, item: PostAttachedMedia) {
         if draggedMediaId != item.id {
             draggedMediaId = item.id
-            dragLastX = value.location.x
-            dragOffset = 0
+            dragTotalJump = 0
         }
         
-        guard let lastX = dragLastX else { return }
-        dragOffset += value.location.x - lastX
-        dragLastX = value.location.x
+        dragOffset = value.translation.width - dragTotalJump
         
-        if let idx = attachedMedias.firstIndex(where: { $0.id == item.id }) {
+        if let idx = localMedias.firstIndex(where: { $0.id == item.id }) {
             let jumpDistance: CGFloat = 88
             let threshold = jumpDistance * 0.5
             
-            if dragOffset > threshold && idx < attachedMedias.count - 1 {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    attachedMedias.swapAt(idx, idx + 1)
+            if dragOffset > threshold && idx < localMedias.count - 1 {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
+                    localMedias.swapAt(idx, idx + 1)
+                    dragTotalJump += jumpDistance
                     dragOffset -= jumpDistance
                 }
             } else if dragOffset < -threshold && idx > 0 {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    attachedMedias.swapAt(idx, idx - 1)
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
+                    localMedias.swapAt(idx, idx - 1)
+                    dragTotalJump -= jumpDistance
                     dragOffset += jumpDistance
                 }
             }
@@ -134,11 +146,13 @@ struct AttachedMediasDragView: View {
     }
     
     private func handleDragEnded() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.interactiveSpring()) {
             draggedMediaId = nil
             dragOffset = 0
-            dragLastX = nil
+            dragTotalJump = 0
         }
+        // 【重要】指を離した際にデータを確定させ、編集画面側にも並び替え結果を伝えます
+        attachedMedias = localMedias
     }
 }
 
@@ -316,7 +330,6 @@ struct PostView: View {
                                             }
                                         }
                                     } else {
-                                        // 【重要修正】画像の場合も「オリジナルファイル名」を正確に取得し保存します
                                         if let imageFile = try? await item.loadTransferable(type: ImageTransferable.self) {
                                             let tempURL = imageFile.url
                                             let originalName = tempURL.lastPathComponent
