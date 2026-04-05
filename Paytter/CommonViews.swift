@@ -132,12 +132,14 @@ struct MediaFullScreenView: View {
     @State private var currentTime: Double = 0
     @State private var duration: Double = 0
     @State private var isEditingSlider: Bool = false
+    @State private var isSeeking: Bool = false // 【追加】シークバーの競合を防ぐフラグ
     @State private var timeObserver: Any?
     
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             Color.black.ignoresSafeArea()
             
+            // 【修正】ZStackのレイアウトを分離し、UIの表示・非表示で画像が再計算されて暗くならないようにしました
             GeometryReader { proxy in
                 if media.type == .video {
                     if let player = player {
@@ -263,55 +265,63 @@ struct MediaFullScreenView: View {
             }
             .clipped()
             
-            // ヘッダーUI（画像の時は背景の黒いグラデーションを消し、暗くならないように修正）
-            if showUI {
-                HStack(spacing: 16) {
-                    Button(action: { presentationMode.wrappedValue.dismiss() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.title3)
+            // UIレイヤー（画像や動画の上に乗せるだけにする）
+            VStack(spacing: 0) {
+                if showUI {
+                    HStack(spacing: 16) {
+                        Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                            Image(systemName: "chevron.left")
+                                .font(.title3)
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .shadow(radius: 2)
+                        }
+                        
+                        let displayName = media.originalFileName ?? (media.localFileName.isEmpty ? "画像.jpg" : media.localFileName)
+                        Text(displayName)
+                            .font(.subheadline)
                             .foregroundColor(.white)
-                            .padding(8)
+                            .shadow(radius: 2)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        Button(action: shareMedia) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.title3)
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .shadow(radius: 2)
+                        }
+                        
+                        Button(action: saveMedia) {
+                            Image(systemName: "arrow.down.to.line")
+                                .font(.title3)
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .shadow(radius: 2)
+                        }
                     }
-                    
-                    let displayName = media.originalFileName ?? (media.localFileName.isEmpty ? "添付画像" : media.localFileName)
-                    Text(displayName)
-                        .font(.subheadline)
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    Button(action: shareMedia) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.title3)
-                            .foregroundColor(.white)
-                            .padding(8)
-                    }
-                    
-                    Button(action: saveMedia) {
-                        Image(systemName: "arrow.down.to.line")
-                            .font(.title3)
-                            .foregroundColor(.white)
-                            .padding(8)
-                    }
+                    .padding(.horizontal, 8)
+                    .padding(.top, safeAreaTop)
+                    .padding(.bottom, 16)
+                    // 【修正】画像の時は背景グラデーションをなくし、暗くなる現象を防止
+                    .background(
+                        Group {
+                            if media.type == .video {
+                                LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.8), Color.clear]), startPoint: .top, endPoint: .bottom)
+                            } else {
+                                Color.clear
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, safeAreaTop)
-                .padding(.bottom, 16)
-                .background(
-                    media.type == .video ?
-                    LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.8), Color.clear]), startPoint: .top, endPoint: .bottom) :
-                    LinearGradient(gradient: Gradient(colors: [Color.clear, Color.clear]), startPoint: .top, endPoint: .bottom)
-                )
-                .ignoresSafeArea(edges: .top)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            
-            // 【重要修正】動画用カスタムボトムメニューのレイアウトと挙動を改善
-            if showUI && media.type == .video {
-                VStack {
-                    Spacer()
-                    
+                
+                Spacer()
+                
+                if showUI && media.type == .video {
+                    // 【修正】ボタンと文字の幅を同じにすることで、シークバーをど真ん中に配置
                     HStack(alignment: .center, spacing: 12) {
                         Button(action: {
                             if isPlaying {
@@ -327,16 +337,18 @@ struct MediaFullScreenView: View {
                             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                                 .font(.title2)
                                 .foregroundColor(.white)
-                                .frame(width: 32, height: 32)
                         }
+                        .frame(width: 44, alignment: .leading)
                         
-                        // シークバーの競合を完全に防ぐ
                         Slider(value: $currentTime, in: 0...(duration > 0 ? duration : 1)) { editing in
                             isEditingSlider = editing
                             if !editing {
-                                player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600))
-                                if isPlaying {
-                                    player?.play()
+                                isSeeking = true
+                                player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600)) { _ in
+                                    isSeeking = false
+                                    if isPlaying {
+                                        player?.play()
+                                    }
                                 }
                             } else {
                                 player?.pause()
@@ -347,7 +359,7 @@ struct MediaFullScreenView: View {
                         Text("-" + formatTime(duration - currentTime))
                             .font(.caption2)
                             .foregroundColor(.white)
-                            .frame(width: 40, alignment: .trailing)
+                            .frame(width: 44, alignment: .trailing)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 24)
@@ -355,10 +367,10 @@ struct MediaFullScreenView: View {
                     .background(
                         LinearGradient(gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.8)]), startPoint: .top, endPoint: .bottom)
                     )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                .ignoresSafeArea(edges: .bottom)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            .ignoresSafeArea()
         }
         .onAppear {
             if media.type == .video {
@@ -387,8 +399,8 @@ struct MediaFullScreenView: View {
                     self.duration = dur
                 }
                 
-                // 指でスライダーを動かしている間（isEditingSliderがtrue）は自動更新をストップ
-                if !self.isEditingSlider {
+                // 【重要修正】指で動かしている間は自動更新をストップして競合を防ぐ！
+                if !self.isEditingSlider && !self.isSeeking {
                     self.currentTime = time.seconds
                 }
                 
@@ -441,6 +453,10 @@ struct MediaFullScreenView: View {
         }
     }
 }
+
+// -----------------------------------
+// 以下、既存の構造体はそのままです
+// -----------------------------------
 
 struct TimelineImageGrid: View {
     let images: [Data]
