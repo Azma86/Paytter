@@ -1,6 +1,6 @@
 import SwiftUI
 import UIKit
-import AVFoundation // 動画の再生や時間計算を制御するために使用
+import AVFoundation
 
 struct TimelineMediaGrid: View {
     let mediaItems: [AttachedMediaItem]
@@ -86,7 +86,6 @@ struct TimelineMediaGrid: View {
     }
 }
 
-// 【新規】純正UIと被らない、動画表示専用のカスタムプレイヤー
 struct CustomVideoPlayerLayer: UIViewRepresentable {
     var player: AVPlayer
     
@@ -121,16 +120,13 @@ struct MediaFullScreenView: View {
     let media: AttachedMediaItem
     @Environment(\.presentationMode) var presentationMode
     
-    // 画像用の状態
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     
-    // UI表示の切り替え
     @State private var showUI: Bool = true
     
-    // 【新規】動画再生用の状態管理
     @State private var player: AVPlayer?
     @State private var isPlaying: Bool = false
     @State private var currentTime: Double = 0
@@ -144,7 +140,6 @@ struct MediaFullScreenView: View {
             
             GeometryReader { proxy in
                 if media.type == .video {
-                    // カスタムプレイヤーを配置（タップで最初に戻るバグを解消）
                     if let player = player {
                         CustomVideoPlayerLayer(player: player)
                             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -268,7 +263,7 @@ struct MediaFullScreenView: View {
             }
             .clipped()
             
-            // ヘッダーUI
+            // ヘッダーUI（画像のときは黒いグラデーション背景をつけない）
             if showUI {
                 HStack(spacing: 16) {
                     Button(action: { presentationMode.wrappedValue.dismiss() }) {
@@ -278,7 +273,9 @@ struct MediaFullScreenView: View {
                             .padding(8)
                     }
                     
-                    Text(media.localFileName.isEmpty ? "添付画像" : media.localFileName)
+                    // 【修正】取得したオリジナル名を表示する
+                    let displayName = media.originalFileName ?? (media.localFileName.isEmpty ? "添付画像" : media.localFileName)
+                    Text(displayName)
                         .font(.subheadline)
                         .foregroundColor(.white)
                         .lineLimit(1)
@@ -302,24 +299,25 @@ struct MediaFullScreenView: View {
                 .padding(.horizontal, 8)
                 .padding(.top, safeAreaTop)
                 .padding(.bottom, 16)
+                // 【修正】動画のときだけヘッダーにグラデーションの背景をつける
                 .background(
-                    LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.8), Color.clear]), startPoint: .top, endPoint: .bottom)
+                    media.type == .video ?
+                    LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.8), Color.clear]), startPoint: .top, endPoint: .bottom) : nil
                 )
                 .ignoresSafeArea(edges: .top)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
             
-            // 【新規】動画用カスタムボトムメニュー
+            // 【修正】動画用カスタムボトムメニューのレイアウトと挙動を改善
             if showUI && media.type == .video {
                 VStack {
                     Spacer()
-                    HStack(alignment: .bottom, spacing: 16) {
-                        // 再生・一時停止ボタン（左寄せ）
+                    
+                    HStack(alignment: .center, spacing: 12) {
                         Button(action: {
                             if isPlaying {
                                 player?.pause()
                             } else {
-                                // 動画が最後まで行っていたら最初に戻す
                                 if currentTime >= duration - 0.1 {
                                     player?.seek(to: .zero)
                                 }
@@ -330,23 +328,26 @@ struct MediaFullScreenView: View {
                             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                                 .font(.title2)
                                 .foregroundColor(.white)
-                                .frame(width: 24, height: 24)
+                                .frame(width: 32, height: 32)
                         }
                         
-                        // シークバーと残り時間（余った右側）
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Slider(value: $currentTime, in: 0...(duration > 0 ? duration : 1)) { editing in
-                                isEditingSlider = editing
-                                if !editing {
-                                    player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600))
+                        Slider(value: $currentTime, in: 0...(duration > 0 ? duration : 1)) { editing in
+                            isEditingSlider = editing
+                            if !editing {
+                                player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600))
+                                if isPlaying {
+                                    player?.play()
                                 }
+                            } else {
+                                player?.pause()
                             }
-                            .accentColor(.white)
-                            
-                            Text("-" + formatTime(duration - currentTime))
-                                .font(.caption2)
-                                .foregroundColor(.white)
                         }
+                        .accentColor(.white)
+                        
+                        Text("-" + formatTime(duration - currentTime))
+                            .font(.caption2)
+                            .foregroundColor(.white)
+                            .frame(width: 40, alignment: .trailing)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 24)
@@ -372,13 +373,11 @@ struct MediaFullScreenView: View {
         }
     }
     
-    // 【新規】動画プレイヤーの初期化と時間の監視
     func setupPlayer() {
         let url = MediaManager.shared.getMediaURL(fileName: media.localFileName)
         let newPlayer = AVPlayer(url: url)
         self.player = newPlayer
         
-        // 現在時間の監視
         timeObserver = newPlayer.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak newPlayer] time in
             guard let currentPlayer = newPlayer else { return }
             
@@ -388,11 +387,12 @@ struct MediaFullScreenView: View {
                     self.duration = dur
                 }
                 
+                // 【重要修正】指でスライダーを動かしている間（isEditingSliderがtrue）は
+                // 自動更新をストップして、綱引き状態（カクつき）を防ぎます！
                 if !self.isEditingSlider {
                     self.currentTime = time.seconds
                 }
                 
-                // 最後まで再生されたら一時停止状態にする
                 if time.seconds >= dur && dur > 0 {
                     self.isPlaying = false
                 }
@@ -443,7 +443,10 @@ struct MediaFullScreenView: View {
     }
 }
 
-// 古い互換性用
+// -----------------------------------
+// 以下、既存の構造体はそのままです
+// -----------------------------------
+
 struct TimelineImageGrid: View {
     let images: [Data]
     var cornerRadius: CGFloat = 12
