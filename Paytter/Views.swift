@@ -83,7 +83,6 @@ struct TransactionDetailView: View {
                             .font(.title3)
                             .foregroundColor(Color(hex: themeBodyText))
                         
-                        // 【修正】詳細画面のタグも文字だけのシンプルなデザインに変更し、画面を閉じずに検索に飛ぶようにしました
                         if !currentItem.tags.isEmpty {
                             HStack(spacing: 12) {
                                 ForEach(currentItem.tags, id: \.self) { tag in
@@ -368,6 +367,7 @@ struct PasscodeSettingView: View {
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93" // 【追加】
     
     @Environment(\.dismiss) var dismiss
 
@@ -376,7 +376,7 @@ struct PasscodeSettingView: View {
             Color(hex: themeBG).ignoresSafeArea()
             Form {
                 if lockManager.passcode.isEmpty {
-                    Section(header: Text("新しいパスコード")) {
+                    Section(header: Text("新しいパスコード").foregroundColor(Color(hex: themeSubText))) {
                         Picker("形式", selection: $selectedType) {
                             Text("4桁の数字").tag(0)
                             Text("6桁の数字").tag(1)
@@ -402,16 +402,18 @@ struct PasscodeSettingView: View {
                         .foregroundColor(Color(hex: themeMain))
                         .disabled(!validate())
                     }
+                    .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
                 } else {
-                    Section(header: Text("パスコード設定")) {
+                    Section(header: Text("パスコード設定").foregroundColor(Color(hex: themeSubText))) {
                         Text("パスコードは設定済みです").foregroundColor(Color(hex: themeBodyText))
                         Button("パスコードをオフにする", role: .destructive) {
                             lockManager.passcode = ""
                             lockManager.isUnlocked = true
                         }
                     }
+                    .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
                     
-                    Section(header: Text("ロックの動作")) {
+                    Section(header: Text("ロックの動作").foregroundColor(Color(hex: themeSubText))) {
                         Picker("ロック時の制限", selection: $lockManager.lockBehavior) {
                             Text("全画面をロック").tag(0)
                             Text("鍵アカウントのみ非表示").tag(1)
@@ -425,6 +427,7 @@ struct PasscodeSettingView: View {
                         Toggle("ロック時も鍵投稿を残額に反映", isOn: $lockManager.reflectPrivateBalanceWhenLocked)
                             .foregroundColor(Color(hex: themeBodyText))
                     }
+                    .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
                 }
             }.scrollContentBackground(.hidden)
         }
@@ -531,6 +534,8 @@ struct AccountCreateView: View {
     
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000" // 【追加】
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93" // 【追加】
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
     @State private var name = ""
@@ -543,16 +548,17 @@ struct AccountCreateView: View {
             ZStack {
                 Color(hex: themeBG).ignoresSafeArea()
                 Form {
-                    Section(header: Text("基本情報")) {
-                        TextField("お財布の名前", text: $name)
+                    Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
+                        TextField("お財布の名前", text: $name).foregroundColor(Color(hex: themeBodyText))
                         Picker(selection: $selectedType) {
                             ForEach(AccountType.allCases, id: \.self) { type in
                                 Label(type.rawValue, systemImage: type.icon).tag(type)
                             }
-                        } label: { Text("種類") }
-                        TextField("現在の金額", text: $initial).keyboardType(.numbersAndPunctuation)
-                        Toggle("ホーム上部に表示", isOn: $isVisible)
+                        } label: { Text("種類").foregroundColor(Color(hex: themeBodyText)) }
+                        TextField("現在の金額", text: $initial).keyboardType(.numbersAndPunctuation).foregroundColor(Color(hex: themeBodyText))
+                        Toggle("ホーム上部に表示", isOn: $isVisible).foregroundColor(Color(hex: themeBodyText))
                     }
+                    .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
                 }.scrollContentBackground(.hidden)
             }
             .navigationTitle("新しいお財布")
@@ -792,6 +798,7 @@ struct WalletAnalysisView: View {
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF" // 【追加】
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     @ObservedObject var lockManager = LockManager.shared
     
@@ -811,21 +818,26 @@ struct WalletAnalysisView: View {
     }
     
     var body: some View {
-        List {
-            Section(header: Text("今月のサマリー").foregroundColor(Color(hex: themeSubText))) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("合計支出").font(.caption).foregroundColor(Color(hex: themeSubText))
-                    Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()).foregroundColor(Color(hex: themeBodyText))
-                    
-                    ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget))
-                        .accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? Color(hex: themeExpense) : Color(hex: themeMain))
-                    
-                    Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))")
-                        .font(.caption2).foregroundColor(Color(hex: themeSubText))
-                }.padding(.vertical, 10)
+        ZStack {
+            Color(hex: themeBG).ignoresSafeArea() // 【追加】
+            List {
+                Section(header: Text("今月のサマリー").foregroundColor(Color(hex: themeSubText))) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("合計支出").font(.caption).foregroundColor(Color(hex: themeSubText))
+                        Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()).foregroundColor(Color(hex: themeBodyText))
+                        
+                        ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget))
+                            .accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? Color(hex: themeExpense) : Color(hex: themeMain))
+                        
+                        Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))")
+                            .font(.caption2).foregroundColor(Color(hex: themeSubText))
+                    }.padding(.vertical, 10)
+                }
+                .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden) // 【追加】
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("分析")
     }
 }
