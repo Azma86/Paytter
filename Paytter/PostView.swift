@@ -1,13 +1,14 @@
 import SwiftUI
 import PhotosUI
 import AVFoundation
-import UniformTypeIdentifiers // 【修正】.movie や .data を認識させるために追加
+import UniformTypeIdentifiers // 【重要】ファイル形式（movieやdata）を扱うための必須機能
 
 struct PostAttachedImage: Identifiable, Equatable {
     let id = UUID()
     let data: Data
     let image: UIImage
     
+    // データの中身ではなくIDだけを比較させることで軽量化を維持
     static func == (lhs: PostAttachedImage, rhs: PostAttachedImage) -> Bool {
         return lhs.id == rhs.id
     }
@@ -143,7 +144,7 @@ struct PostView: View {
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000" // むつきさんの修正を反映
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     
@@ -205,7 +206,6 @@ struct PostView: View {
                     if !attachedVideos.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack {
-                                // むつきさんの修正を反映 (id: \.id)
                                 ForEach(attachedVideos, id: \.id) { video in
                                     ZStack(alignment: .topTrailing) {
                                         if let data = video.thumbnailData, let img = UIImage(data: data) {
@@ -223,7 +223,6 @@ struct PostView: View {
 
                     if !attachedFiles.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            // むつきさんの修正を反映 (id: \.id)
                             ForEach(attachedFiles, id: \.id) { file in
                                 HStack {
                                     Image(systemName: "doc.fill").foregroundColor(.gray)
@@ -243,8 +242,9 @@ struct PostView: View {
                         .onChange(of: selectedItems) { newItems in
                             Task {
                                 for item in newItems {
-                                    if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
-                                        item.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, error in
+                                    // 【修正】UTType.movie と明示することでエラーを回避
+                                    if item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) }) {
+                                        item.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, _ in
                                             guard let url = url else { return }
                                             let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
                                             try? FileManager.default.removeItem(at: tempURL)
@@ -329,8 +329,8 @@ struct PostView: View {
                     .navigationBarItems(leading: Button(isPickingTime ? "日付に切り替え" : "時刻に切り替え") { withAnimation { isPickingTime.toggle() } }.foregroundColor(Color(hex: themeMain)), trailing: Button("完了") { isShowingDatePicker = false }.foregroundColor(Color(hex: themeMain)))
                 }.preferredColorScheme(isDarkMode ? .dark : .light).presentationDetents([.height(350)])
             }
-            // 【重要】fileImporter内で.dataを使うために、冒頭の import UniformTypeIdentifiers が必要でした
-            .fileImporter(isPresented: $isShowingFileImporter, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
+            // 【修正】UTType.data と明示することでエラーを回避
+            .fileImporter(isPresented: $isShowingFileImporter, allowedContentTypes: [UTType.data], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result {
                     for url in urls {
                         let isSecured = url.startAccessingSecurityScopedResource()
