@@ -263,7 +263,7 @@ struct MediaFullScreenView: View {
             }
             .clipped()
             
-            // ヘッダーUI（画像のときは黒いグラデーション背景をつけない）
+            // ヘッダーUI（画像の時は背景の黒いグラデーションを消し、暗くならないように修正）
             if showUI {
                 HStack(spacing: 16) {
                     Button(action: { presentationMode.wrappedValue.dismiss() }) {
@@ -273,7 +273,6 @@ struct MediaFullScreenView: View {
                             .padding(8)
                     }
                     
-                    // 【修正】取得したオリジナル名を表示する
                     let displayName = media.originalFileName ?? (media.localFileName.isEmpty ? "添付画像" : media.localFileName)
                     Text(displayName)
                         .font(.subheadline)
@@ -299,16 +298,16 @@ struct MediaFullScreenView: View {
                 .padding(.horizontal, 8)
                 .padding(.top, safeAreaTop)
                 .padding(.bottom, 16)
-                // 【修正】動画のときだけヘッダーにグラデーションの背景をつける
                 .background(
                     media.type == .video ?
-                    LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.8), Color.clear]), startPoint: .top, endPoint: .bottom) : nil
+                    LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.8), Color.clear]), startPoint: .top, endPoint: .bottom) :
+                    LinearGradient(gradient: Gradient(colors: [Color.clear, Color.clear]), startPoint: .top, endPoint: .bottom)
                 )
                 .ignoresSafeArea(edges: .top)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
             
-            // 【修正】動画用カスタムボトムメニューのレイアウトと挙動を改善
+            // 【重要修正】動画用カスタムボトムメニューのレイアウトと挙動を改善
             if showUI && media.type == .video {
                 VStack {
                     Spacer()
@@ -331,6 +330,7 @@ struct MediaFullScreenView: View {
                                 .frame(width: 32, height: 32)
                         }
                         
+                        // シークバーの競合を完全に防ぐ
                         Slider(value: $currentTime, in: 0...(duration > 0 ? duration : 1)) { editing in
                             isEditingSlider = editing
                             if !editing {
@@ -387,8 +387,7 @@ struct MediaFullScreenView: View {
                     self.duration = dur
                 }
                 
-                // 【重要修正】指でスライダーを動かしている間（isEditingSliderがtrue）は
-                // 自動更新をストップして、綱引き状態（カクつき）を防ぎます！
+                // 指でスライダーを動かしている間（isEditingSliderがtrue）は自動更新をストップ
                 if !self.isEditingSlider {
                     self.currentTime = time.seconds
                 }
@@ -442,10 +441,6 @@ struct MediaFullScreenView: View {
         }
     }
 }
-
-// -----------------------------------
-// 以下、既存の構造体はそのままです
-// -----------------------------------
 
 struct TimelineImageGrid: View {
     let images: [Data]
