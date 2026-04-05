@@ -11,67 +11,37 @@ struct PostAttachedImage: Identifiable, Equatable {
     }
 }
 
-// 【新規】画像の描画負荷を完全にゼロにするEquatableセル
-struct AttachedImageCell: View, Equatable {
-    let id: UUID
-    let image: UIImage
-    let isDragged: Bool
-    let dragOffset: CGFloat
-    let onRemove: () -> Void // ClosureはEquatableで比較できないため、ID等のみで判定する
-    
-    static func == (lhs: AttachedImageCell, rhs: AttachedImageCell) -> Bool {
-        lhs.id == rhs.id && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset
-    }
-    
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 80, height: 80)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.white)
-                    .background(Circle().fill(Color.black.opacity(0.6)))
-            }
-            .padding(4)
-        }
-        .offset(x: isDragged ? dragOffset : 0)
-        .zIndex(isDragged ? 100 : 0)
-    }
-}
-
+// 【新規】画像の並び替え機能を、お財布一覧と全く同じ「最速・無駄なしアルゴリズム」で復活させました
 struct AttachedImagesDragView: View {
     @Binding var attachedImages: [PostAttachedImage]
     
-    // 【新規】親ビューに影響を与えないローカル状態
-    @State private var localImages: [PostAttachedImage] = []
     @State private var draggedImageId: UUID?
     @State private var dragImageOffset: CGFloat = 0
-    @State private var dragImageTotalJump: CGFloat = 0
+    @State private var dragImageLastX: CGFloat?
     
     var body: some View {
-        if !localImages.isEmpty {
+        if !attachedImages.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(localImages) { item in
-                        let isDragged = draggedImageId == item.id
-                        
-                        AttachedImageCell(
-                            id: item.id,
-                            image: item.image,
-                            isDragged: isDragged,
-                            dragOffset: isDragged ? dragImageOffset : 0,
-                            onRemove: {
-                                localImages.removeAll(where: { $0.id == item.id })
-                                attachedImages = localImages
+                    ForEach(attachedImages) { item in
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: item.image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 80, height: 80)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            
+                            Button(action: { attachedImages.removeAll(where: { $0.id == item.id }) }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.white)
+                                    .background(Circle().fill(Color.black.opacity(0.6)))
                             }
-                        )
-                        .equatable() // これで再描画負荷が実質ゼロになります
+                            .padding(4)
+                        }
+                        .offset(x: draggedImageId == item.id ? dragImageOffset : 0, y: 0)
+                        .zIndex(draggedImageId == item.id ? 100 : 0)
                         .gesture(
-                            DragGesture(coordinateSpace: .global)
+                            DragGesture(minimumDistance: 0)
                                 .onChanged { val in handleImageDragChange(val, item: item) }
                                 .onEnded { _ in handleImageDragEnded() }
                         )
@@ -80,35 +50,33 @@ struct AttachedImagesDragView: View {
                 .padding(.horizontal)
             }
             .padding(.bottom, 8)
-            .onAppear { localImages = attachedImages }
-            .onChange(of: attachedImages) { newImages in
-                if draggedImageId == nil { localImages = newImages }
-            }
         }
     }
     
     private func handleImageDragChange(_ value: DragGesture.Value, item: PostAttachedImage) {
         if draggedImageId != item.id {
             draggedImageId = item.id
-            dragImageTotalJump = 0
+            dragImageLastX = value.location.x
+            dragImageOffset = 0
         }
         
-        dragImageOffset = value.translation.width - dragImageTotalJump
+        guard let lastX = dragImageLastX else { return }
+        dragImageOffset += value.location.x - lastX
+        dragImageLastX = value.location.x
         
-        if let idx = localImages.firstIndex(where: { $0.id == item.id }) {
+        if let idx = attachedImages.firstIndex(where: { $0.id == item.id }) {
             let jumpDistance: CGFloat = 88 // 画像幅80 + 余白8
             let threshold = jumpDistance * 0.5
             
-            if dragImageOffset > threshold && idx < localImages.count - 1 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    localImages.swapAt(idx, idx + 1)
-                    dragImageTotalJump += jumpDistance
+            // お財布と同じ、無駄のないソリッドな動き
+            if dragImageOffset > threshold && idx < attachedImages.count - 1 {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    attachedImages.swapAt(idx, idx + 1)
                     dragImageOffset -= jumpDistance
                 }
             } else if dragImageOffset < -threshold && idx > 0 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    localImages.swapAt(idx, idx - 1)
-                    dragImageTotalJump -= jumpDistance
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    attachedImages.swapAt(idx, idx - 1)
                     dragImageOffset += jumpDistance
                 }
             }
@@ -116,12 +84,11 @@ struct AttachedImagesDragView: View {
     }
     
     private func handleImageDragEnded() {
-        withAnimation(.interactiveSpring()) {
+        withAnimation(.easeInOut(duration: 0.2)) {
             draggedImageId = nil
             dragImageOffset = 0
-            dragImageTotalJump = 0
+            dragImageLastX = nil
         }
-        attachedImages = localImages // 親ビューに結果を同期
     }
 }
 
