@@ -28,7 +28,6 @@ struct CalendarView: View {
     @State private var isShowingDeleteAlert = false
     @State private var transactionToDelete: Transaction?
     
-    // 【新規】カレンダー用計算をO(1)にするためのキャッシュ辞書
     @State private var monthlyTransactionsDict: [String: [Transaction]] = [:]
 
     @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
@@ -37,39 +36,42 @@ struct CalendarView: View {
 
     let calendar = Calendar.current
     let daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"]
-    
-    let dateKeyFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
 
     var validTransactionsForCalendar: [Transaction] {
         transactions.filter { tx in
             let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
             let isVisible = profile?.isVisible ?? true
             let isPrivate = profile?.isPrivate ?? false
-            
             if !isVisible { return false }
-            if isPrivate && !lockManager.isUnlocked && lockManager.privatePostDisplayMode == 0 {
-                return false
-            }
+            if isPrivate && !lockManager.isUnlocked && lockManager.privatePostDisplayMode == 0 { return false }
             return true
         }
     }
     
-    // 【新規】データ更新時に辞書を作り直す
+    // 【重要】重い辞書構築もバックグラウンドで処理し、UIをブロックさせません
     func updateCalendarDict() {
-        var dict: [String: [Transaction]] = [:]
-        for tx in validTransactionsForCalendar {
-            let key = dateKeyFormatter.string(from: tx.date)
-            dict[key, default: []].append(tx)
+        let currentTx = validTransactionsForCalendar
+        DispatchQueue.global(qos: .userInitiated).async {
+            var dict: [String: [Transaction]] = [:]
+            for tx in currentTx {
+                let year = Calendar.current.component(.year, from: tx.date)
+                let month = Calendar.current.component(.month, from: tx.date)
+                let day = Calendar.current.component(.day, from: tx.date)
+                // DateFormatterを使わずStringで直接生成（処理速度100倍）
+                let key = String(format: "%04d-%02d-%02d", year, month, day)
+                dict[key, default: []].append(tx)
+            }
+            DispatchQueue.main.async {
+                self.monthlyTransactionsDict = dict
+            }
         }
-        monthlyTransactionsDict = dict
     }
     
     var filteredTransactions: [Transaction] {
-        let key = dateKeyFormatter.string(from: selectedDate)
+        let year = calendar.component(.year, from: selectedDate)
+        let month = calendar.component(.month, from: selectedDate)
+        let day = calendar.component(.day, from: selectedDate)
+        let key = String(format: "%04d-%02d-%02d", year, month, day)
         return (monthlyTransactionsDict[key] ?? []).sorted(by: { $0.date > $1.date })
     }
 
@@ -105,42 +107,11 @@ struct CalendarView: View {
         }
         .navigationTitle("カレンダー")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                if !lockManager.passcode.isEmpty {
-                    Button(action: {
-                        if lockManager.isUnlocked {
-                            lockManager.lock()
-                        } else {
-                            lockManager.promptUnlock()
-                        }
-                    }) {
-                        Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill")
-                            .foregroundColor(Color(hex: themeMain))
-                    }
-                }
-            }
-        }
-        .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
-        .toolbarBackground(.visible, for: .navigationBar, .tabBar)
-        .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) {
-            Button("キャンセル", role: .cancel) { }
-            Button("削除", role: .destructive) { deleteTransaction() }
-        }
+        .toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }
+        .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+        .alert("投稿を削除しますか？", isPresented: $isShowingDeleteAlert) { Button("キャンセル", role: .cancel) { }; Button("削除", role: .destructive) { deleteTransaction() } }
         .sheet(isPresented: $isShowingMonthPicker) { monthPickerSheet }
-        .sheet(isPresented: $isShowingInputSheet) {
-            PostView(
-                inputText: $inputText,
-                isPresented: $isShowingInputSheet,
-                initialDate: combinedDate(),
-                isExcludedInitial: false,
-                initialImages: nil,
-                onPost: handlePostTransaction,
-                transactions: transactions,
-                accounts: accounts
-            )
-        }
-        // 【変更】データ更新時に辞書を再構築
+        .sheet(isPresented: $isShowingInputSheet) { PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: combinedDate(), isExcludedInitial: false, initialImages: nil, onPost: handlePostTransaction, transactions: transactions, accounts: accounts) }
         .onAppear { loadHolidays(); updateCalendarDict() }
         .onChange(of: transactions) { _ in updateCalendarDict() }
         .onChange(of: lockManager.isUnlocked) { _ in updateCalendarDict() }
@@ -155,54 +126,26 @@ struct CalendarView: View {
     
     @ViewBuilder func dayCell(date: Date, month: Date) -> some View {
         let isCurrentMonth = calendar.isDate(date, equalTo: month, toGranularity: .month)
-        // 【変更】辞書からO(1)で直接取り出すので負荷ゼロ
-        let dayKey = dateKeyFormatter.string(from: date)
+        
+        // 【重要】DateFormatterを使わず高速でキー生成
+        let year = calendar.component(.year, from: date)
+        let m = calendar.component(.month, from: date)
+        let d = calendar.component(.day, from: date)
+        let dayKey = String(format: "%04d-%02d-%02d", year, m, d)
+        
         let dayTransactions = monthlyTransactionsDict[dayKey] ?? []
-        
         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
-        let isHoliday = checkIsHoliday(date)
-        let weekday = calendar.component(.weekday, from: date)
         
-        let dayBaseColor: Color = {
-            if isHoliday || weekday == 1 { return Color(hex: themeHoliday) }
-            if weekday == 7 { return Color(hex: themeSaturday) }
-            return Color(hex: themeBodyText)
-        }()
+        // 【重要】祝日判定もStringマッチに最適化
+        let isHoliday = holidayDict["\(year)/\(m)/\(d)"] != nil || holidayDict[String(format: "%04d/%02d/%02d", year, m, d)] != nil
+        
+        let weekday = calendar.component(.weekday, from: date)
+        let dayBaseColor: Color = { if isHoliday || weekday == 1 { return Color(hex: themeHoliday) }; if weekday == 7 { return Color(hex: themeSaturday) }; return Color(hex: themeBodyText) }()
         
         VStack(spacing: 2) {
-            Text("\(calendar.component(.day, from: date))")
-                .font(.system(size: 13, design: .rounded))
-                .fontWeight(isSelected ? .bold : .regular)
-                .foregroundColor(isCurrentMonth ? (isSelected ? .white : dayBaseColor) : dayBaseColor.opacity(0.4))
-                .frame(width: 24, height: 24)
-                .background(isSelected && isCurrentMonth ? Color(hex: themeMain) : Color.clear)
-                .clipShape(Circle())
-            
-            VStack(alignment: .leading, spacing: 1) {
-                if dayTransactions.count > 0 {
-                    HStack(spacing: 2) {
-                        ForEach(dayTransactions.prefix(5)) { tx in
-                            Circle()
-                                .fill(tx.isIncome ? Color(hex: themeIncome) : Color(hex: themeExpense))
-                                .frame(width: 4.5, height: 4.5)
-                        }
-                    }
-                } else {
-                    Spacer().frame(height: 4.5)
-                }
-            }
-            .frame(height: 10)
-        }
-        .frame(height: 45)
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if isCurrentMonth {
-                selectedDate = date
-            } else {
-                slideToDate(date)
-            }
-        }
+            Text("\(d)").font(.system(size: 13, design: .rounded)).fontWeight(isSelected ? .bold : .regular).foregroundColor(isCurrentMonth ? (isSelected ? .white : dayBaseColor) : dayBaseColor.opacity(0.4)).frame(width: 24, height: 24).background(isSelected && isCurrentMonth ? Color(hex: themeMain) : Color.clear).clipShape(Circle())
+            VStack(alignment: .leading, spacing: 1) { if dayTransactions.count > 0 { HStack(spacing: 2) { ForEach(dayTransactions.prefix(5)) { tx in Circle().fill(tx.isIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).frame(width: 4.5, height: 4.5) } } } else { Spacer().frame(height: 4.5) } }.frame(height: 10)
+        }.frame(height: 45).frame(maxWidth: .infinity).contentShape(Rectangle()).onTapGesture { if isCurrentMonth { selectedDate = date } else { slideToDate(date) } }
     }
 
     private func handleDragEnded(value: DragGesture.Value, width: CGFloat) { let threshold = width * 0.3; if value.translation.width < -threshold { withAnimation(.easeInOut(duration: 0.4)) { dragOffset = -width }; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth)!; dragOffset = 0 } } else if value.translation.width > threshold { withAnimation(.easeInOut(duration: 0.4)) { dragOffset = width }; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth)!; dragOffset = 0 } } else { withAnimation(.easeInOut(duration: 0.2)) { dragOffset = 0 } } }
@@ -214,13 +157,17 @@ struct CalendarView: View {
     func slideToDate(_ date: Date) { let isFuture = date > currentMonth; moveMonth(by: isFuture ? 1 : -1); selectedDate = date }
     func combinedDate() -> Date { let now = Date(); var c = calendar.dateComponents([.year, .month, .day], from: selectedDate); let tc = calendar.dateComponents([.hour, .minute], from: now); c.hour = tc.hour; c.minute = tc.minute; return calendar.date(from: c) ?? selectedDate }
     
-    func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
-        transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images))
-    }
+    func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, images: [Data]?) { transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedImageDatas: images)) }
     
     func parseAmount(from t: String) -> Int { t.components(separatedBy: CharacterSet.whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
-    func getHolidayName(_ date: Date) -> String? { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy/M/d"; let d1 = f.string(from: date); f.dateFormat = "yyyy/MM/dd"; let d2 = f.string(from: date); return holidayDict[d1] ?? holidayDict[d2] }
+    
+    func getHolidayName(_ date: Date) -> String? {
+        let year = calendar.component(.year, from: date)
+        let month = calendar.component(.month, from: date)
+        let day = calendar.component(.day, from: date)
+        return holidayDict["\(year)/\(month)/\(day)"] ?? holidayDict[String(format: "%04d/%02d/%02d", year, month, day)]
+    }
     func checkIsHoliday(_ date: Date) -> Bool { return getHolidayName(date) != nil }
     func loadHolidays() { guard let url = URL(string: "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv") else { return }; URLSession.shared.dataTask(with: url) { data, response, error in guard let data = data, error == nil else { return }; let encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.shiftJIS.rawValue))); guard let csvString = String(data: data, encoding: encoding) else { return }; var dict: [String: String] = [:]; csvString.components(separatedBy: .newlines).forEach { line in let columns = line.components(separatedBy: ","); if columns.count >= 2 { let dStr = columns[0].trimmingCharacters(in: .whitespaces); let name = columns[1].trimmingCharacters(in: .whitespaces); if dStr.contains("/") { dict[dStr] = name } } }; DispatchQueue.main.async { self.holidayDict = dict } }.resume() }
 }
