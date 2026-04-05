@@ -7,36 +7,36 @@ struct TimelineMediaGrid: View {
     var cornerRadius: CGFloat = 12
     var maxHeight: CGFloat = 160
     
-    // 【重要修正】インデックス番号ではなく、タップされた「メディアそのもの」を保存して渡す
-    @State private var selectedMedia: AttachedMediaItem? = nil
+    @State private var selectedMediaIndex: Int? = nil
+    @State private var isFullScreenPresented: Bool = false
     
     var body: some View {
         let count = mediaItems.count
         Group {
             if count == 1 {
-                mediaView(mediaItems[0])
+                mediaView(mediaItems[0], index: 0)
             } else if count == 2 {
                 HStack(spacing: 4) {
-                    mediaView(mediaItems[0])
-                    mediaView(mediaItems[1])
+                    mediaView(mediaItems[0], index: 0)
+                    mediaView(mediaItems[1], index: 1)
                 }
             } else if count == 3 {
                 HStack(spacing: 4) {
-                    mediaView(mediaItems[0])
+                    mediaView(mediaItems[0], index: 0)
                     VStack(spacing: 4) {
-                        mediaView(mediaItems[1])
-                        mediaView(mediaItems[2])
+                        mediaView(mediaItems[1], index: 1)
+                        mediaView(mediaItems[2], index: 2)
                     }
                 }
             } else if count >= 4 {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
-                        mediaView(mediaItems[0])
-                        mediaView(mediaItems[1])
+                        mediaView(mediaItems[0], index: 0)
+                        mediaView(mediaItems[1], index: 1)
                     }
                     HStack(spacing: 4) {
-                        mediaView(mediaItems[2])
-                        mediaView(mediaItems[3])
+                        mediaView(mediaItems[2], index: 2)
+                        mediaView(mediaItems[3], index: 3)
                     }
                 }
             }
@@ -44,19 +44,18 @@ struct TimelineMediaGrid: View {
         .frame(height: maxHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color.gray.opacity(0.2), lineWidth: 1))
-        // 【重要修正】タップされたメディアを受け取ってからインデックスを計算するため、絶対にズレなくなります
-        .fullScreenCover(item: $selectedMedia) { media in
-            let startIndex = mediaItems.firstIndex(where: { $0.id == media.id }) ?? 0
+        .fullScreenCover(isPresented: $isFullScreenPresented) {
             MediaFullScreenView(
                 mediaItems: mediaItems,
-                initialIndex: startIndex
+                initialIndex: selectedMediaIndex ?? 0
             )
         }
     }
     
-    @ViewBuilder func mediaView(_ item: AttachedMediaItem) -> some View {
+    @ViewBuilder func mediaView(_ item: AttachedMediaItem, index: Int) -> some View {
         Button(action: {
-            selectedMedia = item
+            selectedMediaIndex = index
+            isFullScreenPresented = true
         }) {
             ZStack(alignment: .bottomLeading) {
                 if let data = item.thumbnailData, let uiImage = ImageCache.shared.image(for: data) {
@@ -528,8 +527,124 @@ extension UIApplication {
     }
 }
 
+// 【新規】ファイルの詳細をフルスクリーンで表示する画面
+struct FileFullScreenView: View {
+    let file: AttachedFile
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.black.ignoresSafeArea()
+            
+            VStack {
+                Spacer()
+                
+                Image(systemName: "doc.text.fill")
+                    .font(.system(size: 100))
+                    .foregroundColor(.white.opacity(0.8))
+                    .padding(.bottom, 24)
+                
+                Text(file.originalFileName)
+                    .font(.title2)
+                    .bold()
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                
+                Text("\(file.fileExtension) ファイル")
+                    .font(.headline)
+                    .foregroundColor(.gray)
+                    .padding(.top, 8)
+                
+                Text(file.formattedSize)
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                    .padding(.top, 4)
+                
+                Spacer()
+            }
+            
+            // ヘッダーUI
+            HStack(spacing: 16) {
+                Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                    Image(systemName: "chevron.left")
+                        .font(.title3)
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Color.black.opacity(0.4).clipShape(Circle()))
+                }
+                
+                Spacer()
+                
+                Button(action: shareFile) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.title3)
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Color.black.opacity(0.4).clipShape(Circle()))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, safeAreaTop)
+            .padding(.bottom, 16)
+            .ignoresSafeArea(edges: .top)
+        }
+    }
+    
+    var safeAreaTop: CGFloat {
+        UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20
+    }
+    
+    func shareFile() {
+        let url = MediaManager.shared.getMediaURL(fileName: file.localFileName)
+        if FileManager.default.fileExists(atPath: url.path) {
+            let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            if let topVC = UIApplication.shared.topViewController {
+                av.popoverPresentationController?.sourceView = topVC.view
+                topVC.present(av, animated: true)
+            }
+        }
+    }
+}
+
+// 【新規】ファイルタグをタップ可能にするための共通コンポーネント
+struct AttachedFileRowView: View {
+    let file: AttachedFile
+    let themeBodyText: String
+    var font: Font = .caption
+    var padding: CGFloat = 8
+    
+    @State private var isFullScreenPresented = false
+    
+    var body: some View {
+        Button(action: {
+            isFullScreenPresented = true
+        }) {
+            HStack {
+                Image(systemName: "doc.fill")
+                    .foregroundColor(.gray)
+                Text(file.originalFileName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(Color(hex: themeBodyText))
+                Spacer()
+                Text("\(file.fileExtension) · \(file.formattedSize)")
+                    .foregroundColor(.gray)
+            }
+            .font(font)
+            .padding(padding)
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(8)
+        }
+        .buttonStyle(PlainButtonStyle()) // タップ時の暗転を防ぐ
+        .fullScreenCover(isPresented: $isFullScreenPresented) {
+            FileFullScreenView(file: file)
+        }
+    }
+}
+
 // -----------------------------------
-// 以下、既存の構造体はそのままです
+// 以下、既存の構造体
 // -----------------------------------
 
 struct TimelineImageGrid: View {
@@ -737,21 +852,8 @@ struct TwitterRow: View {
                     if let files = item.attachedFiles, !files.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(files, id: \.id) { file in
-                                HStack {
-                                    Image(systemName: "doc.fill")
-                                        .foregroundColor(.gray)
-                                    Text(file.originalFileName)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                        .foregroundColor(Color(hex: themeBodyText))
-                                    Spacer()
-                                    Text("\(file.fileExtension) · \(file.formattedSize)")
-                                        .foregroundColor(.gray)
-                                }
-                                .font(.caption)
-                                .padding(8)
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(8)
+                                // 【変更】ファイルをタップして開けるように共通部品を使用
+                                AttachedFileRowView(file: file, themeBodyText: themeBodyText, font: .caption, padding: 8)
                             }
                         }
                         .padding(.top, 4)
