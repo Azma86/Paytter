@@ -47,16 +47,42 @@ struct ContentView: View {
     
     @State private var isHomeEditMode = false; @State private var homeItems: [DisplayHomeItem] = []; @State private var cachedVisibleTransactions: [Transaction] = []
     @State private var activeAlert: ActiveAlert?; @State private var isRestoringManual = false; @State private var isShowingImporter = false; @State private var pendingImportData: FullBackupData?
+    
+    // 【新規】検索用のキーワードを保持する変数
+    @State private var searchText = ""
 
     let appearancePublisher = NotificationCenter.default.publisher(for: NSNotification.Name("UpdateAppearance"))
     @ObservedObject var lockManager = LockManager.shared; @Environment(\.scenePhase) var scenePhase
 
     func updateVisibleTransactions() { let currentTx = transactions; let currentProf = profiles; let isUn = lockManager.isUnlocked; let hidePriv = lockManager.privatePostDisplayMode == 0; DispatchQueue.global(qos: .userInitiated).async { let profileDict = Dictionary(uniqueKeysWithValues: currentProf.map { ($0.id, $0) }); let defaultProfile = currentProf.first; let filtered = currentTx.filter { tx in let profile = profileDict[tx.profileId ?? UUID()] ?? defaultProfile; let isVisible = profile?.isVisible ?? true; let isPrivate = profile?.isPrivate ?? false; let isDeleted = profile?.isDeleted ?? false; if isDeleted { return true }; if !isVisible { return false }; if isPrivate && !isUn && hidePriv { return false }; return true }; let sorted = filtered.sorted(by: { $0.date > $1.date }); DispatchQueue.main.async { self.cachedVisibleTransactions = sorted } } }
+    
+    // 【新規】検索キーワードに基づいて絞り込んだ投稿リストを返す
+    var filteredSearchTransactions: [Transaction] {
+        if searchText.isEmpty { return [] }
+        let lower = searchText.lowercased()
+        return cachedVisibleTransactions.filter { tx in
+            // テキスト、ソース（お財布名）、タグのいずれかに部分一致すれば表示
+            tx.note.lowercased().contains(lower) || 
+            tx.source.lowercased().contains(lower) || 
+            tx.tags.contains(where: { $0.lowercased().contains(lower) })
+        }
+    }
 
     var body: some View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
-            TabView(selection: $selection) { homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }; calendarTab.tag(1).tabItem { Label("カレンダー", systemImage: "calendar") }; walletTab.tag(2).tabItem { Label("お財布", systemImage: "wallet.pass") }; settingTab.tag(3).tabItem { Label("設定", systemImage: "gearshape") } }.accentColor(Color(hex: themeTabAccent)).onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in self.selection = 0 }
+            
+            // 【変更】タブメニューの2番目に「検索（searchTab）」を追加
+            TabView(selection: $selection) { 
+                homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }; 
+                searchTab.tag(1).tabItem { Label("検索", systemImage: "magnifyingglass") }; 
+                calendarTab.tag(2).tabItem { Label("カレンダー", systemImage: "calendar") }; 
+                walletTab.tag(3).tabItem { Label("お財布", systemImage: "wallet.pass") }; 
+                settingTab.tag(4).tabItem { Label("設定", systemImage: "gearshape") } 
+            }
+            .accentColor(Color(hex: themeTabAccent))
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in self.selection = 0 }
+            
             if lockManager.isShowingLockScreen { PasscodeLockOverlay().zIndex(200).transition(.opacity) }
         }.preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { recalculateBalances(saveBackup: false); updateVisibleTransactions(); updateAppearance(); syncHomeItems(); if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 { lockManager.promptUnlock() } }
@@ -82,6 +108,88 @@ struct ContentView: View {
                 }
                 if !isHomeEditMode { Button(action: { inputText = ""; isShowingInputSheet = true }) { Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle()) }.padding(20).padding(.bottom, 10) }
             }.navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } }; ToolbarItem(placement: .navigationBarTrailing) { Button(action: { withAnimation(.spring()) { isHomeEditMode.toggle() } }) { Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.left.and.right.circle").foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain)) } } }.toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) { Button("キャンセル", role: .cancel) {}; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } } }
+        }
+    }
+    
+    // 【新規】検索用のタブ画面（検索バーと検索結果のリスト表示）
+    private var searchTab: some View {
+        NavigationView {
+            ZStack {
+                Color(hex: themeBG).ignoresSafeArea()
+                VStack(spacing: 0) {
+                    // 検索バー
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundColor(Color(hex: themeSubText))
+                        TextField("キーワード、タグ、お財布を検索", text: $searchText)
+                            .foregroundColor(Color(hex: themeBodyText))
+                        if !searchText.isEmpty { 
+                            Button(action: { searchText = "" }) { 
+                                Image(systemName: "xmark.circle.fill").foregroundColor(Color(hex: themeSubText)) 
+                            } 
+                        }
+                    }
+                    .padding(8)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(10)
+                    .padding()
+                    
+                    // 検索結果の表示エリア
+                    if searchText.isEmpty {
+                        Spacer()
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 60))
+                            .foregroundColor(Color(hex: themeSubText).opacity(0.5))
+                            .padding(.bottom, 16)
+                        Text("検索したいキーワードを入力してください")
+                            .foregroundColor(Color(hex: themeSubText))
+                        Spacer()
+                    } else if filteredSearchTransactions.isEmpty {
+                        Spacer()
+                        Text("見つかりませんでした")
+                            .foregroundColor(Color(hex: themeSubText))
+                        Spacer()
+                    } else {
+                        List {
+                            ForEach(filteredSearchTransactions) { item in
+                                let isFuture = item.date > Date()
+                                ZStack {
+                                    NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
+                                    TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0)
+                                }
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) { 
+                                    Button { 
+                                        transactionToDelete = item; isShowingSwipeDeleteAlert = true 
+                                    } label: { Text("削除") }.tint(.red) 
+                                }
+                            }
+                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                    }
+                }
+            }
+            .navigationTitle("検索").navigationBarTitleDisplayMode(.inline)
+            .toolbar { 
+                ToolbarItem(placement: .navigationBarLeading) { 
+                    if !lockManager.passcode.isEmpty { 
+                        Button(action: { 
+                            if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } 
+                        }) { 
+                            Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) 
+                        } 
+                    } 
+                } 
+            }
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) { 
+                Button("キャンセル", role: .cancel) {}
+                Button("削除", role: .destructive) { 
+                    if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } 
+                } 
+            }
         }
     }
     
@@ -118,14 +226,13 @@ struct ContentView: View {
     private func binding(for account: Account) -> Binding<Account> { Binding( get: { self.accounts.first(where: { $0.id == account.id }) ?? account }, set: { if let i = self.accounts.firstIndex(where: { $0.id == account.id }) { self.accounts[i] = $0 } } ) }
     private func binding(for group: AccountGroup) -> Binding<AccountGroup> { Binding( get: { self.groups.first(where: { $0.id == group.id }) ?? group }, set: { if let i = self.groups.firstIndex(where: { $0.id == group.id }) { self.groups[i] = $0 } } ) }
 
-    // 【変更】統合されたメディアモデルで保存
     func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, medias: [AttachedMediaItem]?, files: [AttachedFile]?) {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedMediaItems: medias, attachedFiles: files))
     }
 
     func syncHomeItems() { var items: [DisplayHomeItem] = []; if showTotalAssets { let totalB = accounts.reduce(0) { $0 + $1.balance }; let totalD = accounts.reduce(0) { $0 + $1.diffAmount }; items.append(DisplayHomeItem(id: "TOTAL_ASSETS", title: "総資産", amount: totalB, diffAmount: totalD)) }; for acc in accounts where acc.isVisible { items.append(DisplayHomeItem(id: "ACCOUNT_\(acc.id.uuidString)", title: acc.name, amount: acc.balance, diffAmount: acc.diffAmount)) }; for g in groups where g.isVisible { let accs = accounts.filter { g.accountIds.contains($0.id) }; let b = accs.reduce(0) { $0 + $1.balance }; let d = accs.reduce(0) { $0 + $1.diffAmount }; items.append(DisplayHomeItem(id: "GROUP_\(g.id.uuidString)", title: g.name, amount: b, diffAmount: d)) }; items.sort { i1, i2 in let idx1 = homeDisplayOrder.firstIndex(of: i1.id) ?? Int.max; let idx2 = homeDisplayOrder.firstIndex(of: i2.id) ?? Int.max; return idx1 < idx2 }; self.homeItems = items }
     func createFullBackupData() -> FullBackupData { return FullBackupData( transactions: transactions, accounts: accounts, groups: groups, profiles: profiles, monthlyBudget: monthlyBudget, isDarkMode: isDarkMode, themeMain: themeMain, themeIncome: themeIncome, themeExpense: themeExpense, themeHoliday: themeHoliday, themeSaturday: themeSaturday, themeBG: themeBG, themeBarBG: themeBarBG, themeBarText: themeBarText, themeTabAccent: themeTabAccent, themeBodyText: themeBodyText, themeSubText: themeSubText, showTotalAssets: showTotalAssets, homeDisplayOrder: homeDisplayOrder, backupDate: BackupManager.currentDateString() ) }
-    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = backup.themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = backup.showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance(); updateVisibleTransactions() }
+    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = backup.showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance(); updateVisibleTransactions() }
     func handleImport(from url: URL) { guard let data = try? Data(contentsOf: url) else { return }; if let fd = try? JSONDecoder().decode(FullBackupData.self, from: data) { self.pendingImportData = fd; self.activeAlert = .importConfirm } else if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dec = try? JSONDecoder().decode([Transaction].self, from: txStr.data(using: .utf8)!), let aDec = try? JSONDecoder().decode([Account].self, from: accStr.data(using: .utf8)!) { let fd = createFullBackupData(); self.pendingImportData = FullBackupData( transactions: dec, accounts: aDec, groups: fd.groups, profiles: fd.profiles, monthlyBudget: fd.monthlyBudget, isDarkMode: fd.isDarkMode, themeMain: fd.themeMain, themeIncome: fd.themeIncome, themeExpense: fd.themeExpense, themeHoliday: fd.themeHoliday, themeSaturday: fd.themeSaturday, themeBG: fd.themeBG, themeBarBG: fd.themeBarBG, themeBarText: fd.themeBarText, themeTabAccent: fd.themeTabAccent, themeBodyText: fd.themeBodyText, themeSubText: fd.themeSubText, showTotalAssets: fd.showTotalAssets, homeDisplayOrder: fd.homeDisplayOrder, backupDate: "以前の形式" ); self.activeAlert = .importConfirm } }
     func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("リセット完了") }
     
