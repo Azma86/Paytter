@@ -3,7 +3,6 @@ import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-// 画像と動画を統合した「ドラッグ可能メディア」モデル
 struct PostAttachedMedia: Identifiable, Equatable {
     let id: UUID
     let type: MediaType
@@ -70,13 +69,14 @@ struct AttachedMediaCell: View, Equatable {
     }
 }
 
+// 【重要修正】お財布一覧の「HomeHeaderView」と完全に同じアルゴリズムを適用しました
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
     
     @State private var localMedias: [PostAttachedMedia] = []
     @State private var draggedMediaId: UUID?
     @State private var dragOffset: CGFloat = 0
-    @State private var dragLastX: CGFloat?
+    @State private var dragHomeTotalJump: CGFloat = 0
     
     var body: some View {
         Group {
@@ -96,8 +96,9 @@ struct AttachedMediasDragView: View {
                             )
                             .equatable()
                             .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { val in handleDragChange(val, item: item) }
+                                // 【修正】.globalを指定して絶対座標で正確に追従させる
+                                DragGesture(coordinateSpace: .global)
+                                    .onChanged { val in handleDragChange(value: val, item: item) }
                                     .onEnded { _ in handleDragEnded() }
                             )
                         }
@@ -117,29 +118,29 @@ struct AttachedMediasDragView: View {
         }
     }
     
-    private func handleDragChange(_ value: DragGesture.Value, item: PostAttachedMedia) {
+    // 【修正】お財布一覧と全く同じバネ付きの絶対座標アルゴリズム
+    private func handleDragChange(value: DragGesture.Value, item: PostAttachedMedia) {
         if draggedMediaId != item.id {
             draggedMediaId = item.id
-            dragLastX = value.location.x
-            dragOffset = 0
+            dragHomeTotalJump = 0
         }
         
-        guard let lastX = dragLastX else { return }
-        dragOffset += value.location.x - lastX
-        dragLastX = value.location.x
+        dragOffset = value.translation.width - dragHomeTotalJump
         
         if let idx = localMedias.firstIndex(where: { $0.id == item.id }) {
-            let jumpDistance: CGFloat = 88
+            let jumpDistance: CGFloat = 88 // 画像の幅(80) + 間隔(8)
             let threshold = jumpDistance * 0.5
             
             if dragOffset > threshold && idx < localMedias.count - 1 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     localMedias.swapAt(idx, idx + 1)
+                    dragHomeTotalJump += jumpDistance
                     dragOffset -= jumpDistance
                 }
             } else if dragOffset < -threshold && idx > 0 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     localMedias.swapAt(idx, idx - 1)
+                    dragHomeTotalJump -= jumpDistance
                     dragOffset += jumpDistance
                 }
             }
@@ -147,18 +148,31 @@ struct AttachedMediasDragView: View {
     }
     
     private func handleDragEnded() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.interactiveSpring()) {
             draggedMediaId = nil
             dragOffset = 0
-            dragLastX = nil
+            dragHomeTotalJump = 0
         }
+        // 【重要】指を離した時に親ビューにデータを同期させる（編集時にも反映させるため）
         attachedMedias = localMedias
+    }
+}
+
+struct ImageTransferable: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .image) { received in
+            let fileName = received.file.lastPathComponent
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            try? FileManager.default.removeItem(at: copy)
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return ImageTransferable(url: copy)
+        }
     }
 }
 
 struct MovieTransferable: Transferable {
     let url: URL
-    
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .movie) { received in
             let fileName = received.file.lastPathComponent
@@ -318,20 +332,19 @@ struct PostView: View {
                                             }
                                         }
                                     } else {
-                                        if let data = try? await item.loadTransferable(type: Data.self),
-                                           let uiImage = UIImage(data: data),
-                                           let thumbData = compressImage(uiImage),
-                                           let thumbImage = UIImage(data: thumbData) {
-                                            
-                                            // 【修正】画像に綺麗なファイル名を自動生成する
-                                            let df = DateFormatter()
-                                            df.dateFormat = "yyyyMMdd_HHmmss"
-                                            let originalName = "IMG_\(df.string(from: Date())).jpg"
-                                            
-                                            if let savedName = MediaManager.shared.saveData(data, extension: "jpg") {
-                                                DispatchQueue.main.async {
-                                                    if attachedMedias.count < 4 {
-                                                        attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil))
+                                        if let imageFile = try? await item.loadTransferable(type: ImageTransferable.self) {
+                                            let tempURL = imageFile.url
+                                            let originalName = tempURL.lastPathComponent
+                                            if let originalData = try? Data(contentsOf: tempURL),
+                                               let uiImage = UIImage(data: originalData),
+                                               let thumbData = compressImage(uiImage),
+                                               let thumbImage = UIImage(data: thumbData) {
+                                                
+                                                if let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension) {
+                                                    DispatchQueue.main.async {
+                                                        if attachedMedias.count < 4 {
+                                                            attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil))
+                                                        }
                                                     }
                                                 }
                                             }
@@ -470,7 +483,6 @@ struct PostView: View {
                     for url in urls {
                         let isSecured = url.startAccessingSecurityScopedResource()
                         defer { if isSecured { url.stopAccessingSecurityScopedResource() } }
-                        
                         if let savedName = MediaManager.shared.saveMedia(from: url) {
                             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                             let size = attrs?[.size] as? Int64 ?? 0
