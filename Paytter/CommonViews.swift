@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import AVKit
+import PDFKit // 【新規】PDFプレビューを表示するために必須のライブラリ
 
 struct TimelineMediaGrid: View {
     let mediaItems: [AttachedMediaItem]
@@ -215,22 +216,14 @@ struct MediaFullScreenView: View {
     
     func shareMedia(media: AttachedMediaItem) {
         var itemToShare: Any?
-        
         if media.localFileName.isEmpty {
-            if let data = media.thumbnailData, let image = UIImage(data: data) {
-                itemToShare = image
-            }
+            if let data = media.thumbnailData, let image = UIImage(data: data) { itemToShare = image }
         } else {
             let url = MediaManager.shared.getMediaURL(fileName: media.localFileName)
-            if FileManager.default.fileExists(atPath: url.path) {
-                itemToShare = url
-            } else if let data = media.thumbnailData, let image = UIImage(data: data) {
-                itemToShare = image
-            }
+            if FileManager.default.fileExists(atPath: url.path) { itemToShare = url }
+            else if let data = media.thumbnailData, let image = UIImage(data: data) { itemToShare = image }
         }
-        
         guard let shareItem = itemToShare else { return }
-        
         let av = UIActivityViewController(activityItems: [shareItem], applicationActivities: nil)
         if let topVC = UIApplication.shared.topViewController {
             av.popoverPresentationController?.sourceView = topVC.view
@@ -240,7 +233,6 @@ struct MediaFullScreenView: View {
     
     func saveMedia(media: AttachedMediaItem) {
         isSaving = true
-        
         let finishSave: (Bool, Error?) -> Void = { success, error in
             DispatchQueue.main.async {
                 isSaving = false
@@ -252,14 +244,11 @@ struct MediaFullScreenView: View {
                 showSaveAlert = true
             }
         }
-        
         DispatchQueue.global(qos: .userInitiated).async {
             if media.localFileName.isEmpty {
                 if let data = media.thumbnailData, let image = UIImage(data: data) {
                     MediaSaver.shared.saveImage(image, completion: finishSave)
-                } else {
-                    finishSave(false, nil)
-                }
+                } else { finishSave(false, nil) }
             } else {
                 let url = MediaManager.shared.getMediaURL(fileName: media.localFileName)
                 if media.type == .image {
@@ -267,9 +256,7 @@ struct MediaFullScreenView: View {
                         MediaSaver.shared.saveImage(image, completion: finishSave)
                     } else if let data = media.thumbnailData, let image = UIImage(data: data) {
                         MediaSaver.shared.saveImage(image, completion: finishSave)
-                    } else {
-                        finishSave(false, nil)
-                    }
+                    } else { finishSave(false, nil) }
                 } else if media.type == .video {
                     MediaSaver.shared.saveVideo(url: url, completion: finishSave)
                 }
@@ -288,7 +275,6 @@ struct SingleMediaZoomView: View {
     @State private var lastOffset: CGSize = .zero
     
     @State private var loadedImage: UIImage? = nil
-    
     @State private var player: AVPlayer?
     @State private var isPlaying: Bool = false
     @State private var currentTime: Double = 0
@@ -304,64 +290,16 @@ struct SingleMediaZoomView: View {
                     if let player = player {
                         CustomVideoPlayerLayer(player: player)
                             .frame(width: proxy.size.width, height: proxy.size.height)
-                            .onTapGesture {
-                                withAnimation { showUI.toggle() }
-                            }
+                            .onTapGesture { withAnimation { showUI.toggle() } }
                     }
                 } else {
                     if let img = loadedImage {
                         Image(uiImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .scaleEffect(scale)
-                            .offset(offset)
-                            .gesture(
-                                MagnificationGesture()
-                                    .onChanged { val in
-                                        let delta = val / lastScale
-                                        lastScale = val
-                                        scale = min(max(scale * delta, 1), 5)
-                                    }
-                                    .onEnded { _ in
-                                        lastScale = 1.0
-                                        if scale <= 1.0 {
-                                            withAnimation {
-                                                offset = .zero
-                                                lastOffset = .zero
-                                            }
-                                        }
-                                    }
-                            )
-                            .simultaneousGesture(
-                                DragGesture()
-                                    .onChanged { val in
-                                        if scale > 1.0 {
-                                            offset = CGSize(
-                                                width: lastOffset.width + val.translation.width,
-                                                height: lastOffset.height + val.translation.height
-                                            )
-                                        }
-                                    }
-                                    .onEnded { _ in
-                                        lastOffset = offset
-                                    }
-                            )
-                            .onTapGesture(count: 2) {
-                                withAnimation {
-                                    if scale > 1.0 {
-                                        scale = 1.0
-                                        offset = .zero
-                                        lastOffset = .zero
-                                    } else {
-                                        scale = 2.0
-                                        offset = .zero
-                                        lastOffset = .zero
-                                    }
-                                }
-                            }
-                            .onTapGesture(count: 1) {
-                                withAnimation { showUI.toggle() }
-                            }
+                            .resizable().scaledToFit().scaleEffect(scale).offset(offset)
+                            .gesture(MagnificationGesture().onChanged { val in let delta = val / lastScale; lastScale = val; scale = min(max(scale * delta, 1), 5) }.onEnded { _ in lastScale = 1.0; if scale <= 1.0 { withAnimation { offset = .zero; lastOffset = .zero } } })
+                            .simultaneousGesture(DragGesture().onChanged { val in if scale > 1.0 { offset = CGSize(width: lastOffset.width + val.translation.width, height: lastOffset.height + val.translation.height) } }.onEnded { _ in lastOffset = offset })
+                            .onTapGesture(count: 2) { withAnimation { if scale > 1.0 { scale = 1.0; offset = .zero; lastOffset = .zero } else { scale = 2.0; offset = .zero; lastOffset = .zero } } }
+                            .onTapGesture(count: 1) { withAnimation { showUI.toggle() } }
                             .frame(width: proxy.size.width, height: proxy.size.height)
                     } else {
                         ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -371,159 +309,82 @@ struct SingleMediaZoomView: View {
                 if showUI && media.type == .video {
                     VStack {
                         Spacer()
-                        
                         HStack(alignment: .center, spacing: 12) {
                             Button(action: {
-                                if isPlaying {
-                                    player?.pause()
-                                } else {
-                                    if currentTime >= duration - 0.1 {
-                                        player?.seek(to: .zero)
-                                    }
-                                    player?.play()
-                                }
+                                if isPlaying { player?.pause() } else { if currentTime >= duration - 0.1 { player?.seek(to: .zero) }; player?.play() }
                                 isPlaying.toggle()
-                            }) {
-                                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.white)
-                                    .frame(width: 32, height: 32)
-                            }
-                            
+                            }) { Image(systemName: isPlaying ? "pause.fill" : "play.fill").font(.title2).foregroundColor(.white).frame(width: 32, height: 32) }
                             Slider(value: $currentTime, in: 0...(duration > 0 ? duration : 1)) { editing in
                                 isEditingSlider = editing
-                                if !editing {
-                                    isSeeking = true
-                                    player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600), completionHandler: { _ in
-                                        isSeeking = false
-                                        if isPlaying {
-                                            player?.play()
-                                        }
-                                    })
-                                } else {
-                                    player?.pause()
-                                }
-                            }
-                            .accentColor(.white)
-                            
-                            Text("-" + formatTime(duration - currentTime))
-                                .font(.caption2)
-                                .foregroundColor(.white)
-                                .frame(width: 40, alignment: .trailing)
+                                if !editing { isSeeking = true; player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600), completionHandler: { _ in isSeeking = false; if isPlaying { player?.play() } }) } else { player?.pause() }
+                            }.accentColor(.white)
+                            Text("-" + formatTime(duration - currentTime)).font(.caption2).foregroundColor(.white).frame(width: 40, alignment: .trailing)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 24)
-                        .padding(.bottom, safeAreaBottom > 0 ? safeAreaBottom : 16)
-                        .background(
-                            LinearGradient(gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.8)]), startPoint: .top, endPoint: .bottom)
-                        )
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .padding(.horizontal, 16).padding(.top, 24).padding(.bottom, safeAreaBottom > 0 ? safeAreaBottom : 16)
+                        .background(LinearGradient(gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.8)]), startPoint: .top, endPoint: .bottom))
+                    }.transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
         .onAppear {
-            if media.type == .video {
-                setupPlayer()
-            } else {
+            if media.type == .video { setupPlayer() } else {
                 DispatchQueue.global(qos: .userInitiated).async {
                     var imgToLoad: UIImage? = nil
-                    if let originalImage = MediaManager.shared.loadImage(fileName: media.localFileName) {
-                        imgToLoad = originalImage
-                    } else if let data = media.thumbnailData, let img = UIImage(data: data) {
-                        imgToLoad = img
-                    }
-                    DispatchQueue.main.async {
-                        self.loadedImage = imgToLoad
-                    }
+                    if let originalImage = MediaManager.shared.loadImage(fileName: media.localFileName) { imgToLoad = originalImage }
+                    else if let data = media.thumbnailData, let img = UIImage(data: data) { imgToLoad = img }
+                    DispatchQueue.main.async { self.loadedImage = imgToLoad }
                 }
             }
         }
-        .onDisappear {
-            if let observer = timeObserver {
-                player?.removeTimeObserver(observer)
-            }
-            player?.pause()
-        }
+        .onDisappear { if let observer = timeObserver { player?.removeTimeObserver(observer) }; player?.pause() }
     }
     
     func setupPlayer() {
         let url = MediaManager.shared.getMediaURL(fileName: media.localFileName)
         let newPlayer = AVPlayer(url: url)
         self.player = newPlayer
-        
         timeObserver = newPlayer.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak newPlayer] time in
             guard let currentPlayer = newPlayer else { return }
-            
             if let currentItem = currentPlayer.currentItem {
-                let dur = currentItem.duration.seconds
-                if !dur.isNaN && !dur.isInfinite {
-                    self.duration = dur
-                }
-                
-                if !self.isEditingSlider && !self.isSeeking {
-                    self.currentTime = time.seconds
-                }
-                
-                if time.seconds >= dur && dur > 0 {
-                    self.isPlaying = false
-                }
+                let dur = currentItem.duration.seconds; if !dur.isNaN && !dur.isInfinite { self.duration = dur }
+                if !self.isEditingSlider && !self.isSeeking { self.currentTime = time.seconds }
+                if time.seconds >= dur && dur > 0 { self.isPlaying = false }
             }
         }
         newPlayer.play()
         self.isPlaying = true
     }
     
-    func formatTime(_ seconds: Double) -> String {
-        guard !seconds.isNaN && !seconds.isInfinite && seconds >= 0 else { return "0:00" }
-        let totalSeconds = Int(seconds)
-        let m = totalSeconds / 60
-        let s = totalSeconds % 60
-        return String(format: "%d:%02d", m, s)
-    }
-    
-    var safeAreaBottom: CGFloat {
-        UIApplication.shared.windows.first?.safeAreaInsets.bottom ?? 0
-    }
+    func formatTime(_ seconds: Double) -> String { guard !seconds.isNaN && !seconds.isInfinite && seconds >= 0 else { return "0:00" }; let totalSeconds = Int(seconds); let m = totalSeconds / 60; let s = totalSeconds % 60; return String(format: "%d:%02d", m, s) }
+    var safeAreaBottom: CGFloat { UIApplication.shared.windows.first?.safeAreaInsets.bottom ?? 0 }
 }
 
 struct CustomVideoPlayerLayer: UIViewRepresentable {
     var player: AVPlayer
-    
-    func makeUIView(context: Context) -> PlayerView {
-        let view = PlayerView()
-        view.player = player
-        view.playerLayer.videoGravity = .resizeAspect
-        return view
-    }
-    
-    func updateUIView(_ uiView: PlayerView, context: Context) {
-        if uiView.player != player {
-            uiView.player = player
-        }
-    }
+    func makeUIView(context: Context) -> PlayerView { let view = PlayerView(); view.player = player; view.playerLayer.videoGravity = .resizeAspect; return view }
+    func updateUIView(_ uiView: PlayerView, context: Context) { if uiView.player != player { uiView.player = player } }
 }
 
 class PlayerView: UIView {
-    var player: AVPlayer? {
-        get { playerLayer.player }
-        set { playerLayer.player = newValue }
-    }
-    var playerLayer: AVPlayerLayer {
-        return layer as! AVPlayerLayer
-    }
-    override static var layerClass: AnyClass {
-        return AVPlayerLayer.self
-    }
+    var player: AVPlayer? { get { playerLayer.player } set { playerLayer.player = newValue } }
+    var playerLayer: AVPlayerLayer { return layer as! AVPlayerLayer }
+    override static var layerClass: AnyClass { return AVPlayerLayer.self }
 }
 
-extension UIApplication {
-    var topViewController: UIViewController? {
-        var top = connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }.first { $0.isKeyWindow }?.rootViewController
-        while let presented = top?.presentedViewController {
-            top = presented
+// 【新規】PDFをプレビュー表示するためのビュー
+struct PDFKitView: UIViewRepresentable {
+    let url: URL
+    func makeUIView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.document = PDFDocument(url: url)
+        pdfView.autoScales = true
+        pdfView.backgroundColor = .clear
+        return pdfView
+    }
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if uiView.document?.documentURL != url {
+            uiView.document = PDFDocument(url: url)
         }
-        return top
     }
 }
 
@@ -536,35 +397,40 @@ struct FileFullScreenView: View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             
-            VStack {
-                Spacer()
-                
-                Image(systemName: "doc.text.fill")
-                    .font(.system(size: 100))
-                    .foregroundColor(.white.opacity(0.8))
-                    .padding(.bottom, 24)
-                
-                Text(file.originalFileName)
-                    .font(.title2)
-                    .bold()
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                
-                Text("\(file.fileExtension) ファイル")
-                    .font(.headline)
-                    .foregroundColor(.gray)
-                    .padding(.top, 8)
-                
-                Text(file.formattedSize)
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                    .padding(.top, 4)
-                
-                Spacer()
+            // PDFの場合はプレビューを表示し、それ以外はアイコンを表示
+            if file.fileExtension.lowercased() == "pdf" {
+                let url = MediaManager.shared.getMediaURL(fileName: file.localFileName)
+                PDFKitView(url: url)
+                    .ignoresSafeArea()
+            } else {
+                VStack {
+                    Spacer()
+                    Image(systemName: "doc.text.fill")
+                        .font(.system(size: 100))
+                        .foregroundColor(.white.opacity(0.8))
+                        .padding(.bottom, 24)
+                    
+                    Text(file.originalFileName)
+                        .font(.title2)
+                        .bold()
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                    
+                    Text("\(file.fileExtension) ファイル")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                        .padding(.top, 8)
+                    
+                    Text(file.formattedSize)
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .padding(.top, 4)
+                    Spacer()
+                }
             }
             
-            // ヘッダーUI
+            // ヘッダーUI（PDF時にも見えるように黒いグラデーションを追加）
             HStack(spacing: 16) {
                 Button(action: { presentationMode.wrappedValue.dismiss() }) {
                     Image(systemName: "chevron.left")
@@ -587,6 +453,9 @@ struct FileFullScreenView: View {
             .padding(.horizontal, 16)
             .padding(.top, safeAreaTop)
             .padding(.bottom, 16)
+            .background(
+                LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.7), Color.clear]), startPoint: .top, endPoint: .bottom)
+            )
             .ignoresSafeArea(edges: .top)
         }
     }
@@ -607,7 +476,6 @@ struct FileFullScreenView: View {
     }
 }
 
-// 【新規】ファイルタグをタップ可能にするための共通コンポーネント
 struct AttachedFileRowView: View {
     let file: AttachedFile
     let themeBodyText: String
@@ -636,10 +504,18 @@ struct AttachedFileRowView: View {
             .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
         }
-        .buttonStyle(PlainButtonStyle()) // タップ時の暗転を防ぐ
+        .buttonStyle(PlainButtonStyle())
         .fullScreenCover(isPresented: $isFullScreenPresented) {
             FileFullScreenView(file: file)
         }
+    }
+}
+
+extension UIApplication {
+    var topViewController: UIViewController? {
+        var top = connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }.first { $0.isKeyWindow }?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
     }
 }
 
@@ -655,33 +531,10 @@ struct TimelineImageGrid: View {
     var body: some View {
         let count = images.count
         Group {
-            if count == 1 {
-                imgView(images[0])
-            } else if count == 2 {
-                HStack(spacing: 4) {
-                    imgView(images[0])
-                    imgView(images[1])
-                }
-            } else if count == 3 {
-                HStack(spacing: 4) {
-                    imgView(images[0])
-                    VStack(spacing: 4) {
-                        imgView(images[1])
-                        imgView(images[2])
-                    }
-                }
-            } else if count >= 4 {
-                VStack(spacing: 4) {
-                    HStack(spacing: 4) {
-                        imgView(images[0])
-                        imgView(images[1])
-                    }
-                    HStack(spacing: 4) {
-                        imgView(images[2])
-                        imgView(images[3])
-                    }
-                }
-            }
+            if count == 1 { imgView(images[0]) }
+            else if count == 2 { HStack(spacing: 4) { imgView(images[0]); imgView(images[1]) } }
+            else if count == 3 { HStack(spacing: 4) { imgView(images[0]); VStack(spacing: 4) { imgView(images[1]); imgView(images[2]) } } }
+            else if count >= 4 { VStack(spacing: 4) { HStack(spacing: 4) { imgView(images[0]); imgView(images[1]) }; HStack(spacing: 4) { imgView(images[2]); imgView(images[3]) } } }
         }
         .frame(height: maxHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
@@ -689,67 +542,25 @@ struct TimelineImageGrid: View {
     }
     
     @ViewBuilder func imgView(_ data: Data) -> some View {
-        if let uiImage = ImageCache.shared.image(for: data) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
-                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                .clipped()
-        } else {
-            Color.gray.opacity(0.1)
-        }
+        if let uiImage = ImageCache.shared.image(for: data) { Image(uiImage: uiImage).resizable().scaledToFill().frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity).clipped() } else { Color.gray.opacity(0.1) }
     }
 }
 
 struct BalanceView: View {
-    let title: String
-    let amount: Int
-    let color: Color
-    let diff: Int
-    let isSilent: Bool
-    
-    @State private var showDiff = false
-    @State private var lastAmount: Int = 0 
+    let title: String; let amount: Int; let color: Color; let diff: Int; let isSilent: Bool
+    @State private var showDiff = false; @State private var lastAmount: Int = 0 
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
     var body: some View {
         VStack {
-            Text(title)
-                .font(.caption)
-                .foregroundColor(Color(hex: themeSubText))
-            
+            Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
             ZStack(alignment: .topTrailing) {
-                Text("¥\(amount)")
-                    .font(.system(.subheadline, design: .monospaced))
-                    .fontWeight(.bold)
-                    .foregroundColor(color)
-                    .padding(.horizontal, 4)
-                
-                if diff != 0 {
-                    Text(diff > 0 ? "+\(diff)" : "\(diff)")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
-                        .foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense))
-                        .offset(x: 20, y: showDiff ? -15 : 0)
-                        .opacity(showDiff ? 0 : 1)
-                }
+                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
+                if diff != 0 { Text(diff > 0 ? "+\(diff)" : "\(diff)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense)).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) }
             }
-        }
-        .frame(maxWidth: .infinity)
-        .onChange(of: amount) { newValue in
-            if newValue != lastAmount {
-                if isSilent {
-                    showDiff = true
-                    lastAmount = newValue
-                } else {
-                    showDiff = false
-                    withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
-                    lastAmount = newValue
-                }
-            }
-        }
-        .onAppear { lastAmount = amount }
+        }.frame(maxWidth: .infinity).onChange(of: amount) { newValue in if newValue != lastAmount { if isSilent { showDiff = true; lastAmount = newValue } else { showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }; lastAmount = newValue } } }.onAppear { lastAmount = amount }
     }
 }
 
@@ -762,200 +573,49 @@ struct TwitterRow: View {
     
     var body: some View {
         let profile = profiles.first(where: { $0.id == item.profileId }) ?? profiles.first ?? UserProfile(name: "不明", userId: "unknown")
-        
-        let isPrivate = profile.isPrivate ?? false
-        let isDeleted = profile.isDeleted ?? false
-        let isLocked = !LockManager.shared.isUnlocked
-        let hideContent = isPrivate && isLocked && LockManager.shared.privatePostDisplayMode == 1
-        
-        let displayName = isDeleted ? "削除されたユーザー" : profile.name
-        let displayId = isDeleted ? "deleted_user" : profile.userId
+        let isPrivate = profile.isPrivate ?? false; let isDeleted = profile.isDeleted ?? false; let isLocked = !LockManager.shared.isUnlocked; let hideContent = isPrivate && isLocked && LockManager.shared.privatePostDisplayMode == 1
+        let displayName = isDeleted ? "削除されたユーザー" : profile.name; let displayId = isDeleted ? "deleted_user" : profile.userId
         
         HStack(alignment: .top, spacing: 12) {
-            if !isDeleted, let iconData = profile.iconData, let uiImage = ImageCache.shared.image(for: iconData) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 48, height: 48)
-                    .clipShape(Circle())
-            } else {
-                Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .frame(width: 48, height: 48)
-                    .foregroundColor(.gray)
-            }
+            if !isDeleted, let iconData = profile.iconData, let uiImage = ImageCache.shared.image(for: iconData) { Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(Circle()) } else { Image(systemName: "person.circle.fill").resizable().frame(width: 48, height: 48).foregroundColor(.gray) }
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(displayName)
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundColor(Color(hex: themeBodyText))
-                    
-                    Text("@\(displayId) · \(item.date, style: .time)")
-                        .font(.caption)
-                        .foregroundColor(Color(hex: themeBodyText).opacity(0.6))
-                    
-                    Spacer()
-                    
-                    if item.isExcludedFromBalance == true {
-                        Image(systemName: "calculator.badge.minus")
-                            .font(.system(size: 8))
-                            .foregroundColor(Color(hex: themeBodyText).opacity(0.4))
-                    }
-                    
-                    if hideContent {
-                        Text("---")
-                            .font(.system(size: 9, weight: .bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(4)
-                            .foregroundColor(Color(hex: themeBodyText))
-                    } else {
-                        Text(item.source)
-                            .font(.system(size: 9, weight: .bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(4)
-                            .foregroundColor(Color(hex: themeBodyText))
-                    }
+                    Text(displayName).font(.subheadline).fontWeight(.bold).foregroundColor(Color(hex: themeBodyText)); Text("@\(displayId) · \(item.date, style: .time)").font(.caption).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Spacer(); if item.isExcludedFromBalance == true { Image(systemName: "calculator.badge.minus").font(.system(size: 8)).foregroundColor(Color(hex: themeBodyText).opacity(0.4)) }; if hideContent { Text("---").font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText)) } else { Text(item.source).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.gray.opacity(0.1)).cornerRadius(4).foregroundColor(Color(hex: themeBodyText)) }
                 }
                 
-                if hideContent {
-                    Text("鍵アカウントによる投稿です")
-                        .font(.subheadline)
-                        .foregroundColor(Color(hex: themeSubText))
-                } else {
-                    HighlightedText(text: item.cleanNote, isIncome: item.isIncome)
-                        .font(.subheadline)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundColor(Color(hex: themeBodyText))
-                    
-                    if !item.tags.isEmpty {
-                        HStack {
-                            ForEach(item.tags, id: \.self) { tag in
-                                Text(tag)
-                                    .font(.caption)
-                                    .foregroundColor(Color(hex: themeMain))
-                            }
-                        }
-                    }
+                if hideContent { Text("鍵アカウントによる投稿です").font(.subheadline).foregroundColor(Color(hex: themeSubText)) } else {
+                    HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBodyText))
+                    if !item.tags.isEmpty { HStack { ForEach(item.tags, id: \.self) { tag in Text(tag).font(.caption).foregroundColor(Color(hex: themeMain)) } } }
                     
                     let mediaItems = item.displayMediaItems
-                    if !mediaItems.isEmpty {
-                        TimelineMediaGrid(mediaItems: mediaItems, maxHeight: 160)
-                            .padding(.top, 4)
-                    }
+                    if !mediaItems.isEmpty { TimelineMediaGrid(mediaItems: mediaItems, maxHeight: 160).padding(.top, 4) }
                     
                     if let files = item.attachedFiles, !files.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            ForEach(files, id: \.id) { file in
-                                // 【変更】ファイルをタップして開けるように共通部品を使用
-                                AttachedFileRowView(file: file, themeBodyText: themeBodyText, font: .caption, padding: 8)
-                            }
-                        }
-                        .padding(.top, 4)
+                            ForEach(files, id: \.id) { file in AttachedFileRowView(file: file, themeBodyText: themeBodyText, font: .caption, padding: 8) }
+                        }.padding(.top, 4)
                     }
                 }
             }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 16)
+        }.padding(.vertical, 8).padding(.horizontal, 16)
     }
 }
 
 struct HighlightedText: View {
-    let text: String
-    let isIncome: Bool
-    
+    let text: String; let isIncome: Bool
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    
-    var body: some View {
-        let components = tokenize(text)
-        return components.reduce(Text("")) { (res, token) in
-            if token == "\n" {
-                return res + Text("\n")
-            } else if token.contains("¥") {
-                let amountVal = Int(token.replacingOccurrences(of: "¥", with: "")) ?? 0
-                let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome
-                return res + Text(token.replacingOccurrences(of: "-", with: ""))
-                    .foregroundColor(actuallyIncome ? Color(hex: themeIncome) : Color(hex: themeExpense))
-                    .fontWeight(.bold)
-            } else {
-                return res + Text(token)
-            }
-        }
-    }
-    
-    func tokenize(_ input: String) -> [String] {
-        var tokens: [String] = []
-        var current = ""
-        for char in input {
-            if char == " " || char == "　" || char == "\n" {
-                if !current.isEmpty {
-                    tokens.append(current)
-                    current = ""
-                }
-                tokens.append(String(char))
-            } else {
-                current.append(char)
-            }
-        }
-        if !current.isEmpty { tokens.append(current) }
-        return tokens
-    }
+    var body: some View { let components = tokenize(text); return components.reduce(Text("")) { (res, token) in if token == "\n" { return res + Text("\n") } else if token.contains("¥") { let amountVal = Int(token.replacingOccurrences(of: "¥", with: "")) ?? 0; let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome; return res + Text(token.replacingOccurrences(of: "-", with: "")).foregroundColor(actuallyIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).fontWeight(.bold) } else { return res + Text(token) } } }
+    func tokenize(_ input: String) -> [String] { var tokens: [String] = []; var current = ""; for char in input { if char == " " || char == "　" || char == "\n" { if !current.isEmpty { tokens.append(current); current = "" }; tokens.append(String(char)) } else { current.append(char) } }; if !current.isEmpty { tokens.append(current) }; return tokens }
 }
 
 struct CustomTextEditor: UIViewRepresentable {
-    @Binding var text: String
-    var onInsert: (String) -> Void
-    
-    func makeUIView(context: Context) -> UITextView {
-        let tv = UITextView()
-        tv.font = .preferredFont(forTextStyle: .body)
-        tv.backgroundColor = .clear
-        tv.isScrollEnabled = true
-        tv.isEditable = true
-        tv.delegate = context.coordinator
-        
-        let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
-        toolbar.items = [
-            UIBarButtonItem(title: "#", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertHash)),
-            UIBarButtonItem(title: "¥", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertYen)),
-            UIBarButtonItem(title: "@", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertAt)),
-            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-            UIBarButtonItem(title: "完了", style: .done, target: context.coordinator, action: #selector(context.coordinator.dismissKeyboard))
-        ]
-        tv.inputAccessoryView = toolbar
-        return tv
-    }
-    
-    func updateUIView(_ uiView: UITextView, context: Context) {
-        if uiView.text != text { uiView.text = text }
-    }
-    
+    @Binding var text: String; var onInsert: (String) -> Void
+    func makeUIView(context: Context) -> UITextView { let tv = UITextView(); tv.font = .preferredFont(forTextStyle: .body); tv.backgroundColor = .clear; tv.isScrollEnabled = true; tv.isEditable = true; tv.delegate = context.coordinator; let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44)); toolbar.items = [UIBarButtonItem(title: "#", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertHash)), UIBarButtonItem(title: "¥", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertYen)), UIBarButtonItem(title: "@", style: .plain, target: context.coordinator, action: #selector(context.coordinator.insertAt)), UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil), UIBarButtonItem(title: "完了", style: .done, target: context.coordinator, action: #selector(context.coordinator.dismissKeyboard))]; tv.inputAccessoryView = toolbar; return tv }
+    func updateUIView(_ uiView: UITextView, context: Context) { if uiView.text != text { uiView.text = text } }
     func makeCoordinator() -> Coordinator { Coordinator(self) }
-    
-    class Coordinator: NSObject, UITextViewDelegate {
-        var parent: CustomTextEditor
-        init(_ parent: CustomTextEditor) { self.parent = parent }
-        func textViewDidChange(_ tv: UITextView) { parent.text = tv.text }
-        @objc func insertHash() { parent.onInsert("#") }
-        @objc func insertYen() { parent.onInsert("¥") }
-        @objc func insertAt() { parent.onInsert("@") }
-        @objc func dismissKeyboard() { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
-    }
+    class Coordinator: NSObject, UITextViewDelegate { var parent: CustomTextEditor; init(_ parent: CustomTextEditor) { self.parent = parent }; func textViewDidChange(_ tv: UITextView) { parent.text = tv.text }; @objc func insertHash() { parent.onInsert("#") }; @objc func insertYen() { parent.onInsert("¥") }; @objc func insertAt() { parent.onInsert("@") }; @objc func dismissKeyboard() { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) } }
 }
 
-extension UIView {
-    func findTextView() -> UITextView? {
-        if let tv = self as? UITextView { return tv }
-        for sv in subviews {
-            if let tv = sv.findTextView() { return tv }
-        }
-        return nil
-    }
-}
+extension UIView { func findTextView() -> UITextView? { if let tv = self as? UITextView { return tv }; for sv in subviews { if let tv = sv.findTextView() { return tv } }; return nil } }
