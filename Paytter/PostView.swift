@@ -182,6 +182,16 @@ struct AttachedMediasDragView: View {
     }
 }
 
+// 【新規】動画などから最速でサムネイル画像だけを引き抜くための転送定義
+struct FastThumbnailTransferable: Transferable {
+    let data: Data
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: .image) { data in
+            FastThumbnailTransferable(data: data)
+        }
+    }
+}
+
 struct ImageTransferable: Transferable {
     let url: URL
     static var transferRepresentation: some TransferRepresentation {
@@ -346,29 +356,35 @@ struct PostView: View {
                                     let isVideo = item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) })
                                     
                                     if attachedMedias.count < 4 {
+                                        // 枠だけを即座に追加
                                         attachedMedias.append(PostAttachedMedia(id: tempId, type: isVideo ? .video : .image, localFileName: "", originalFileName: "読み込み中...", thumbnailData: Data(), thumbnailImage: UIImage(), durationText: nil, isLoading: true))
                                     } else {
                                         continue
                                     }
                                     
+                                    // 【最重要】動画をダウンロードする前に、最速でサムネイルだけを引っこ抜いて表示させる
+                                    if let fastThumbData = try? await item.loadTransferable(type: FastThumbnailTransferable.self), let fastThumb = UIImage(data: fastThumbData.data) {
+                                        DispatchQueue.main.async {
+                                            if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
+                                                attachedMedias[idx] = PostAttachedMedia(id: tempId, type: isVideo ? .video : .image, localFileName: "", originalFileName: "読み込み中...", thumbnailData: Data(), thumbnailImage: fastThumb, durationText: nil, isLoading: true)
+                                            }
+                                        }
+                                    }
+                                    
+                                    // その後、重い動画や画像の本体ダウンロードを開始する
                                     if isVideo {
                                         if let movie = try? await item.loadTransferable(type: MovieTransferable.self) {
                                             let tempURL = movie.url
                                             let originalName = tempURL.lastPathComponent
                                             
-                                            let thumb = generateVideoThumbnail(for: tempURL) ?? UIImage()
-                                            DispatchQueue.main.async {
-                                                if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
-                                                    attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .video, localFileName: "", originalFileName: originalName, thumbnailData: Data(), thumbnailImage: thumb, durationText: nil, isLoading: true)
-                                                }
-                                            }
-                                            
                                             if let savedName = MediaManager.shared.saveMedia(from: tempURL),
+                                               let thumb = generateVideoThumbnail(for: tempURL),
                                                let thumbData = compressImage(thumb) {
                                                 let duration = getVideoDuration(url: tempURL)
                                                 
                                                 DispatchQueue.main.async {
                                                     if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
+                                                        // 読み込み完了！isLoadingをfalseにして再生ボタンを出す
                                                         attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration, isLoading: false)
                                                     }
                                                 }
@@ -386,18 +402,13 @@ struct PostView: View {
                                             if let originalData = try? Data(contentsOf: tempURL),
                                                let uiImage = UIImage(data: originalData) {
                                                 
-                                                DispatchQueue.main.async {
-                                                    if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
-                                                        attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: "", originalFileName: originalName, thumbnailData: Data(), thumbnailImage: uiImage, durationText: nil, isLoading: true)
-                                                    }
-                                                }
-                                                
                                                 if let thumbData = compressImage(uiImage),
                                                    let thumbImage = UIImage(data: thumbData),
                                                    let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension) {
                                                     
                                                     DispatchQueue.main.async {
                                                         if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
+                                                            // 画像の読み込み完了
                                                             attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil, isLoading: false)
                                                         }
                                                     }
