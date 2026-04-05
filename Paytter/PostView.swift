@@ -3,11 +3,12 @@ import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
 
+// 画像と動画を統合した「ドラッグ可能メディア」モデル
 struct PostAttachedMedia: Identifiable, Equatable {
     let id: UUID
     let type: MediaType
     let localFileName: String
-    let originalFileName: String // 【追加】オリジナルファイル名を保持するプロパティ
+    let originalFileName: String
     let thumbnailData: Data
     let thumbnailImage: UIImage
     let durationText: String?
@@ -69,6 +70,7 @@ struct AttachedMediaCell: View, Equatable {
     }
 }
 
+// 【重要修正】空の時でもViewが存在し続け、後から追加されたのを検知できるように VStack で囲みました
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
     
@@ -78,7 +80,7 @@ struct AttachedMediasDragView: View {
     @State private var dragLastX: CGFloat?
     
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
             if !localMedias.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -155,29 +157,33 @@ struct AttachedMediasDragView: View {
     }
 }
 
-// 【新規】画像もURL経由で取得し、ファイル名を取得するための構造体
+// 【新規追加】画像ファイルのオリジナル名を安全に抽出するためのTransferable
 struct ImageTransferable: Transferable {
     let url: URL
+    let originalName: String
+    
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .image) { received in
-            let fileName = received.file.lastPathComponent
-            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            let originalName = received.file.lastPathComponent
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + originalName)
             try? FileManager.default.removeItem(at: copy)
             try FileManager.default.copyItem(at: received.file, to: copy)
-            return ImageTransferable(url: copy)
+            return ImageTransferable(url: copy, originalName: originalName)
         }
     }
 }
 
 struct MovieTransferable: Transferable {
     let url: URL
+    let originalName: String
+    
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .movie) { received in
-            let fileName = received.file.lastPathComponent
-            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            let originalName = received.file.lastPathComponent
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + originalName)
             try? FileManager.default.removeItem(at: copy)
             try FileManager.default.copyItem(at: received.file, to: copy)
-            return MovieTransferable(url: copy)
+            return MovieTransferable(url: copy, originalName: originalName)
         }
     }
 }
@@ -316,10 +322,11 @@ struct PostView: View {
                         .onChange(of: selectedItems, perform: { newItems in
                             Task {
                                 for item in newItems {
-                                    if item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) }) {
+                                    if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+                                        // 【変更】動画もオリジナルファイル名を抽出して引き渡す
                                         if let movie = try? await item.loadTransferable(type: MovieTransferable.self) {
                                             let tempURL = movie.url
-                                            let originalName = tempURL.lastPathComponent
+                                            let originalName = movie.originalName
                                             DispatchQueue.main.async {
                                                 if let savedName = MediaManager.shared.saveMedia(from: tempURL),
                                                    let thumb = generateVideoThumbnail(for: tempURL),
@@ -330,16 +337,16 @@ struct PostView: View {
                                             }
                                         }
                                     } else {
-                                        // 【変更】画像の場合も URL を使って取得し、オリジナル名を引き継ぐ
+                                        // 【変更】画像の場合も URL を使って取得し、オリジナル名を抽出する
                                         if let imageFile = try? await item.loadTransferable(type: ImageTransferable.self) {
                                             let tempURL = imageFile.url
-                                            let originalName = tempURL.lastPathComponent
+                                            let originalName = imageFile.originalName
                                             if let originalData = try? Data(contentsOf: tempURL),
                                                let uiImage = UIImage(data: originalData),
                                                let thumbData = compressImage(uiImage),
                                                let thumbImage = UIImage(data: thumbData) {
                                                 
-                                                if let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension) {
+                                                if let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension.isEmpty ? "jpg" : tempURL.pathExtension) {
                                                     DispatchQueue.main.async {
                                                         if attachedMedias.count < 4 {
                                                             attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil))
@@ -482,6 +489,7 @@ struct PostView: View {
                     for url in urls {
                         let isSecured = url.startAccessingSecurityScopedResource()
                         defer { if isSecured { url.stopAccessingSecurityScopedResource() } }
+                        
                         if let savedName = MediaManager.shared.saveMedia(from: url) {
                             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                             let size = attrs?[.size] as? Int64 ?? 0
