@@ -83,22 +83,16 @@ struct TransactionDetailView: View {
                             .font(.title3)
                             .foregroundColor(Color(hex: themeBodyText))
                         
-                        // 【重要】詳細画面のタグもタップで検索画面へ飛ぶように変更！
+                        // 【修正】詳細画面のタグも文字だけのシンプルなデザインに変更し、画面を閉じずに検索に飛ぶようにしました
                         if !currentItem.tags.isEmpty {
                             HStack(spacing: 12) {
                                 ForEach(currentItem.tags, id: \.self) { tag in
                                     Button(action: {
                                         NotificationCenter.default.post(name: NSNotification.Name("SearchTag"), object: tag)
-                                        dismiss() // 詳細画面を閉じて検索タブを見せる
                                     }) {
                                         Text(tag)
                                             .font(.subheadline)
-                                            .fontWeight(.bold)
                                             .foregroundColor(Color(hex: themeMain))
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .background(Color(hex: themeMain).opacity(0.1))
-                                            .cornerRadius(10)
                                     }
                                 }
                             }
