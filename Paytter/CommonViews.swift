@@ -736,33 +736,10 @@ struct TimelineImageGrid: View {
     var body: some View {
         let count = images.count
         Group {
-            if count == 1 {
-                imgView(images[0])
-            } else if count == 2 {
-                HStack(spacing: 4) {
-                    imgView(images[0])
-                    imgView(images[1])
-                }
-            } else if count == 3 {
-                HStack(spacing: 4) {
-                    imgView(images[0])
-                    VStack(spacing: 4) {
-                        imgView(images[1])
-                        imgView(images[2])
-                    }
-                }
-            } else if count >= 4 {
-                VStack(spacing: 4) {
-                    HStack(spacing: 4) {
-                        imgView(images[0])
-                        imgView(images[1])
-                    }
-                    HStack(spacing: 4) {
-                        imgView(images[2])
-                        imgView(images[3])
-                    }
-                }
-            }
+            if count == 1 { imgView(images[0]) }
+            else if count == 2 { HStack(spacing: 4) { imgView(images[0]); imgView(images[1]) } }
+            else if count == 3 { HStack(spacing: 4) { imgView(images[0]); VStack(spacing: 4) { imgView(images[1]); imgView(images[2]) } } }
+            else if count >= 4 { VStack(spacing: 4) { HStack(spacing: 4) { imgView(images[0]); imgView(images[1]) }; HStack(spacing: 4) { imgView(images[2]); imgView(images[3]) } } }
         }
         .frame(height: maxHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
@@ -914,12 +891,23 @@ struct TwitterRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .foregroundColor(Color(hex: themeBodyText))
                     
+                    // 【重要】タイムラインのタグをタップできるようにボタン化！
                     if !item.tags.isEmpty {
                         HStack {
                             ForEach(item.tags, id: \.self) { tag in
-                                Text(tag)
-                                    .font(.caption)
-                                    .foregroundColor(Color(hex: themeMain))
+                                Button(action: {
+                                    NotificationCenter.default.post(name: NSNotification.Name("SearchTag"), object: tag)
+                                }) {
+                                    Text(tag)
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(Color(hex: themeMain))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color(hex: themeMain).opacity(0.1))
+                                        .cornerRadius(8)
+                                }
+                                .buttonStyle(BorderlessButtonStyle()) // タップが全体に広がらないようにする魔法
                             }
                         }
                     }
