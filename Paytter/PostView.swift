@@ -69,7 +69,6 @@ struct AttachedMediaCell: View, Equatable {
     }
 }
 
-// 【完全修正】ローカル変数を廃止し、親データを直接変更することで編集時のバグを解消！
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
     
@@ -94,7 +93,7 @@ struct AttachedMediasDragView: View {
                         .equatable()
                         .gesture(
                             DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                                .onChanged { val in handleDragChange(value: val, item: item) }
+                                .onChanged { val in handleDragChange(val, item: item) } // 【修正】value: を削除しました
                                 .onEnded { _ in handleDragEnded() }
                         )
                     }
