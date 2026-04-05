@@ -69,18 +69,17 @@ struct AttachedMediaCell: View, Equatable {
     }
 }
 
-// 【重要修正】一番滑らかだった「ローカル変数」のアルゴリズムを完全復元し、
-// 指を離した瞬間に親データへ同期させることで編集時にも並べ替えを反映させます
+// 【重要修正】ローカル変数でスムーズに並べ替えつつ、
+// 指を離した瞬間に「親の状態」へ反映させることで同期を実現
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
     
     @State private var localMedias: [PostAttachedMedia] = []
     @State private var draggedMediaId: UUID?
     @State private var dragOffset: CGFloat = 0
-    @State private var dragLastX: CGFloat?
+    @State private var dragTotalJump: CGFloat = 0
     
     var body: some View {
-        // Groupで囲むことで、初期状態（空）から追加された時にも確実にビューを出現させます
         Group {
             if !localMedias.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -92,13 +91,14 @@ struct AttachedMediasDragView: View {
                                 isDragged: isDragged,
                                 dragOffset: isDragged ? dragOffset : 0,
                                 onRemove: {
+                                    // 削除時も即座に同期
                                     localMedias.removeAll(where: { $0.id == item.id })
-                                    attachedMedias = localMedias // 削除時も即座に親へ同期
+                                    attachedMedias = localMedias
                                 }
                             )
                             .equatable()
                             .gesture(
-                                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                DragGesture(coordinateSpace: .global)
                                     .onChanged { val in handleDragChange(val, item: item) }
                                     .onEnded { _ in handleDragEnded() }
                             )
@@ -110,10 +110,11 @@ struct AttachedMediasDragView: View {
             }
         }
         .onAppear {
+            // 親（PostView）から渡されたデータをローカルに取り込む
             localMedias = attachedMedias
         }
         .onChange(of: attachedMedias) { newMeds in
-            // ドラッグ中以外なら、親からのデータ追加を受け入れる（フリッカー防止）
+            // 写真を追加した時など、外部からの変更を反映
             if draggedMediaId == nil {
                 localMedias = newMeds
             }
@@ -123,26 +124,25 @@ struct AttachedMediasDragView: View {
     private func handleDragChange(_ value: DragGesture.Value, item: PostAttachedMedia) {
         if draggedMediaId != item.id {
             draggedMediaId = item.id
-            dragLastX = value.location.x
-            dragOffset = 0
+            dragTotalJump = 0
         }
         
-        guard let lastX = dragLastX else { return }
-        dragOffset += value.location.x - lastX
-        dragLastX = value.location.x
+        dragOffset = value.translation.width - dragTotalJump
         
         if let idx = localMedias.firstIndex(where: { $0.id == item.id }) {
-            let jumpDistance: CGFloat = 88 // 画像幅80 + 余白8
+            let jumpDistance: CGFloat = 88 // 80(width) + 8(spacing)
             let threshold = jumpDistance * 0.5
             
             if dragOffset > threshold && idx < localMedias.count - 1 {
                 withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     localMedias.swapAt(idx, idx + 1)
+                    dragTotalJump += jumpDistance
                     dragOffset -= jumpDistance
                 }
             } else if dragOffset < -threshold && idx > 0 {
                 withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     localMedias.swapAt(idx, idx - 1)
+                    dragTotalJump -= jumpDistance
                     dragOffset += jumpDistance
                 }
             }
@@ -150,13 +150,14 @@ struct AttachedMediasDragView: View {
     }
     
     private func handleDragEnded() {
+        // 並び替えた結果を親データ（PostViewのState）に返す
+        attachedMedias = localMedias
+        
         withAnimation(.interactiveSpring()) {
             draggedMediaId = nil
             dragOffset = 0
-            dragLastX = nil
+            dragTotalJump = 0
         }
-        // 【重要】指を離した瞬間に、ローカルの並び替え結果を親（編集画面など）に同期する
-        attachedMedias = localMedias
     }
 }
 

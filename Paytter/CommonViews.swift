@@ -89,11 +89,10 @@ struct TimelineMediaGrid: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(PlainButtonStyle()) // タップ時の不自然な暗転を防ぐ魔法の1行
     }
 }
 
-// 【新規】保存完了を検知するための専用クラス
 class MediaSaver: NSObject {
     static let shared = MediaSaver()
     var completion: ((Bool, Error?) -> Void)?
@@ -124,17 +123,15 @@ struct MediaFullScreenView: View {
     
     @State private var currentIndex: Int = 0
     @State private var showUI: Bool = true
-    
     @State private var showSaveAlert = false
     @State private var saveAlertMessage = ""
-    
-    // 【新規】保存中のロード画面表示フラグ
     @State private var isSaving: Bool = false
     
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             
+            // 左右スワイプで同じ投稿内のメディアを行き来できる機能
             TabView(selection: $currentIndex) {
                 ForEach(0..<mediaItems.count, id: \.self) { index in
                     SingleMediaZoomView(media: mediaItems[index], showUI: $showUI)
@@ -218,7 +215,6 @@ struct MediaFullScreenView: View {
         UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20
     }
     
-    // 【重要修正】不正なURLによるフォルダ共有を防ぎ、UIImageを確実に共有する
     func shareMedia(media: AttachedMediaItem) {
         var itemToShare: Any?
         
@@ -231,7 +227,7 @@ struct MediaFullScreenView: View {
             if FileManager.default.fileExists(atPath: url.path) {
                 itemToShare = url
             } else if let data = media.thumbnailData, let image = UIImage(data: data) {
-                itemToShare = image // ファイルが存在しない場合は直接UIImageを渡す
+                itemToShare = image
             }
         }
         
@@ -244,13 +240,12 @@ struct MediaFullScreenView: View {
         }
     }
     
-    // 【重要修正】保存処理をバックグラウンド化し、完了を検知してロード画面を閉じる
     func saveMedia(media: AttachedMediaItem) {
-        isSaving = true // ロード画面を表示
+        isSaving = true
         
         let finishSave: (Bool, Error?) -> Void = { success, error in
             DispatchQueue.main.async {
-                isSaving = false // ロード画面を消す
+                isSaving = false
                 if success {
                     saveAlertMessage = media.type == .video ? "動画をカメラロールに保存しました" : "画像をカメラロールに保存しました"
                 } else {
