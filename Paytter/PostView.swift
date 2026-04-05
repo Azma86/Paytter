@@ -69,7 +69,6 @@ struct AttachedMediaCell: View, Equatable {
     }
 }
 
-// 投稿画面の機能には一切手を加えていません
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
     
@@ -325,7 +324,9 @@ struct PostView: View {
                                                    let thumb = generateVideoThumbnail(for: tempURL),
                                                    let thumbData = compressImage(thumb) {
                                                     let duration = getVideoDuration(url: tempURL)
-                                                    attachedMedias.append(PostAttachedMedia(id: UUID(), type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration))
+                                                    if attachedMedias.count < 4 {
+                                                        attachedMedias.append(PostAttachedMedia(id: UUID(), type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration))
+                                                    }
                                                 }
                                             }
                                         }
@@ -476,11 +477,51 @@ struct PostView: View {
                 .preferredColorScheme(isDarkMode ? .dark : .light)
                 .presentationDetents([.height(350)])
             }
+            // 【重要】ファイル選択時に、画像や動画を自動で識別してメディア欄に追加する機能
             .fileImporter(isPresented: $isShowingFileImporter, allowedContentTypes: [UTType.data], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result {
                     for url in urls {
                         let isSecured = url.startAccessingSecurityScopedResource()
                         defer { if isSecured { url.stopAccessingSecurityScopedResource() } }
+                        
+                        let ext = url.pathExtension.lowercased()
+                        let utType = UTType(filenameExtension: ext)
+                        
+                        // 画像かどうかの判定
+                        if let type = utType, type.conforms(to: .image) {
+                            let originalName = url.lastPathComponent
+                            if let originalData = try? Data(contentsOf: url),
+                               let uiImage = UIImage(data: originalData),
+                               let thumbData = compressImage(uiImage),
+                               let thumbImage = UIImage(data: thumbData) {
+                                
+                                if let savedName = MediaManager.shared.saveData(originalData, extension: ext) {
+                                    DispatchQueue.main.async {
+                                        if attachedMedias.count < 4 {
+                                            attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil))
+                                        }
+                                    }
+                                }
+                            }
+                            continue
+                        } 
+                        // 動画かどうかの判定
+                        else if let type = utType, (type.conforms(to: .movie) || type.conforms(to: .video) || type.conforms(to: .audiovisualContent)) {
+                            let originalName = url.lastPathComponent
+                            if let savedName = MediaManager.shared.saveMedia(from: url),
+                               let thumb = generateVideoThumbnail(for: url),
+                               let thumbData = compressImage(thumb) {
+                                let duration = getVideoDuration(url: url)
+                                DispatchQueue.main.async {
+                                    if attachedMedias.count < 4 {
+                                        attachedMedias.append(PostAttachedMedia(id: UUID(), type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration))
+                                    }
+                                }
+                            }
+                            continue
+                        }
+                        
+                        // それ以外のファイル（PDFなど）の処理
                         if let savedName = MediaManager.shared.saveMedia(from: url) {
                             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                             let size = attrs?[.size] as? Int64 ?? 0
@@ -495,7 +536,6 @@ struct PostView: View {
             self.isExcluded = isExcludedInitial
             self.selectedProfileId = profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.first(where: { $0.isVisible })?.id ?? profiles.first?.id
             
-            // 【重要】編集画面の初期データをロードする際、一瞬遅らせることで確実に onChange を発火させる
             let loadedMedias = (initialMedias ?? []).compactMap { item -> PostAttachedMedia? in
                 if let data = item.thumbnailData, let img = UIImage(data: data) {
                     return PostAttachedMedia(id: item.id, type: item.type, localFileName: item.localFileName, originalFileName: item.originalFileName ?? "", thumbnailData: data, thumbnailImage: img, durationText: item.durationText)
@@ -508,7 +548,6 @@ struct PostView: View {
                     self.attachedMedias = loadedMedias
                 }
             }
-            
             self.attachedFiles = initialFiles ?? []
         }
     }
