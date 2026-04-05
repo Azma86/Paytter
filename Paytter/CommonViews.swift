@@ -7,35 +7,37 @@ struct TimelineMediaGrid: View {
     var cornerRadius: CGFloat = 12
     var maxHeight: CGFloat = 160
     
-    @State private var selectedMedia: AttachedMediaItem? = nil
+    // 【変更】タップしたメディアのインデックスを保持してフルスクリーンに渡す
+    @State private var selectedMediaIndex: Int? = nil
+    @State private var isFullScreenPresented: Bool = false
     
     var body: some View {
         let count = mediaItems.count
         Group {
             if count == 1 {
-                mediaView(mediaItems[0])
+                mediaView(mediaItems[0], index: 0)
             } else if count == 2 {
                 HStack(spacing: 4) {
-                    mediaView(mediaItems[0])
-                    mediaView(mediaItems[1])
+                    mediaView(mediaItems[0], index: 0)
+                    mediaView(mediaItems[1], index: 1)
                 }
             } else if count == 3 {
                 HStack(spacing: 4) {
-                    mediaView(mediaItems[0])
+                    mediaView(mediaItems[0], index: 0)
                     VStack(spacing: 4) {
-                        mediaView(mediaItems[1])
-                        mediaView(mediaItems[2])
+                        mediaView(mediaItems[1], index: 1)
+                        mediaView(mediaItems[2], index: 2)
                     }
                 }
             } else if count >= 4 {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
-                        mediaView(mediaItems[0])
-                        mediaView(mediaItems[1])
+                        mediaView(mediaItems[0], index: 0)
+                        mediaView(mediaItems[1], index: 1)
                     }
                     HStack(spacing: 4) {
-                        mediaView(mediaItems[2])
-                        mediaView(mediaItems[3])
+                        mediaView(mediaItems[2], index: 2)
+                        mediaView(mediaItems[3], index: 3)
                     }
                 }
             }
@@ -43,14 +45,19 @@ struct TimelineMediaGrid: View {
         .frame(height: maxHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color.gray.opacity(0.2), lineWidth: 1))
-        .fullScreenCover(item: $selectedMedia) { media in
-            MediaFullScreenView(media: media)
+        .fullScreenCover(isPresented: $isFullScreenPresented) {
+            // 【新規】全メディアの配列と、開始インデックスを渡す
+            MediaFullScreenView(
+                mediaItems: mediaItems,
+                initialIndex: selectedMediaIndex ?? 0
+            )
         }
     }
     
-    @ViewBuilder func mediaView(_ item: AttachedMediaItem) -> some View {
+    @ViewBuilder func mediaView(_ item: AttachedMediaItem, index: Int) -> some View {
         Button(action: {
-            selectedMedia = item
+            selectedMediaIndex = index
+            isFullScreenPresented = true
         }) {
             ZStack(alignment: .bottomLeading) {
                 if let data = item.thumbnailData, let uiImage = ImageCache.shared.image(for: data) {
@@ -88,46 +95,170 @@ struct TimelineMediaGrid: View {
     }
 }
 
-struct CustomVideoPlayerLayer: UIViewRepresentable {
-    var player: AVPlayer
+// 【新規】フルスクリーン時にスワイプで切り替えられるようにするための親ビュー
+struct MediaFullScreenView: View {
+    let mediaItems: [AttachedMediaItem]
+    let initialIndex: Int
+    @Environment(\.presentationMode) var presentationMode
     
-    func makeUIView(context: Context) -> PlayerView {
-        let view = PlayerView()
-        view.player = player
-        view.playerLayer.videoGravity = .resizeAspect
-        return view
+    @State private var currentIndex: Int = 0
+    @State private var showUI: Bool = true
+    
+    @State private var showSaveAlert = false
+    @State private var saveAlertMessage = ""
+    
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.black.ignoresSafeArea()
+            
+            // TabViewを利用したスワイプでのページング機能
+            TabView(selection: $currentIndex) {
+                ForEach(0..<mediaItems.count, id: \.self) { index in
+                    SingleMediaZoomView(media: mediaItems[index], showUI: $showUI)
+                        .tag(index)
+                }
+            }
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+            .ignoresSafeArea()
+            
+            if showUI && mediaItems.indices.contains(currentIndex) {
+                let currentMedia = mediaItems[currentIndex]
+                HStack(spacing: 16) {
+                    Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                        Image(systemName: "chevron.left")
+                            .font(.title3)
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .background(Color.black.opacity(0.4).clipShape(Circle()))
+                    }
+                    
+                    let displayName = currentMedia.originalFileName ?? (currentMedia.localFileName.isEmpty ? "添付画像" : currentMedia.localFileName)
+                    Text(displayName)
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    Button(action: { shareMedia(media: currentMedia) }) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.title3)
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .background(Color.black.opacity(0.4).clipShape(Circle()))
+                    }
+                    
+                    Button(action: { saveMedia(media: currentMedia) }) {
+                        Image(systemName: "arrow.down.to.line")
+                            .font(.title3)
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .background(Color.black.opacity(0.4).clipShape(Circle()))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, safeAreaTop)
+                .padding(.bottom, 16)
+                .background(
+                    currentMedia.type == .video ?
+                    LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.7), Color.clear]), startPoint: .top, endPoint: .bottom) : nil
+                )
+                .ignoresSafeArea(edges: .top)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .onAppear {
+            currentIndex = initialIndex
+        }
+        .alert(isPresented: $showSaveAlert) {
+            Alert(title: Text("保存"), message: Text(saveAlertMessage), dismissButton: .default(Text("OK")))
+        }
     }
     
-    func updateUIView(_ uiView: PlayerView, context: Context) {
-        if uiView.player != player {
-            uiView.player = player
+    var safeAreaTop: CGFloat {
+        UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20
+    }
+    
+    // 【重要修正】不正なURL共有による謎のDocumentsフォルダ共有を防ぐ
+    func shareMedia(media: AttachedMediaItem) {
+        var itemToShare: Any?
+        
+        if media.localFileName.isEmpty {
+            if let data = media.thumbnailData, let image = UIImage(data: data) {
+                itemToShare = image
+            }
+        } else {
+            let url = MediaManager.shared.getMediaURL(fileName: media.localFileName)
+            if FileManager.default.fileExists(atPath: url.path) {
+                itemToShare = url
+            } else if let data = media.thumbnailData, let image = UIImage(data: data) {
+                itemToShare = image // ファイルが存在しない場合はUIImageを直接共有
+            }
+        }
+        
+        guard let shareItem = itemToShare else { return }
+        
+        let av = UIActivityViewController(activityItems: [shareItem], applicationActivities: nil)
+        if let topVC = UIApplication.shared.topViewController {
+            av.popoverPresentationController?.sourceView = topVC.view
+            topVC.present(av, animated: true)
+        }
+    }
+    
+    // 【重要修正】バックグラウンドスレッドで保存処理を行い、フリーズを防止
+    func saveMedia(media: AttachedMediaItem) {
+        let fileName = media.localFileName
+        let type = media.type
+        let thumbData = media.thumbnailData
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            var saved = false
+            
+            if fileName.isEmpty {
+                if let data = thumbData, let image = UIImage(data: data) {
+                    DispatchQueue.main.async { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil) }
+                    saved = true
+                }
+            } else {
+                let url = MediaManager.shared.getMediaURL(fileName: fileName)
+                if type == .image {
+                    if let image = UIImage(contentsOfFile: url.path) {
+                        DispatchQueue.main.async { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil) }
+                        saved = true
+                    } else if let data = thumbData, let image = UIImage(data: data) {
+                        DispatchQueue.main.async { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil) }
+                        saved = true
+                    }
+                } else if type == .video {
+                    if UIVideoAtPathIsCompatibleWithSavedPhotosAlbum(url.path) {
+                        DispatchQueue.main.async { UISaveVideoAtPathToSavedPhotosAlbum(url.path, nil, nil, nil) }
+                        saved = true
+                    }
+                }
+            }
+            
+            DispatchQueue.main.async {
+                if saved {
+                    saveAlertMessage = type == .video ? "動画をカメラロールに保存しました" : "画像をカメラロールに保存しました"
+                } else {
+                    saveAlertMessage = "保存に失敗しました。アクセス権限を確認してください。"
+                }
+                showSaveAlert = true
+            }
         }
     }
 }
 
-class PlayerView: UIView {
-    var player: AVPlayer? {
-        get { playerLayer.player }
-        set { playerLayer.player = newValue }
-    }
-    var playerLayer: AVPlayerLayer {
-        return layer as! AVPlayerLayer
-    }
-    override static var layerClass: AnyClass {
-        return AVPlayerLayer.self
-    }
-}
-
-struct MediaFullScreenView: View {
+// 【新規】1つ1つのメディアの拡大縮小と動画再生を担当する専用ビュー
+struct SingleMediaZoomView: View {
     let media: AttachedMediaItem
-    @Environment(\.presentationMode) var presentationMode
+    @Binding var showUI: Bool
     
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     
-    @State private var showUI: Bool = true
     @State private var loadedImage: UIImage? = nil
     
     @State private var player: AVPlayer?
@@ -138,14 +269,9 @@ struct MediaFullScreenView: View {
     @State private var isSeeking: Bool = false
     @State private var timeObserver: Any?
     
-    @State private var showSaveAlert = false
-    @State private var saveAlertMessage = ""
-    
     var body: some View {
-        ZStack(alignment: .top) {
-            Color.black.ignoresSafeArea()
-            
-            GeometryReader { proxy in
+        GeometryReader { proxy in
+            ZStack {
                 if media.type == .video {
                     if let player = player {
                         CustomVideoPlayerLayer(player: player)
@@ -213,107 +339,60 @@ struct MediaFullScreenView: View {
                         ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-            }
-            .clipped()
-            
-            if showUI {
-                HStack(spacing: 16) {
-                    Button(action: { presentationMode.wrappedValue.dismiss() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.title3)
-                            .foregroundColor(.white)
-                            .padding(10)
-                            .background(Color.black.opacity(0.4).clipShape(Circle()))
-                    }
-                    
-                    let displayName = media.originalFileName ?? (media.localFileName.isEmpty ? "添付画像" : media.localFileName)
-                    Text(displayName)
-                        .font(.subheadline)
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    Button(action: shareMedia) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.title3)
-                            .foregroundColor(.white)
-                            .padding(10)
-                            .background(Color.black.opacity(0.4).clipShape(Circle()))
-                    }
-                    
-                    Button(action: saveMedia) {
-                        Image(systemName: "arrow.down.to.line")
-                            .font(.title3)
-                            .foregroundColor(.white)
-                            .padding(10)
-                            .background(Color.black.opacity(0.4).clipShape(Circle()))
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, safeAreaTop)
-                .padding(.bottom, 16)
-                .background(
-                    media.type == .video ?
-                    LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.7), Color.clear]), startPoint: .top, endPoint: .bottom) : nil
-                )
-                .ignoresSafeArea(edges: .top)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            
-            if showUI && media.type == .video {
-                VStack {
-                    Spacer()
-                    
-                    HStack(spacing: 16) {
-                        Button(action: {
-                            if isPlaying {
-                                player?.pause()
-                            } else {
-                                if currentTime >= duration - 0.1 {
-                                    player?.seek(to: .zero)
-                                }
-                                player?.play()
-                            }
-                            isPlaying.toggle()
-                        }) {
-                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .font(.title2)
-                                .foregroundColor(.white)
-                                .frame(width: 24, height: 24)
-                        }
+                
+                // 動画用カスタムボトムメニュー
+                if showUI && media.type == .video {
+                    VStack {
+                        Spacer()
                         
-                        Slider(value: $currentTime, in: 0...(duration > 0 ? duration : 1)) { editing in
-                            isEditingSlider = editing
-                            if !editing {
-                                isSeeking = true
-                                player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600), completionHandler: { _ in
-                                    isSeeking = false
-                                    if isPlaying {
-                                        player?.play()
+                        HStack(alignment: .center, spacing: 12) {
+                            Button(action: {
+                                if isPlaying {
+                                    player?.pause()
+                                } else {
+                                    if currentTime >= duration - 0.1 {
+                                        player?.seek(to: .zero)
                                     }
-                                })
-                            } else {
-                                player?.pause()
+                                    player?.play()
+                                }
+                                isPlaying.toggle()
+                            }) {
+                                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.white)
+                                    .frame(width: 32, height: 32)
                             }
+                            
+                            Slider(value: $currentTime, in: 0...(duration > 0 ? duration : 1)) { editing in
+                                isEditingSlider = editing
+                                if !editing {
+                                    isSeeking = true
+                                    player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600), completionHandler: { _ in
+                                        isSeeking = false
+                                        if isPlaying {
+                                            player?.play()
+                                        }
+                                    })
+                                } else {
+                                    player?.pause()
+                                }
+                            }
+                            .accentColor(.white)
+                            
+                            Text("-" + formatTime(duration - currentTime))
+                                .font(.caption2)
+                                .foregroundColor(.white)
+                                .frame(width: 40, alignment: .trailing)
                         }
-                        .accentColor(.white)
-                        
-                        Text("-" + formatTime(duration - currentTime))
-                            .font(.caption2)
-                            .foregroundColor(.white)
-                            .monospacedDigit()
-                            .frame(width: 40, alignment: .trailing)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 24)
+                        .padding(.bottom, safeAreaBottom > 0 ? safeAreaBottom : 16)
+                        .background(
+                            LinearGradient(gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.8)]), startPoint: .top, endPoint: .bottom)
+                        )
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 24)
-                    .padding(.bottom, safeAreaBottom > 0 ? safeAreaBottom : 16)
-                    .background(
-                        LinearGradient(gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.7)]), startPoint: .top, endPoint: .bottom)
-                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                .ignoresSafeArea(edges: .bottom)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .onAppear {
@@ -338,9 +417,6 @@ struct MediaFullScreenView: View {
                 player?.removeTimeObserver(observer)
             }
             player?.pause()
-        }
-        .alert(isPresented: $showSaveAlert) {
-            Alert(title: Text("保存"), message: Text(saveAlertMessage), dismissButton: .default(Text("OK")))
         }
     }
     
@@ -367,7 +443,6 @@ struct MediaFullScreenView: View {
                 }
             }
         }
-        
         newPlayer.play()
         self.isPlaying = true
     }
@@ -380,81 +455,38 @@ struct MediaFullScreenView: View {
         return String(format: "%d:%02d", m, s)
     }
     
-    var safeAreaTop: CGFloat {
-        UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20
-    }
-    
     var safeAreaBottom: CGFloat {
         UIApplication.shared.windows.first?.safeAreaInsets.bottom ?? 0
     }
+}
+
+struct CustomVideoPlayerLayer: UIViewRepresentable {
+    var player: AVPlayer
     
-    // 【重要修正】古い画像でファイル名が無いときは直接UIImageを共有するようフォールバック
-    func shareMedia() {
-        var itemToShare: Any?
-        
-        if media.localFileName.isEmpty {
-            if let data = media.thumbnailData, let image = UIImage(data: data) {
-                itemToShare = image
-            }
-        } else {
-            let url = MediaManager.shared.getMediaURL(fileName: media.localFileName)
-            if FileManager.default.fileExists(atPath: url.path) {
-                itemToShare = url
-            } else if let data = media.thumbnailData, let image = UIImage(data: data) {
-                itemToShare = image
-            }
-        }
-        
-        guard let shareItem = itemToShare else { return }
-        
-        let av = UIActivityViewController(activityItems: [shareItem], applicationActivities: nil)
-        if let topVC = UIApplication.shared.topViewController {
-            av.popoverPresentationController?.sourceView = topVC.view
-            topVC.present(av, animated: true)
-        }
+    func makeUIView(context: Context) -> PlayerView {
+        let view = PlayerView()
+        view.player = player
+        view.playerLayer.videoGravity = .resizeAspect
+        return view
     }
     
-    // 【重要修正】メインスレッドをブロックしないようバックグラウンドで保存処理を実行
-    func saveMedia() {
-        let fileName = media.localFileName
-        let type = media.type
-        let thumbData = media.thumbnailData
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            var saved = false
-            
-            if fileName.isEmpty {
-                if let data = thumbData, let image = UIImage(data: data) {
-                    UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-                    saved = true
-                }
-            } else {
-                let url = MediaManager.shared.getMediaURL(fileName: fileName)
-                if type == .image {
-                    if let image = UIImage(contentsOfFile: url.path) {
-                        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-                        saved = true
-                    } else if let data = thumbData, let image = UIImage(data: data) {
-                        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-                        saved = true
-                    }
-                } else if type == .video {
-                    if UIVideoAtPathIsCompatibleWithSavedPhotosAlbum(url.path) {
-                        UISaveVideoAtPathToSavedPhotosAlbum(url.path, nil, nil, nil)
-                        saved = true
-                    }
-                }
-            }
-            
-            DispatchQueue.main.async {
-                if saved {
-                    saveAlertMessage = type == .video ? "動画をカメラロールに保存しました" : "画像をカメラロールに保存しました"
-                } else {
-                    saveAlertMessage = "保存に失敗しました。アクセス権限を確認してください。"
-                }
-                showSaveAlert = true
-            }
+    func updateUIView(_ uiView: PlayerView, context: Context) {
+        if uiView.player != player {
+            uiView.player = player
         }
+    }
+}
+
+class PlayerView: UIView {
+    var player: AVPlayer? {
+        get { playerLayer.player }
+        set { playerLayer.player = newValue }
+    }
+    var playerLayer: AVPlayerLayer {
+        return layer as! AVPlayerLayer
+    }
+    override static var layerClass: AnyClass {
+        return AVPlayerLayer.self
     }
 }
 
