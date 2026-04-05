@@ -89,10 +89,12 @@ struct TimelineMediaGrid: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(PlainButtonStyle()) // タップ時の不自然な暗転を防ぐ魔法の1行
+        // 【重要】ボタンのデフォルトエフェクト（暗転）を無効化
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
+// 【新規】画像を正しく保存するためのセーバークラス
 class MediaSaver: NSObject {
     static let shared = MediaSaver()
     var completion: ((Bool, Error?) -> Void)?
@@ -125,6 +127,8 @@ struct MediaFullScreenView: View {
     @State private var showUI: Bool = true
     @State private var showSaveAlert = false
     @State private var saveAlertMessage = ""
+    
+    // 【新規】保存中のロード画面表示フラグ
     @State private var isSaving: Bool = false
     
     var body: some View {
@@ -138,7 +142,7 @@ struct MediaFullScreenView: View {
                         .tag(index)
                 }
             }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
             .ignoresSafeArea()
             
             if showUI && mediaItems.indices.contains(currentIndex) {
@@ -215,6 +219,7 @@ struct MediaFullScreenView: View {
         UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20
     }
     
+    // 【重要修正】不正なURL共有による謎のDocumentsフォルダ共有を防ぐ
     func shareMedia(media: AttachedMediaItem) {
         var itemToShare: Any?
         
@@ -227,7 +232,7 @@ struct MediaFullScreenView: View {
             if FileManager.default.fileExists(atPath: url.path) {
                 itemToShare = url
             } else if let data = media.thumbnailData, let image = UIImage(data: data) {
-                itemToShare = image
+                itemToShare = image // ファイルが存在しない場合はUIImageを直接共有
             }
         }
         
@@ -240,12 +245,13 @@ struct MediaFullScreenView: View {
         }
     }
     
+    // 【重要修正】バックグラウンドスレッドで保存処理を行い、フリーズを防止
     func saveMedia(media: AttachedMediaItem) {
-        isSaving = true
+        isSaving = true // ロード画面を表示
         
         let finishSave: (Bool, Error?) -> Void = { success, error in
             DispatchQueue.main.async {
-                isSaving = false
+                isSaving = false // ロード画面を消す
                 if success {
                     saveAlertMessage = media.type == .video ? "動画をカメラロールに保存しました" : "画像をカメラロールに保存しました"
                 } else {
@@ -370,6 +376,7 @@ struct SingleMediaZoomView: View {
                     }
                 }
                 
+                // 動画用カスタムボトムメニュー
                 if showUI && media.type == .video {
                     VStack {
                         Spacer()
