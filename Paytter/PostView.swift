@@ -3,73 +3,83 @@ import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-// 【変更】画像と動画を統合した「ドラッグ可能メディア」モデル
+// 画像と動画を統合した「ドラッグ可能メディア」モデル
 struct PostAttachedMedia: Identifiable, Equatable {
     let id: UUID
     let type: MediaType
     let localFileName: String
     let thumbnailData: Data
     let thumbnailImage: UIImage
-    let durationText: String? // 動画用の長さ
+    let durationText: String?
     
     static func == (lhs: PostAttachedMedia, rhs: PostAttachedMedia) -> Bool { return lhs.id == rhs.id }
 }
 
 struct AttachedMediaCell: View, Equatable {
     let media: PostAttachedMedia; let isDragged: Bool; let dragOffset: CGFloat; let onRemove: () -> Void
-    
-    // 【修正】ここが古い名前のままになっていたエラーの原因です。正しく AttachedMediaCell に修正しました！
-    static func == (lhs: AttachedMediaCell, rhs: AttachedMediaCell) -> Bool { 
-        lhs.media.id == rhs.media.id && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset 
-    }
+    static func == (lhs: AttachedMediaCell, rhs: AttachedMediaCell) -> Bool { lhs.media.id == rhs.media.id && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset }
     
     var body: some View {
         ZStack(alignment: .topTrailing) {
             ZStack(alignment: .bottomLeading) {
                 Image(uiImage: media.thumbnailImage).resizable().scaledToFill().frame(width: 80, height: 80).clipShape(RoundedRectangle(cornerRadius: 12))
-                // 動画の場合は再生マークと長さを表示
                 if media.type == .video {
                     Color.black.opacity(0.2).clipShape(RoundedRectangle(cornerRadius: 12))
                     Image(systemName: "play.circle.fill").foregroundColor(.white.opacity(0.8)).frame(maxWidth: .infinity, maxHeight: .infinity)
                     if let dur = media.durationText { Text(dur).font(.caption2).bold().foregroundColor(.white).padding(4).background(Color.black.opacity(0.6)).cornerRadius(4).padding(4) }
                 }
             }.frame(width: 80, height: 80)
-            
             Button(action: onRemove) { Image(systemName: "xmark.circle.fill").foregroundColor(.white).background(Circle().fill(Color.black.opacity(0.6))) }.padding(4)
-        }.offset(x: isDragged ? dragOffset : 0).zIndex(isDragged ? 100 : 0)
+        }.offset(x: isDragged ? dragOffset : 0, y: 0).zIndex(isDragged ? 100 : 0)
     }
 }
 
-// 【変更】画像も動画も混ざって並び替えられるドラッグビュー
+// 【重要修正】Groupで囲むことで、初期状態が空でも画像追加を検知できるように修正しました
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
     @State private var localMedias: [PostAttachedMedia] = []
     @State private var draggedMediaId: UUID?
     @State private var dragOffset: CGFloat = 0
-    @State private var dragTotalJump: CGFloat = 0
+    @State private var dragLastX: CGFloat? // お財布と同じ相対座標アルゴリズムに変更
     
     var body: some View {
-        if !localMedias.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(localMedias) { item in
-                        let isDragged = draggedMediaId == item.id
-                        AttachedMediaCell(media: item, isDragged: isDragged, dragOffset: isDragged ? dragOffset : 0, onRemove: { localMedias.removeAll(where: { $0.id == item.id }); attachedMedias = localMedias })
-                        .equatable().gesture(DragGesture(coordinateSpace: .global).onChanged { val in handleDragChange(val, item: item) }.onEnded { _ in handleDragEnded() })
-                    }
-                }.padding(.horizontal)
-            }.padding(.bottom, 8).onAppear { localMedias = attachedMedias }.onChange(of: attachedMedias) { newMeds in if draggedMediaId == nil { localMedias = newMeds } }
+        Group {
+            if !localMedias.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(localMedias) { item in
+                            let isDragged = draggedMediaId == item.id
+                            AttachedMediaCell(media: item, isDragged: isDragged, dragOffset: isDragged ? dragOffset : 0, onRemove: { localMedias.removeAll(where: { $0.id == item.id }); attachedMedias = localMedias })
+                            .equatable().gesture(DragGesture(minimumDistance: 0).onChanged { val in handleDragChange(val, item: item) }.onEnded { _ in handleDragEnded() })
+                        }
+                    }.padding(.horizontal)
+                }.padding(.bottom, 8)
+            }
         }
+        .onAppear { localMedias = attachedMedias }
+        .onChange(of: attachedMedias) { newMeds in if draggedMediaId == nil { localMedias = newMeds } }
     }
+    
+    // お財布一覧と同じ、無駄のない最速の並べ替え処理
     private func handleDragChange(_ value: DragGesture.Value, item: PostAttachedMedia) {
-        if draggedMediaId != item.id { draggedMediaId = item.id; dragTotalJump = 0 }
-        dragOffset = value.translation.width - dragTotalJump
+        if draggedMediaId != item.id { draggedMediaId = item.id; dragLastX = value.location.x; dragOffset = 0 }
+        guard let lastX = dragLastX else { return }
+        dragOffset += value.location.x - lastX
+        dragLastX = value.location.x
+        
         if let idx = localMedias.firstIndex(where: { $0.id == item.id }) {
             let jumpDistance: CGFloat = 88; let threshold = jumpDistance * 0.5
-            if dragOffset > threshold && idx < localMedias.count - 1 { withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) { localMedias.swapAt(idx, idx + 1); dragTotalJump += jumpDistance; dragOffset -= jumpDistance } } else if dragOffset < -threshold && idx > 0 { withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) { localMedias.swapAt(idx, idx - 1); dragTotalJump -= jumpDistance; dragOffset += jumpDistance } }
+            if dragOffset > threshold && idx < localMedias.count - 1 {
+                withAnimation(.easeInOut(duration: 0.2)) { localMedias.swapAt(idx, idx + 1); dragOffset -= jumpDistance }
+            } else if dragOffset < -threshold && idx > 0 {
+                withAnimation(.easeInOut(duration: 0.2)) { localMedias.swapAt(idx, idx - 1); dragOffset += jumpDistance }
+            }
         }
     }
-    private func handleDragEnded() { withAnimation(.interactiveSpring()) { draggedMediaId = nil; dragOffset = 0; dragTotalJump = 0 }; attachedMedias = localMedias }
+    private func handleDragEnded() {
+        withAnimation(.easeInOut(duration: 0.2)) { draggedMediaId = nil; dragOffset = 0; dragLastX = nil }
+        attachedMedias = localMedias
+    }
 }
 
 struct MovieTransferable: Transferable {
@@ -102,7 +112,7 @@ struct PostView: View {
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var isShowingFileImporter = false
     
-    @State private var attachedMedias: [PostAttachedMedia] = [] // 画像も動画もここに入ります
+    @State private var attachedMedias: [PostAttachedMedia] = []
     @State private var attachedFiles: [AttachedFile] = []
     
     var body: some View {
@@ -131,14 +141,13 @@ struct PostView: View {
                                             let tempURL = movie.url
                                             DispatchQueue.main.async {
                                                 if let savedName = MediaManager.shared.saveMedia(from: tempURL), let thumb = generateVideoThumbnail(for: tempURL), let thumbData = compressImage(thumb) {
-                                                    let duration = getVideoDuration(url: tempURL) // 【追加】動画の長さを取得
+                                                    let duration = getVideoDuration(url: tempURL)
                                                     attachedMedias.append(PostAttachedMedia(id: UUID(), type: .video, localFileName: savedName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration))
                                                 }
                                             }
                                         }
                                     } else {
                                         if let data = try? await item.loadTransferable(type: Data.self), let uiImage = UIImage(data: data), let thumbData = compressImage(uiImage), let thumbImage = UIImage(data: thumbData) {
-                                            // オリジナル画像を保存する
                                             if let savedName = MediaManager.shared.saveData(data, extension: "jpg") {
                                                 DispatchQueue.main.async { if attachedMedias.count < 4 { attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil)) } }
                                             }
@@ -172,7 +181,6 @@ struct PostView: View {
         }.onAppear { 
             self.postDate = initialDate; self.isExcluded = isExcludedInitial
             self.selectedProfileId = profiles.filter { !($0.isPrivate ?? false) || lockManager.isUnlocked }.first(where: { $0.isVisible })?.id ?? profiles.first?.id
-            // 初期データを設定
             self.attachedMedias = (initialMedias ?? []).compactMap { item in
                 if let data = item.thumbnailData, let img = UIImage(data: data) {
                     return PostAttachedMedia(id: item.id, type: item.type, localFileName: item.localFileName, thumbnailData: data, thumbnailImage: img, durationText: item.durationText)
@@ -183,15 +191,7 @@ struct PostView: View {
         }
     }
     
-    func getVideoDuration(url: URL) -> String? {
-        let asset = AVAsset(url: url)
-        let seconds = CMTimeGetSeconds(asset.duration)
-        guard !seconds.isNaN && !seconds.isInfinite else { return nil }
-        let min = Int(seconds) / 60
-        let sec = Int(seconds) % 60
-        return String(format: "%d:%02d", min, sec)
-    }
-    
+    func getVideoDuration(url: URL) -> String? { let asset = AVAsset(url: url); let seconds = CMTimeGetSeconds(asset.duration); guard !seconds.isNaN && !seconds.isInfinite else { return nil }; let min = Int(seconds) / 60; let sec = Int(seconds) % 60; return String(format: "%d:%02d", min, sec) }
     func generateVideoThumbnail(for url: URL) -> UIImage? { let asset = AVAsset(url: url); let generator = AVAssetImageGenerator(asset: asset); generator.appliesPreferredTrackTransform = true; do { let cgImage = try generator.copyCGImage(at: .zero, actualTime: nil); return UIImage(cgImage: cgImage) } catch { return nil } }
     func compressImage(_ image: UIImage) -> Data? { let maxSize: CGFloat = 800; var targetSize = image.size; if targetSize.width > maxSize || targetSize.height > maxSize { let ratio = min(maxSize / targetSize.width, maxSize / targetSize.height); targetSize = CGSize(width: targetSize.width * ratio, height: targetSize.height * ratio) }; let format = UIGraphicsImageRendererFormat(); format.scale = 1; let renderer = UIGraphicsImageRenderer(size: targetSize, format: format); let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: targetSize)) }; return resized.jpegData(compressionQuality: 0.5) }
     func formatDate(_ date: Date) -> String { let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = "yyyy年MM月dd日 HH:mm"; return f.string(from: date) }
