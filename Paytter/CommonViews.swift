@@ -7,36 +7,36 @@ struct TimelineMediaGrid: View {
     var cornerRadius: CGFloat = 12
     var maxHeight: CGFloat = 160
     
-    @State private var selectedMediaIndex: Int? = nil
-    @State private var isFullScreenPresented: Bool = false
+    // 【重要修正】インデックス番号ではなく、タップされた「メディアそのもの」を保存して渡す
+    @State private var selectedMedia: AttachedMediaItem? = nil
     
     var body: some View {
         let count = mediaItems.count
         Group {
             if count == 1 {
-                mediaView(mediaItems[0], index: 0)
+                mediaView(mediaItems[0])
             } else if count == 2 {
                 HStack(spacing: 4) {
-                    mediaView(mediaItems[0], index: 0)
-                    mediaView(mediaItems[1], index: 1)
+                    mediaView(mediaItems[0])
+                    mediaView(mediaItems[1])
                 }
             } else if count == 3 {
                 HStack(spacing: 4) {
-                    mediaView(mediaItems[0], index: 0)
+                    mediaView(mediaItems[0])
                     VStack(spacing: 4) {
-                        mediaView(mediaItems[1], index: 1)
-                        mediaView(mediaItems[2], index: 2)
+                        mediaView(mediaItems[1])
+                        mediaView(mediaItems[2])
                     }
                 }
             } else if count >= 4 {
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
-                        mediaView(mediaItems[0], index: 0)
-                        mediaView(mediaItems[1], index: 1)
+                        mediaView(mediaItems[0])
+                        mediaView(mediaItems[1])
                     }
                     HStack(spacing: 4) {
-                        mediaView(mediaItems[2], index: 2)
-                        mediaView(mediaItems[3], index: 3)
+                        mediaView(mediaItems[2])
+                        mediaView(mediaItems[3])
                     }
                 }
             }
@@ -44,18 +44,19 @@ struct TimelineMediaGrid: View {
         .frame(height: maxHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color.gray.opacity(0.2), lineWidth: 1))
-        .fullScreenCover(isPresented: $isFullScreenPresented) {
+        // 【重要修正】タップされたメディアを受け取ってからインデックスを計算するため、絶対にズレなくなります
+        .fullScreenCover(item: $selectedMedia) { media in
+            let startIndex = mediaItems.firstIndex(where: { $0.id == media.id }) ?? 0
             MediaFullScreenView(
                 mediaItems: mediaItems,
-                initialIndex: selectedMediaIndex ?? 0
+                initialIndex: startIndex
             )
         }
     }
     
-    @ViewBuilder func mediaView(_ item: AttachedMediaItem, index: Int) -> some View {
+    @ViewBuilder func mediaView(_ item: AttachedMediaItem) -> some View {
         Button(action: {
-            selectedMediaIndex = index
-            isFullScreenPresented = true
+            selectedMedia = item
         }) {
             ZStack(alignment: .bottomLeading) {
                 if let data = item.thumbnailData, let uiImage = ImageCache.shared.image(for: data) {
@@ -89,12 +90,10 @@ struct TimelineMediaGrid: View {
             }
             .contentShape(Rectangle())
         }
-        // 【重要】ボタンのデフォルトエフェクト（暗転）を無効化
         .buttonStyle(PlainButtonStyle())
     }
 }
 
-// 【新規】画像を正しく保存するためのセーバークラス
 class MediaSaver: NSObject {
     static let shared = MediaSaver()
     var completion: ((Bool, Error?) -> Void)?
@@ -127,22 +126,19 @@ struct MediaFullScreenView: View {
     @State private var showUI: Bool = true
     @State private var showSaveAlert = false
     @State private var saveAlertMessage = ""
-    
-    // 【新規】保存中のロード画面表示フラグ
     @State private var isSaving: Bool = false
     
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             
-            // 左右スワイプで同じ投稿内のメディアを行き来できる機能
             TabView(selection: $currentIndex) {
                 ForEach(0..<mediaItems.count, id: \.self) { index in
                     SingleMediaZoomView(media: mediaItems[index], showUI: $showUI)
                         .tag(index)
                 }
             }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
             .ignoresSafeArea()
             
             if showUI && mediaItems.indices.contains(currentIndex) {
@@ -191,7 +187,6 @@ struct MediaFullScreenView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
             
-            // 【新規】保存中のロード画面
             if isSaving {
                 ZStack {
                     Color.black.opacity(0.4).ignoresSafeArea()
@@ -219,7 +214,6 @@ struct MediaFullScreenView: View {
         UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20
     }
     
-    // 【重要修正】不正なURL共有による謎のDocumentsフォルダ共有を防ぐ
     func shareMedia(media: AttachedMediaItem) {
         var itemToShare: Any?
         
@@ -232,7 +226,7 @@ struct MediaFullScreenView: View {
             if FileManager.default.fileExists(atPath: url.path) {
                 itemToShare = url
             } else if let data = media.thumbnailData, let image = UIImage(data: data) {
-                itemToShare = image // ファイルが存在しない場合はUIImageを直接共有
+                itemToShare = image
             }
         }
         
@@ -245,13 +239,12 @@ struct MediaFullScreenView: View {
         }
     }
     
-    // 【重要修正】バックグラウンドスレッドで保存処理を行い、フリーズを防止
     func saveMedia(media: AttachedMediaItem) {
-        isSaving = true // ロード画面を表示
+        isSaving = true
         
         let finishSave: (Bool, Error?) -> Void = { success, error in
             DispatchQueue.main.async {
-                isSaving = false // ロード画面を消す
+                isSaving = false
                 if success {
                     saveAlertMessage = media.type == .video ? "動画をカメラロールに保存しました" : "画像をカメラロールに保存しました"
                 } else {
@@ -376,7 +369,6 @@ struct SingleMediaZoomView: View {
                     }
                 }
                 
-                // 動画用カスタムボトムメニュー
                 if showUI && media.type == .video {
                     VStack {
                         Spacer()
