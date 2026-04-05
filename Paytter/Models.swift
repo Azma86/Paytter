@@ -5,15 +5,7 @@ import Combine
 
 enum ActiveAlert: Identifiable {
     case reset, restore, save, importConfirm, completion(String)
-    var id: String {
-        switch self {
-        case .reset: return "reset"
-        case .restore: return "restore"
-        case .save: return "save"
-        case .importConfirm: return "import"
-        case .completion(let m): return m
-        }
-    }
+    var id: String { switch self { case .reset: return "reset"; case .restore: return "restore"; case .save: return "save"; case .importConfirm: return "import"; case .completion(let m): return m } }
 }
 
 class ImageCache {
@@ -79,12 +71,11 @@ enum MediaType: String, Codable {
     case image, video
 }
 
-// 【修正】ここに `originalFileName` を追加しました！
 struct AttachedMediaItem: Identifiable, Codable, Equatable {
     var id = UUID()
     var type: MediaType
     var localFileName: String
-    var originalFileName: String? // ← これが抜けていました！
+    var originalFileName: String? // 画像のファイル名を保存
     var thumbnailData: Data?
     var durationText: String?
 }
@@ -138,10 +129,10 @@ extension Transaction {
         if let items = attachedMediaItems, !items.isEmpty { return items }
         var fallback: [AttachedMediaItem] = []
         if let datas = attachedImageDatas {
-            for data in datas { fallback.append(AttachedMediaItem(type: .image, localFileName: "", originalFileName: nil, thumbnailData: data)) }
+            for data in datas { fallback.append(AttachedMediaItem(type: .image, localFileName: "", originalFileName: "添付画像", thumbnailData: data)) }
         }
         if let vids = attachedVideos {
-            for v in vids { fallback.append(AttachedMediaItem(type: .video, localFileName: v.localFileName, originalFileName: nil, thumbnailData: v.thumbnailData)) }
+            for v in vids { fallback.append(AttachedMediaItem(type: .video, localFileName: v.localFileName, originalFileName: "添付動画", thumbnailData: v.thumbnailData)) }
         }
         return fallback
     }
