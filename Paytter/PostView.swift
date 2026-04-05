@@ -3,11 +3,11 @@ import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-// 画像と動画を統合した「ドラッグ可能メディア」モデル
 struct PostAttachedMedia: Identifiable, Equatable {
     let id: UUID
     let type: MediaType
     let localFileName: String
+    let originalFileName: String // 【追加】オリジナルファイル名を保持するプロパティ
     let thumbnailData: Data
     let thumbnailImage: UIImage
     let durationText: String?
@@ -155,9 +155,22 @@ struct AttachedMediasDragView: View {
     }
 }
 
+// 【新規】画像もURL経由で取得し、ファイル名を取得するための構造体
+struct ImageTransferable: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .image) { received in
+            let fileName = received.file.lastPathComponent
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            try? FileManager.default.removeItem(at: copy)
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return ImageTransferable(url: copy)
+        }
+    }
+}
+
 struct MovieTransferable: Transferable {
     let url: URL
-    
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .movie) { received in
             let fileName = received.file.lastPathComponent
@@ -306,25 +319,31 @@ struct PostView: View {
                                     if item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) }) {
                                         if let movie = try? await item.loadTransferable(type: MovieTransferable.self) {
                                             let tempURL = movie.url
+                                            let originalName = tempURL.lastPathComponent
                                             DispatchQueue.main.async {
                                                 if let savedName = MediaManager.shared.saveMedia(from: tempURL),
                                                    let thumb = generateVideoThumbnail(for: tempURL),
                                                    let thumbData = compressImage(thumb) {
                                                     let duration = getVideoDuration(url: tempURL)
-                                                    attachedMedias.append(PostAttachedMedia(id: UUID(), type: .video, localFileName: savedName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration))
+                                                    attachedMedias.append(PostAttachedMedia(id: UUID(), type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration))
                                                 }
                                             }
                                         }
                                     } else {
-                                        if let data = try? await item.loadTransferable(type: Data.self),
-                                           let uiImage = UIImage(data: data),
-                                           let thumbData = compressImage(uiImage),
-                                           let thumbImage = UIImage(data: thumbData) {
-                                            
-                                            if let savedName = MediaManager.shared.saveData(data, extension: "jpg") {
-                                                DispatchQueue.main.async {
-                                                    if attachedMedias.count < 4 {
-                                                        attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil))
+                                        // 【変更】画像の場合も URL を使って取得し、オリジナル名を引き継ぐ
+                                        if let imageFile = try? await item.loadTransferable(type: ImageTransferable.self) {
+                                            let tempURL = imageFile.url
+                                            let originalName = tempURL.lastPathComponent
+                                            if let originalData = try? Data(contentsOf: tempURL),
+                                               let uiImage = UIImage(data: originalData),
+                                               let thumbData = compressImage(uiImage),
+                                               let thumbImage = UIImage(data: thumbData) {
+                                                
+                                                if let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension) {
+                                                    DispatchQueue.main.async {
+                                                        if attachedMedias.count < 4 {
+                                                            attachedMedias.append(PostAttachedMedia(id: UUID(), type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil))
+                                                        }
                                                     }
                                                 }
                                             }
@@ -399,7 +418,7 @@ struct PostView: View {
                 leading: Button("キャンセル") { isPresented = false }
                     .foregroundColor(Color(hex: themeBarText)),
                 trailing: HStack(spacing: 12) {
-                    let finalMedias = attachedMedias.map { AttachedMediaItem(id: $0.id, type: $0.type, localFileName: $0.localFileName, thumbnailData: $0.thumbnailData, durationText: $0.durationText) }
+                    let finalMedias = attachedMedias.map { AttachedMediaItem(id: $0.id, type: $0.type, localFileName: $0.localFileName, originalFileName: $0.originalFileName, thumbnailData: $0.thumbnailData, durationText: $0.durationText) }
                     Button(action: {
                         onPost(false, postDate, isExcluded, selectedProfileId, finalMedias, attachedFiles)
                         isPresented = false
@@ -463,7 +482,6 @@ struct PostView: View {
                     for url in urls {
                         let isSecured = url.startAccessingSecurityScopedResource()
                         defer { if isSecured { url.stopAccessingSecurityScopedResource() } }
-                        
                         if let savedName = MediaManager.shared.saveMedia(from: url) {
                             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                             let size = attrs?[.size] as? Int64 ?? 0
@@ -480,7 +498,7 @@ struct PostView: View {
             
             self.attachedMedias = (initialMedias ?? []).compactMap { item in
                 if let data = item.thumbnailData, let img = UIImage(data: data) {
-                    return PostAttachedMedia(id: item.id, type: item.type, localFileName: item.localFileName, thumbnailData: data, thumbnailImage: img, durationText: item.durationText)
+                    return PostAttachedMedia(id: item.id, type: item.type, localFileName: item.localFileName, originalFileName: item.originalFileName ?? "", thumbnailData: data, thumbnailImage: img, durationText: item.durationText)
                 }
                 return nil
             }
