@@ -6,18 +6,19 @@ struct PostAttachedImage: Identifiable, Equatable {
     let data: Data
     let image: UIImage
     
+    // データの中身ではなくIDだけを比較させることで軽量化を維持
     static func == (lhs: PostAttachedImage, rhs: PostAttachedImage) -> Bool {
         return lhs.id == rhs.id
     }
 }
 
-// 【新規】画像の並び替え機能を、お財布一覧と全く同じ「最速・無駄なしアルゴリズム」で復活させました
+// 画像のドラッグ専用の独立したView
 struct AttachedImagesDragView: View {
     @Binding var attachedImages: [PostAttachedImage]
     
     @State private var draggedImageId: UUID?
     @State private var dragImageOffset: CGFloat = 0
-    @State private var dragImageLastX: CGFloat?
+    @State private var dragImageTotalJump: CGFloat = 0
     
     var body: some View {
         if !attachedImages.isEmpty {
@@ -38,10 +39,12 @@ struct AttachedImagesDragView: View {
                             }
                             .padding(4)
                         }
+                        // 【変更】お財布一覧（HomeHeaderView）と全く同じモーション設計に統一
+                        // 余計な拡大（scaleEffect）や影の演出を削除し、ソリッドな動きにしました
                         .offset(x: draggedImageId == item.id ? dragImageOffset : 0, y: 0)
                         .zIndex(draggedImageId == item.id ? 100 : 0)
                         .gesture(
-                            DragGesture(minimumDistance: 0)
+                            DragGesture(coordinateSpace: .global)
                                 .onChanged { val in handleImageDragChange(val, item: item) }
                                 .onEnded { _ in handleImageDragEnded() }
                         )
@@ -56,27 +59,26 @@ struct AttachedImagesDragView: View {
     private func handleImageDragChange(_ value: DragGesture.Value, item: PostAttachedImage) {
         if draggedImageId != item.id {
             draggedImageId = item.id
-            dragImageLastX = value.location.x
-            dragImageOffset = 0
+            dragImageTotalJump = 0
         }
         
-        guard let lastX = dragImageLastX else { return }
-        dragImageOffset += value.location.x - lastX
-        dragImageLastX = value.location.x
+        dragImageOffset = value.translation.width - dragImageTotalJump
         
         if let idx = attachedImages.firstIndex(where: { $0.id == item.id }) {
             let jumpDistance: CGFloat = 88 // 画像幅80 + 余白8
             let threshold = jumpDistance * 0.5
             
-            // お財布と同じ、無駄のないソリッドな動き
+            // 【変更】お財布一覧と全く同じ「バネの強さと速さ（response: 0.25, dampingFraction: 0.8）」に設定
             if dragImageOffset > threshold && idx < attachedImages.count - 1 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     attachedImages.swapAt(idx, idx + 1)
+                    dragImageTotalJump += jumpDistance
                     dragImageOffset -= jumpDistance
                 }
             } else if dragImageOffset < -threshold && idx > 0 {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
                     attachedImages.swapAt(idx, idx - 1)
+                    dragImageTotalJump -= jumpDistance
                     dragImageOffset += jumpDistance
                 }
             }
@@ -84,10 +86,10 @@ struct AttachedImagesDragView: View {
     }
     
     private func handleImageDragEnded() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.interactiveSpring()) {
             draggedImageId = nil
             dragImageOffset = 0
-            dragImageLastX = nil
+            dragImageTotalJump = 0
         }
     }
 }
