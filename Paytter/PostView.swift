@@ -3,7 +3,6 @@ import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-// 【変更】isLoading（読み込み中かどうか）を判定するフラグを追加しました
 struct PostAttachedMedia: Identifiable, Equatable {
     let id: UUID
     let type: MediaType
@@ -14,8 +13,9 @@ struct PostAttachedMedia: Identifiable, Equatable {
     let durationText: String?
     var isLoading: Bool = false
     
+    // 【重要修正】ここでファイル名やロード状態が変わったことを正確にSwiftUIに伝えます
     static func == (lhs: PostAttachedMedia, rhs: PostAttachedMedia) -> Bool {
-        return lhs.id == rhs.id && lhs.isLoading == rhs.isLoading
+        return lhs.id == rhs.id && lhs.isLoading == rhs.isLoading && lhs.localFileName == rhs.localFileName
     }
 }
 
@@ -26,31 +26,27 @@ struct AttachedMediaCell: View, Equatable {
     let onRemove: () -> Void
     
     static func == (lhs: AttachedMediaCell, rhs: AttachedMediaCell) -> Bool {
-        lhs.media.id == rhs.media.id && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset
+        lhs.media == rhs.media && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset
     }
     
     var body: some View {
         ZStack(alignment: .topTrailing) {
             ZStack(alignment: .bottomLeading) {
-                // 【新規】読み込み中の場合のロード画面デザイン
-                if media.isLoading {
+                // サムネイル画像がまだ無い場合（iCloudからダウンロード中など）
+                if media.thumbnailImage.size == .zero {
                     ZStack {
                         Color.gray.opacity(0.3)
-                        
-                        // 画像か動画かがわかるようにアイコンを背景に配置
                         Image(systemName: media.type == .video ? "video.fill" : "photo.fill")
                             .font(.largeTitle)
                             .foregroundColor(Color.gray.opacity(0.4))
-                        
-                        // くるくる回るローディングアイコン
-                        ProgressView()
-                            .scaleEffect(1.2)
-                            .tint(.white)
+                        if media.isLoading {
+                            ProgressView().scaleEffect(1.2).tint(.white)
+                        }
                     }
                     .frame(width: 80, height: 80)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 } else {
-                    // 読み込み完了後の通常のサムネイル表示
+                    // 【新規】サムネイル画像が用意できたら表示し、ロード中は暗くしてくるくる回す
                     Image(uiImage: media.thumbnailImage)
                         .resizable()
                         .scaledToFill()
@@ -73,6 +69,17 @@ struct AttachedMediaCell: View, Equatable {
                                 .background(Color.black.opacity(0.6))
                                 .cornerRadius(4)
                                 .padding(4)
+                        }
+                    }
+                    
+                    // サムネイルの上に暗転とローディングを被せる
+                    if media.isLoading {
+                        ZStack {
+                            Color.black.opacity(0.5)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            ProgressView()
+                                .scaleEffect(1.2)
+                                .tint(.white)
                         }
                     }
                 }
@@ -335,40 +342,37 @@ struct PostView: View {
                                 .padding(.trailing, 8)
                         }
                         .onChange(of: selectedItems, perform: { newItems in
-                            // 【重要修正】選択されたアイテムに対してロード画面を先に表示する
-                            for item in newItems {
-                                let tempId = UUID()
-                                let isVideo = item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) })
-                                
-                                // すぐにローディング枠（プレースホルダー）を画面に出す
-                                if attachedMedias.count < 4 {
-                                    attachedMedias.append(PostAttachedMedia(
-                                        id: tempId,
-                                        type: isVideo ? .video : .image,
-                                        localFileName: "",
-                                        originalFileName: "読み込み中...",
-                                        thumbnailData: Data(),
-                                        thumbnailImage: UIImage(),
-                                        durationText: nil,
-                                        isLoading: true
-                                    ))
-                                } else {
-                                    continue
-                                }
-                                
-                                Task {
+                            Task {
+                                for item in newItems {
+                                    let tempId = UUID()
+                                    let isVideo = item.supportedContentTypes.contains(where: { $0.conforms(to: UTType.movie) })
+                                    
+                                    // iCloud等からダウンロードしている間はグレー枠を表示
+                                    if attachedMedias.count < 4 {
+                                        attachedMedias.append(PostAttachedMedia(id: tempId, type: isVideo ? .video : .image, localFileName: "", originalFileName: "読み込み中...", thumbnailData: Data(), thumbnailImage: UIImage(), durationText: nil, isLoading: true))
+                                    } else {
+                                        continue
+                                    }
+                                    
                                     if isVideo {
                                         if let movie = try? await item.loadTransferable(type: MovieTransferable.self) {
                                             let tempURL = movie.url
                                             let originalName = tempURL.lastPathComponent
                                             
-                                            // 重い処理
+                                            // 動画URLが手に入ったらすぐにサムネイルを作って画面に渡す（この間ロード中として暗転させる）
+                                            let thumb = generateVideoThumbnail(for: tempURL) ?? UIImage()
+                                            DispatchQueue.main.async {
+                                                if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
+                                                    attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .video, localFileName: "", originalFileName: originalName, thumbnailData: Data(), thumbnailImage: thumb, durationText: nil, isLoading: true)
+                                                }
+                                            }
+                                            
+                                            // 重い保存処理と圧縮
                                             if let savedName = MediaManager.shared.saveMedia(from: tempURL),
-                                               let thumb = generateVideoThumbnail(for: tempURL),
                                                let thumbData = compressImage(thumb) {
                                                 let duration = getVideoDuration(url: tempURL)
                                                 
-                                                // 読み込みが完了したら、ロード中の枠を「本物のデータ」に差し替える
+                                                // 全て完了したらロード中を解除
                                                 DispatchQueue.main.async {
                                                     if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
                                                         attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration, isLoading: false)
@@ -385,17 +389,29 @@ struct PostView: View {
                                             let tempURL = imageFile.url
                                             let originalName = tempURL.lastPathComponent
                                             
-                                            // 重い処理
                                             if let originalData = try? Data(contentsOf: tempURL),
-                                               let uiImage = UIImage(data: originalData),
-                                               let thumbData = compressImage(uiImage),
-                                               let thumbImage = UIImage(data: thumbData),
-                                               let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension) {
+                                               let uiImage = UIImage(data: originalData) {
                                                 
+                                                // 画像データが手に入ったらすぐにUIへ（ロード中として暗転させる）
                                                 DispatchQueue.main.async {
                                                     if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
-                                                        attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil, isLoading: false)
+                                                        attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: "", originalFileName: originalName, thumbnailData: Data(), thumbnailImage: uiImage, durationText: nil, isLoading: true)
                                                     }
+                                                }
+                                                
+                                                // 重い圧縮処理
+                                                if let thumbData = compressImage(uiImage),
+                                                   let thumbImage = UIImage(data: thumbData),
+                                                   let savedName = MediaManager.shared.saveData(originalData, extension: tempURL.pathExtension) {
+                                                    
+                                                    // 完了
+                                                    DispatchQueue.main.async {
+                                                        if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
+                                                            attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil, isLoading: false)
+                                                        }
+                                                    }
+                                                } else {
+                                                    DispatchQueue.main.async { attachedMedias.removeAll(where: { $0.id == tempId }) }
                                                 }
                                             } else {
                                                 DispatchQueue.main.async { attachedMedias.removeAll(where: { $0.id == tempId }) }
@@ -405,8 +421,8 @@ struct PostView: View {
                                         }
                                     }
                                 }
+                                selectedItems.removeAll()
                             }
-                            selectedItems.removeAll()
                         })
                         
                         Button(action: { isShowingFileImporter = true }) {
@@ -473,9 +489,7 @@ struct PostView: View {
                 leading: Button("キャンセル") { isPresented = false }
                     .foregroundColor(Color(hex: themeBarText)),
                 trailing: HStack(spacing: 12) {
-                    // 保存時はロード中（未完了）のものは除外して保存する
                     let finalMedias = attachedMedias.filter({ !$0.isLoading }).map { AttachedMediaItem(id: $0.id, type: $0.type, localFileName: $0.localFileName, originalFileName: $0.originalFileName, thumbnailData: $0.thumbnailData, durationText: $0.durationText) }
-                    
                     Button(action: {
                         onPost(false, postDate, isExcluded, selectedProfileId, finalMedias, attachedFiles)
                         isPresented = false
@@ -541,7 +555,6 @@ struct PostView: View {
                         let ext = url.pathExtension.lowercased()
                         let utType = UTType(filenameExtension: ext)
                         
-                        // 画像かどうかの判定とロード画面表示
                         if let type = utType, type.conforms(to: .image) {
                             let tempId = UUID()
                             let originalName = url.lastPathComponent
@@ -556,15 +569,24 @@ struct PostView: View {
                             DispatchQueue.global(qos: .userInitiated).async {
                                 defer { if isSecured { url.stopAccessingSecurityScopedResource() } }
                                 if let originalData = try? Data(contentsOf: url),
-                                   let uiImage = UIImage(data: originalData),
-                                   let thumbData = compressImage(uiImage),
-                                   let thumbImage = UIImage(data: thumbData),
-                                   let savedName = MediaManager.shared.saveData(originalData, extension: ext) {
+                                   let uiImage = UIImage(data: originalData) {
                                     
                                     DispatchQueue.main.async {
                                         if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
-                                            attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil, isLoading: false)
+                                            attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: "", originalFileName: originalName, thumbnailData: Data(), thumbnailImage: uiImage, durationText: nil, isLoading: true)
                                         }
+                                    }
+                                    
+                                    if let thumbData = compressImage(uiImage),
+                                       let thumbImage = UIImage(data: thumbData),
+                                       let savedName = MediaManager.shared.saveData(originalData, extension: ext) {
+                                        DispatchQueue.main.async {
+                                            if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
+                                                attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .image, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumbImage, durationText: nil, isLoading: false)
+                                            }
+                                        }
+                                    } else {
+                                        DispatchQueue.main.async { attachedMedias.removeAll(where: { $0.id == tempId }) }
                                     }
                                 } else {
                                     DispatchQueue.main.async { attachedMedias.removeAll(where: { $0.id == tempId }) }
@@ -572,7 +594,6 @@ struct PostView: View {
                             }
                             continue
                         } 
-                        // 動画かどうかの判定とロード画面表示
                         else if let type = utType, (type.conforms(to: .movie) || type.conforms(to: .video) || type.conforms(to: .audiovisualContent)) {
                             let tempId = UUID()
                             let originalName = url.lastPathComponent
@@ -586,11 +607,17 @@ struct PostView: View {
                             
                             DispatchQueue.global(qos: .userInitiated).async {
                                 defer { if isSecured { url.stopAccessingSecurityScopedResource() } }
+                                
+                                let thumb = generateVideoThumbnail(for: url) ?? UIImage()
+                                DispatchQueue.main.async {
+                                    if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
+                                        attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .video, localFileName: "", originalFileName: originalName, thumbnailData: Data(), thumbnailImage: thumb, durationText: nil, isLoading: true)
+                                    }
+                                }
+                                
                                 if let savedName = MediaManager.shared.saveMedia(from: url),
-                                   let thumb = generateVideoThumbnail(for: url),
                                    let thumbData = compressImage(thumb) {
                                     let duration = getVideoDuration(url: url)
-                                    
                                     DispatchQueue.main.async {
                                         if let idx = attachedMedias.firstIndex(where: { $0.id == tempId }) {
                                             attachedMedias[idx] = PostAttachedMedia(id: tempId, type: .video, localFileName: savedName, originalFileName: originalName, thumbnailData: thumbData, thumbnailImage: thumb, durationText: duration, isLoading: false)
@@ -603,7 +630,6 @@ struct PostView: View {
                             continue
                         }
                         
-                        // それ以外のファイル（PDF等）はそのまま即座に追加（ロードが短いため）
                         defer { if isSecured { url.stopAccessingSecurityScopedResource() } }
                         if let savedName = MediaManager.shared.saveMedia(from: url) {
                             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
