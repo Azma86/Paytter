@@ -292,6 +292,60 @@ struct MediaFullScreenView: View {
     }
 }
 
+struct TimelineImageGrid: View {
+    let images: [Data]
+    var cornerRadius: CGFloat = 12
+    var maxHeight: CGFloat = 160
+    
+    var body: some View {
+        let count = images.count
+        Group {
+            if count == 1 {
+                imgView(images[0])
+            } else if count == 2 {
+                HStack(spacing: 4) {
+                    imgView(images[0])
+                    imgView(images[1])
+                }
+            } else if count == 3 {
+                HStack(spacing: 4) {
+                    imgView(images[0])
+                    VStack(spacing: 4) {
+                        imgView(images[1])
+                        imgView(images[2])
+                    }
+                }
+            } else if count >= 4 {
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        imgView(images[0])
+                        imgView(images[1])
+                    }
+                    HStack(spacing: 4) {
+                        imgView(images[2])
+                        imgView(images[3])
+                    }
+                }
+            }
+        }
+        .frame(height: maxHeight)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+    }
+    
+    @ViewBuilder func imgView(_ data: Data) -> some View {
+        if let uiImage = ImageCache.shared.image(for: data) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                .clipped()
+        } else {
+            Color.gray.opacity(0.1)
+        }
+    }
+}
+
 struct BalanceView: View {
     let title: String
     let amount: Int
