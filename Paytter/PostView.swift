@@ -3,14 +3,12 @@ import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-// 【新規】動画をPhotosPickerから安全にファイルとして受け取るための構造体
+// 【修正】エクスポート処理を削除し、安全なインポート（読み込み）専用に修正しました
 struct MovieTransferable: Transferable {
     let url: URL
     
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(contentType: .movie) { movie in
-            MovieTransferable(url: movie.file)
-        } importing: { received in
+        FileRepresentation(importedContentType: .movie) { received in
             let fileName = received.file.lastPathComponent
             let copy = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
             try? FileManager.default.removeItem(at: copy)
@@ -257,7 +255,6 @@ struct PostView: View {
                         .onChange(of: selectedItems, perform: { newItems in
                             Task {
                                 for item in newItems {
-                                    // 【修正】UTType.movie を確認し、MovieTransferable を使って動画を読み込む
                                     if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
                                         if let movie = try? await item.loadTransferable(type: MovieTransferable.self) {
                                             let tempURL = movie.url
