@@ -5,13 +5,19 @@ struct PostAttachedImage: Identifiable, Equatable {
     let id = UUID()
     let data: Data
     let image: UIImage
+    
+    // 【重要】ここが劇的な軽量化の鍵！
+    // 何MBもある画像データの中身を毎フレーム比較するのをやめ、
+    // IDだけを比較させることで、並び替え時の計算負荷を「ほぼゼロ」にします。
+    static func == (lhs: PostAttachedImage, rhs: PostAttachedImage) -> Bool {
+        return lhs.id == rhs.id
+    }
 }
 
-// 【新規】画像のドラッグ専用の独立したViewを作成し、再描画の負荷を最小限に抑えます
+// 画像のドラッグ専用の独立したView
 struct AttachedImagesDragView: View {
     @Binding var attachedImages: [PostAttachedImage]
     
-    // ドラッグ用の変数をPostViewからこちらにお引越し
     @State private var draggedImageId: UUID?
     @State private var dragImageOffset: CGFloat = 0
     @State private var dragImageTotalJump: CGFloat = 0
@@ -154,7 +160,6 @@ struct PostView: View {
                     .padding()
                     .frame(maxHeight: .infinity)
                     
-                    // 【変更】独立させたドラッグ専用のViewを呼び出す
                     AttachedImagesDragView(attachedImages: $attachedImages)
                     
                     HStack {
