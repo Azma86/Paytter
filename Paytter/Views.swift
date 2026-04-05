@@ -91,6 +91,29 @@ struct TransactionDetailView: View {
                             TimelineImageGrid(images: images, maxHeight: 260)
                                 .padding(.vertical, 8)
                         }
+                        
+                        // 【新規】動画とファイルの表示機能
+                        if let videos = item.attachedVideos, !videos.isEmpty {
+                            TimelineVideoGrid(videos: videos, maxHeight: 260)
+                                .padding(.vertical, 8)
+                        }
+                        
+                        if let files = item.attachedFiles, !files.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(files, id: \.id) { file in
+                                    HStack {
+                                        Image(systemName: "doc.fill").foregroundColor(.gray)
+                                        Text(file.originalFileName).lineLimit(1).truncationMode(.middle).foregroundColor(Color(hex: themeBodyText))
+                                        Spacer()
+                                        Text("\(file.fileExtension) · \(file.formattedSize)").foregroundColor(.gray)
+                                    }
+                                    .font(.subheadline)
+                                    .padding(12)
+                                    .background(Color.gray.opacity(0.1))
+                                    .cornerRadius(8)
+                                }
+                            }.padding(.vertical, 8)
+                        }
                     }
                     
                     if item.isExcludedFromBalance == true {
@@ -147,6 +170,8 @@ struct TransactionDetailView: View {
                 initialDate: item.date,
                 isExcludedInitial: item.isExcludedFromBalance ?? false,
                 initialImages: item.attachedImageDatas,
+                initialVideos: item.attachedVideos,
+                initialFiles: item.attachedFiles,
                 onPost: handleEditTransaction,
                 transactions: transactions,
                 accounts: accounts
@@ -154,7 +179,8 @@ struct TransactionDetailView: View {
         }
     }
     
-    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, images: [Data]?) {
+    // 【変更】編集保存時の引数に動画とファイルを追加
+    func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, images: [Data]?, videos: [AttachedVideo]?, files: [AttachedFile]?) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
                 .filter { $0.contains("¥") }
@@ -169,7 +195,9 @@ struct TransactionDetailView: View {
                 id: item.id, amount: nAmt, date: nDate, note: editLineText,
                 source: nSrc, isIncome: isInc, isExcludedFromBalance: isExc,
                 profileId: profileId ?? item.profileId,
-                attachedImageDatas: images
+                attachedImageDatas: images,
+                attachedVideos: videos,
+                attachedFiles: files
             )
         }
     }
