@@ -69,78 +69,64 @@ struct AttachedMediaCell: View, Equatable {
     }
 }
 
-// 【重要修正】お財布一覧の「HomeHeaderView」と完全に同じアルゴリズムを適用しました
+// 【重要】編集時にも必ず指に追従して並べ替えができるようにアルゴリズムを統一
 struct AttachedMediasDragView: View {
     @Binding var attachedMedias: [PostAttachedMedia]
-    
-    @State private var localMedias: [PostAttachedMedia] = []
     @State private var draggedMediaId: UUID?
     @State private var dragOffset: CGFloat = 0
-    @State private var dragHomeTotalJump: CGFloat = 0
+    @State private var dragLastX: CGFloat?
     
     var body: some View {
-        Group {
-            if !localMedias.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(localMedias) { item in
-                            let isDragged = draggedMediaId == item.id
-                            AttachedMediaCell(
-                                media: item,
-                                isDragged: isDragged,
-                                dragOffset: isDragged ? dragOffset : 0,
-                                onRemove: {
-                                    localMedias.removeAll(where: { $0.id == item.id })
-                                    attachedMedias = localMedias
-                                }
-                            )
-                            .equatable()
-                            .gesture(
-                                // 【修正】.globalを指定して絶対座標で正確に追従させる
-                                DragGesture(coordinateSpace: .global)
-                                    .onChanged { val in handleDragChange(value: val, item: item) }
-                                    .onEnded { _ in handleDragEnded() }
-                            )
-                        }
+        if !attachedMedias.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(attachedMedias) { item in
+                        let isDragged = draggedMediaId == item.id
+                        AttachedMediaCell(
+                            media: item,
+                            isDragged: isDragged,
+                            dragOffset: isDragged ? dragOffset : 0,
+                            onRemove: {
+                                attachedMedias.removeAll(where: { $0.id == item.id })
+                            }
+                        )
+                        .equatable()
+                        .gesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                .onChanged { val in handleDragChange(val, item: item) }
+                                .onEnded { _ in handleDragEnded() }
+                        )
                     }
-                    .padding(.horizontal)
                 }
-                .padding(.bottom, 8)
+                .padding(.horizontal)
             }
-        }
-        .onAppear {
-            localMedias = attachedMedias
-        }
-        .onChange(of: attachedMedias) { newMeds in
-            if draggedMediaId == nil {
-                localMedias = newMeds
-            }
+            .padding(.bottom, 8)
         }
     }
     
-    // 【修正】お財布一覧と全く同じバネ付きの絶対座標アルゴリズム
-    private func handleDragChange(value: DragGesture.Value, item: PostAttachedMedia) {
+    private func handleDragChange(_ value: DragGesture.Value, item: PostAttachedMedia) {
         if draggedMediaId != item.id {
             draggedMediaId = item.id
-            dragHomeTotalJump = 0
+            dragLastX = value.location.x
+            dragOffset = 0
         }
         
-        dragOffset = value.translation.width - dragHomeTotalJump
+        guard let lastX = dragLastX else { return }
+        dragOffset += value.location.x - lastX
+        dragLastX = value.location.x
         
-        if let idx = localMedias.firstIndex(where: { $0.id == item.id }) {
-            let jumpDistance: CGFloat = 88 // 画像の幅(80) + 間隔(8)
+        if let idx = attachedMedias.firstIndex(where: { $0.id == item.id }) {
+            let jumpDistance: CGFloat = 88
             let threshold = jumpDistance * 0.5
             
-            if dragOffset > threshold && idx < localMedias.count - 1 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    localMedias.swapAt(idx, idx + 1)
-                    dragHomeTotalJump += jumpDistance
+            if dragOffset > threshold && idx < attachedMedias.count - 1 {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    attachedMedias.swapAt(idx, idx + 1)
                     dragOffset -= jumpDistance
                 }
             } else if dragOffset < -threshold && idx > 0 {
-                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
-                    localMedias.swapAt(idx, idx - 1)
-                    dragHomeTotalJump -= jumpDistance
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    attachedMedias.swapAt(idx, idx - 1)
                     dragOffset += jumpDistance
                 }
             }
@@ -148,13 +134,11 @@ struct AttachedMediasDragView: View {
     }
     
     private func handleDragEnded() {
-        withAnimation(.interactiveSpring()) {
+        withAnimation(.easeInOut(duration: 0.2)) {
             draggedMediaId = nil
             dragOffset = 0
-            dragHomeTotalJump = 0
+            dragLastX = nil
         }
-        // 【重要】指を離した時に親ビューにデータを同期させる（編集時にも反映させるため）
-        attachedMedias = localMedias
     }
 }
 
@@ -332,6 +316,7 @@ struct PostView: View {
                                             }
                                         }
                                     } else {
+                                        // 【重要修正】画像の場合も「オリジナルファイル名」を正確に取得し保存します
                                         if let imageFile = try? await item.loadTransferable(type: ImageTransferable.self) {
                                             let tempURL = imageFile.url
                                             let originalName = tempURL.lastPathComponent
