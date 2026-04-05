@@ -7,7 +7,6 @@ struct TimelineMediaGrid: View {
     var cornerRadius: CGFloat = 12
     var maxHeight: CGFloat = 160
     
-    // 【変更】タップしたメディアのインデックスを保持してフルスクリーンに渡す
     @State private var selectedMediaIndex: Int? = nil
     @State private var isFullScreenPresented: Bool = false
     
@@ -46,7 +45,6 @@ struct TimelineMediaGrid: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color.gray.opacity(0.2), lineWidth: 1))
         .fullScreenCover(isPresented: $isFullScreenPresented) {
-            // 【新規】全メディアの配列と、開始インデックスを渡す
             MediaFullScreenView(
                 mediaItems: mediaItems,
                 initialIndex: selectedMediaIndex ?? 0
@@ -95,7 +93,30 @@ struct TimelineMediaGrid: View {
     }
 }
 
-// 【新規】フルスクリーン時にスワイプで切り替えられるようにするための親ビュー
+// 【新規】保存完了を検知するための専用クラス
+class MediaSaver: NSObject {
+    static let shared = MediaSaver()
+    var completion: ((Bool, Error?) -> Void)?
+    
+    func saveImage(_ image: UIImage, completion: @escaping (Bool, Error?) -> Void) {
+        self.completion = completion
+        UIImageWriteToSavedPhotosAlbum(image, self, #selector(saveCompleted(_:didFinishSavingWithError:contextInfo:)), nil)
+    }
+    
+    func saveVideo(url: URL, completion: @escaping (Bool, Error?) -> Void) {
+        self.completion = completion
+        if UIVideoAtPathIsCompatibleWithSavedPhotosAlbum(url.path) {
+            UISaveVideoAtPathToSavedPhotosAlbum(url.path, self, #selector(saveCompleted(_:didFinishSavingWithError:contextInfo:)), nil)
+        } else {
+            completion(false, nil)
+        }
+    }
+    
+    @objc func saveCompleted(_ item: Any, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
+        completion?(error == nil, error)
+    }
+}
+
 struct MediaFullScreenView: View {
     let mediaItems: [AttachedMediaItem]
     let initialIndex: Int
@@ -107,11 +128,13 @@ struct MediaFullScreenView: View {
     @State private var showSaveAlert = false
     @State private var saveAlertMessage = ""
     
+    // 【新規】保存中のロード画面表示フラグ
+    @State private var isSaving: Bool = false
+    
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             
-            // TabViewを利用したスワイプでのページング機能
             TabView(selection: $currentIndex) {
                 ForEach(0..<mediaItems.count, id: \.self) { index in
                     SingleMediaZoomView(media: mediaItems[index], showUI: $showUI)
@@ -166,6 +189,22 @@ struct MediaFullScreenView: View {
                 .ignoresSafeArea(edges: .top)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
+            
+            // 【新規】保存中のロード画面
+            if isSaving {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView().scaleEffect(1.5).tint(.white)
+                        Text("保存中...").font(.subheadline).foregroundColor(.white).bold()
+                    }
+                    .padding(30)
+                    .background(Color(white: 0.2).opacity(0.9))
+                    .cornerRadius(16)
+                }
+                .zIndex(200)
+                .transition(.opacity)
+            }
         }
         .onAppear {
             currentIndex = initialIndex
@@ -179,7 +218,7 @@ struct MediaFullScreenView: View {
         UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20
     }
     
-    // 【重要修正】不正なURL共有による謎のDocumentsフォルダ共有を防ぐ
+    // 【重要修正】不正なURLによるフォルダ共有を防ぎ、UIImageを確実に共有する
     func shareMedia(media: AttachedMediaItem) {
         var itemToShare: Any?
         
@@ -192,7 +231,7 @@ struct MediaFullScreenView: View {
             if FileManager.default.fileExists(atPath: url.path) {
                 itemToShare = url
             } else if let data = media.thumbnailData, let image = UIImage(data: data) {
-                itemToShare = image // ファイルが存在しない場合はUIImageを直接共有
+                itemToShare = image // ファイルが存在しない場合は直接UIImageを渡す
             }
         }
         
@@ -205,51 +244,47 @@ struct MediaFullScreenView: View {
         }
     }
     
-    // 【重要修正】バックグラウンドスレッドで保存処理を行い、フリーズを防止
+    // 【重要修正】保存処理をバックグラウンド化し、完了を検知してロード画面を閉じる
     func saveMedia(media: AttachedMediaItem) {
-        let fileName = media.localFileName
-        let type = media.type
-        let thumbData = media.thumbnailData
+        isSaving = true // ロード画面を表示
         
-        DispatchQueue.global(qos: .userInitiated).async {
-            var saved = false
-            
-            if fileName.isEmpty {
-                if let data = thumbData, let image = UIImage(data: data) {
-                    DispatchQueue.main.async { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil) }
-                    saved = true
-                }
-            } else {
-                let url = MediaManager.shared.getMediaURL(fileName: fileName)
-                if type == .image {
-                    if let image = UIImage(contentsOfFile: url.path) {
-                        DispatchQueue.main.async { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil) }
-                        saved = true
-                    } else if let data = thumbData, let image = UIImage(data: data) {
-                        DispatchQueue.main.async { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil) }
-                        saved = true
-                    }
-                } else if type == .video {
-                    if UIVideoAtPathIsCompatibleWithSavedPhotosAlbum(url.path) {
-                        DispatchQueue.main.async { UISaveVideoAtPathToSavedPhotosAlbum(url.path, nil, nil, nil) }
-                        saved = true
-                    }
-                }
-            }
-            
+        let finishSave: (Bool, Error?) -> Void = { success, error in
             DispatchQueue.main.async {
-                if saved {
-                    saveAlertMessage = type == .video ? "動画をカメラロールに保存しました" : "画像をカメラロールに保存しました"
+                isSaving = false // ロード画面を消す
+                if success {
+                    saveAlertMessage = media.type == .video ? "動画をカメラロールに保存しました" : "画像をカメラロールに保存しました"
                 } else {
-                    saveAlertMessage = "保存に失敗しました。アクセス権限を確認してください。"
+                    saveAlertMessage = "保存に失敗しました。設定アプリから写真へのアクセス権限を確認してください。"
                 }
                 showSaveAlert = true
+            }
+        }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            if media.localFileName.isEmpty {
+                if let data = media.thumbnailData, let image = UIImage(data: data) {
+                    MediaSaver.shared.saveImage(image, completion: finishSave)
+                } else {
+                    finishSave(false, nil)
+                }
+            } else {
+                let url = MediaManager.shared.getMediaURL(fileName: media.localFileName)
+                if media.type == .image {
+                    if let image = UIImage(contentsOfFile: url.path) {
+                        MediaSaver.shared.saveImage(image, completion: finishSave)
+                    } else if let data = media.thumbnailData, let image = UIImage(data: data) {
+                        MediaSaver.shared.saveImage(image, completion: finishSave)
+                    } else {
+                        finishSave(false, nil)
+                    }
+                } else if media.type == .video {
+                    MediaSaver.shared.saveVideo(url: url, completion: finishSave)
+                }
             }
         }
     }
 }
 
-// 【新規】1つ1つのメディアの拡大縮小と動画再生を担当する専用ビュー
 struct SingleMediaZoomView: View {
     let media: AttachedMediaItem
     @Binding var showUI: Bool
@@ -340,7 +375,6 @@ struct SingleMediaZoomView: View {
                     }
                 }
                 
-                // 動画用カスタムボトムメニュー
                 if showUI && media.type == .video {
                     VStack {
                         Spacer()
