@@ -19,7 +19,6 @@ struct TransactionDetailView: View {
     @State private var editLineText = ""
     @State private var isShowingDeleteConfirm = false
     
-    // 【重要修正】常にグローバル変数（最新の保存データ）から自分自身のデータを引っ張ってくるように変更
     var currentItem: Transaction {
         transactions.first(where: { $0.id == item.id }) ?? item
     }
@@ -101,16 +100,8 @@ struct TransactionDetailView: View {
                         if let files = currentItem.attachedFiles, !files.isEmpty {
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(files, id: \.id) { file in
-                                    HStack {
-                                        Image(systemName: "doc.fill").foregroundColor(.gray)
-                                        Text(file.originalFileName).lineLimit(1).truncationMode(.middle).foregroundColor(Color(hex: themeBodyText))
-                                        Spacer()
-                                        Text("\(file.fileExtension) · \(file.formattedSize)").foregroundColor(.gray)
-                                    }
-                                    .font(.subheadline)
-                                    .padding(12)
-                                    .background(Color.gray.opacity(0.1))
-                                    .cornerRadius(8)
+                                    // 【変更】ファイルをタップして開けるように共通部品を使用
+                                    AttachedFileRowView(file: file, themeBodyText: themeBodyText, font: .subheadline, padding: 12)
                                 }
                             }.padding(.vertical, 8)
                         }
@@ -164,7 +155,6 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $isShowingEditSheet) {
-            // 【重要修正】編集画面を開く際、必ず「最新のグローバル変数」をローカル変数にコピーして渡す
             PostView(
                 inputText: $editLineText,
                 isPresented: $isShowingEditSheet,
@@ -179,7 +169,6 @@ struct TransactionDetailView: View {
         }
     }
     
-    // 編集完了後、グローバル変数を上書き保存する処理
     func handleEditTransaction(isInc: Bool, nDate: Date, isExc: Bool, profileId: UUID?, medias: [AttachedMediaItem]?, files: [AttachedFile]?) {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
