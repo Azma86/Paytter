@@ -42,6 +42,7 @@ struct AttachedMediaCell: View, Equatable {
                     Image(systemName: "play.circle.fill")
                         .foregroundColor(.white.opacity(0.8))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    
                     if let dur = media.durationText {
                         Text(dur)
                             .font(.caption2)
@@ -156,6 +157,7 @@ struct AttachedMediasDragView: View {
 
 struct MovieTransferable: Transferable {
     let url: URL
+    
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .movie) { received in
             let fileName = received.file.lastPathComponent
@@ -318,6 +320,7 @@ struct PostView: View {
                                            let uiImage = UIImage(data: data),
                                            let thumbData = compressImage(uiImage),
                                            let thumbImage = UIImage(data: thumbData) {
+                                            
                                             if let savedName = MediaManager.shared.saveData(data, extension: "jpg") {
                                                 DispatchQueue.main.async {
                                                     if attachedMedias.count < 4 {
@@ -460,6 +463,7 @@ struct PostView: View {
                     for url in urls {
                         let isSecured = url.startAccessingSecurityScopedResource()
                         defer { if isSecured { url.stopAccessingSecurityScopedResource() } }
+                        
                         if let savedName = MediaManager.shared.saveMedia(from: url) {
                             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                             let size = attrs?[.size] as? Int64 ?? 0
@@ -530,6 +534,7 @@ struct PostView: View {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let win = sc.windows.first,
               let tv = win.findTextView() else { return }
+        
         let cursorLoc = tv.selectedRange.location
         let text = tv.text ?? ""
         let prefixText = String(text.prefix(cursorLoc))
@@ -552,15 +557,19 @@ struct PostView: View {
         guard let sc = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let win = sc.windows.first,
               let tv = win.findTextView() else { return }
+        
         let cursorLoc = tv.selectedRange.location
         let text = tv.text ?? ""
         let prefixText = String(text.prefix(cursorLoc))
         let words = prefixText.components(separatedBy: CharacterSet.whitespacesAndNewlines)
+        
         if let lastWord = words.last {
             let rangeStart = cursorLoc - lastWord.count
             let startIdx = text.index(text.startIndex, offsetBy: rangeStart)
             let endIdx = text.index(text.startIndex, offsetBy: cursorLoc)
+            
             inputText = text.replacingCharacters(in: startIdx..<endIdx, with: suggestion + " ")
+            
             DispatchQueue.main.async {
                 tv.selectedRange = NSRange(location: rangeStart + suggestion.count + 1, length: 0)
                 suggestions = []
@@ -576,6 +585,7 @@ struct PostView: View {
             let cur = tv.text ?? ""
             let lastChar: Character? = sel.location > 0 ? cur[cur.index(cur.startIndex, offsetBy: sel.location - 1)] : nil
             let prefix = (lastChar == " " || lastChar == "　" || lastChar == "\n" || lastChar == nil) ? "" : " "
+            
             tv.becomeFirstResponder()
             tv.insertText(prefix + sym)
         }
