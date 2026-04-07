@@ -150,14 +150,15 @@ struct TransactionDetailView: View {
                 }.foregroundColor(Color(hex: themeMain))
             }
         }
-        .alert("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm) {
-            Button("キャンセル", role: .cancel) { }
+        // 【重要修正】詳細画面での削除アラートが消えないように、より安定したconfirmationDialogに変更
+        .confirmationDialog("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm, titleVisibility: .visible) {
             Button("削除", role: .destructive) {
                 if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
                     transactions.remove(at: idx)
                     dismiss()
                 }
             }
+            Button("キャンセル", role: .cancel) { }
         }
         .sheet(isPresented: $isShowingEditSheet) {
             PostView(
@@ -794,7 +795,7 @@ struct AccountGroupCreateView: View {
 struct WalletAnalysisView: View {
     let transactions: [Transaction]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
-    @AppStorage("closingDay") var closingDay: Int = 0 // 締め日
+    @AppStorage("closingDay") var closingDay: Int = 0
     
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -903,7 +904,17 @@ struct RecurringPaymentCreateView: View {
                 Form {
                     Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
                         TextField("名前（例：Apple Music）", text: $name).foregroundColor(Color(hex: themeBodyText))
-                        TextField("毎月の金額", text: $amountStr).keyboardType(.numberPad).foregroundColor(Color(hex: themeBodyText))
+                        
+                        // 【修正】毎月の金額入力欄をわかりやすく変更
+                        HStack {
+                            Text("毎月の金額").foregroundColor(Color(hex: themeBodyText))
+                            Spacer()
+                            Text("¥").foregroundColor(Color(hex: themeSubText))
+                            TextField("0", text: $amountStr)
+                                .keyboardType(.numberPad)
+                                .foregroundColor(Color(hex: themeBodyText))
+                                .multilineTextAlignment(.trailing)
+                        }
                         
                         Picker(selection: $selectedSourceName) {
                             ForEach(accounts, id: \.name) { acc in Text(acc.name).tag(acc.name) }
@@ -933,7 +944,16 @@ struct RecurringPaymentCreateView: View {
                             Text("最終回").tag(2)
                         }.pickerStyle(.segmented)
                         if fractionType != 0 {
-                            TextField("調整月の金額", text: $fractionAmountStr).keyboardType(.numberPad).foregroundColor(Color(hex: themeBodyText))
+                            // 【修正】端数金額の入力欄をわかりやすく変更
+                            HStack {
+                                Text("調整金額").foregroundColor(Color(hex: themeBodyText))
+                                Spacer()
+                                Text("¥").foregroundColor(Color(hex: themeSubText))
+                                TextField("0", text: $fractionAmountStr)
+                                    .keyboardType(.numberPad)
+                                    .foregroundColor(Color(hex: themeBodyText))
+                                    .multilineTextAlignment(.trailing)
+                            }
                         }
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden)
@@ -991,7 +1011,19 @@ struct RecurringPaymentEditView: View {
                 
                 Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
                     TextField("名前", text: $payment.name).foregroundColor(Color(hex: themeBodyText))
-                    TextField("毎月の金額", text: $amountStr).keyboardType(.numberPad).foregroundColor(Color(hex: themeBodyText)).onChange(of: amountStr) { val in payment.amount = Int(val) ?? 0 }
+                    
+                    // 【修正】毎月の金額入力欄をわかりやすく変更
+                    HStack {
+                        Text("毎月の金額").foregroundColor(Color(hex: themeBodyText))
+                        Spacer()
+                        Text("¥").foregroundColor(Color(hex: themeSubText))
+                        TextField("0", text: $amountStr)
+                            .keyboardType(.numberPad)
+                            .foregroundColor(Color(hex: themeBodyText))
+                            .multilineTextAlignment(.trailing)
+                            .onChange(of: amountStr) { val in payment.amount = Int(val) ?? 0 }
+                    }
+                    
                     Picker(selection: $payment.source) { ForEach(accounts, id: \.name) { acc in Text(acc.name).tag(acc.name) } } label: { Text("お財布").foregroundColor(Color(hex: themeBodyText)) }
                     Picker(selection: $payment.profileId) { Text("未選択").tag(UUID?(nil)); ForEach(profiles) { prof in Text(prof.name).tag(UUID?(prof.id)) } } label: { Text("ユーザー").foregroundColor(Color(hex: themeBodyText)) }
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
@@ -1008,11 +1040,21 @@ struct RecurringPaymentEditView: View {
                 Section(header: Text("端数調整").foregroundColor(Color(hex: themeSubText))) {
                     Picker("調整のタイミング", selection: $payment.fractionType) { Text("なし").tag(0); Text("初回").tag(1); Text("最終回").tag(2) }.pickerStyle(.segmented)
                     if payment.fractionType != 0 {
-                        TextField("調整月の金額", text: $fractionAmountStr).keyboardType(.numberPad).foregroundColor(Color(hex: themeBodyText)).onChange(of: fractionAmountStr) { val in payment.fractionAmount = Int(val) ?? 0 }
+                        // 【修正】端数金額の入力欄をわかりやすく変更
+                        HStack {
+                            Text("調整金額").foregroundColor(Color(hex: themeBodyText))
+                            Spacer()
+                            Text("¥").foregroundColor(Color(hex: themeSubText))
+                            TextField("0", text: $fractionAmountStr)
+                                .keyboardType(.numberPad)
+                                .foregroundColor(Color(hex: themeBodyText))
+                                .multilineTextAlignment(.trailing)
+                                .onChange(of: fractionAmountStr) { val in payment.fractionAmount = Int(val) ?? 0 }
+                        }
                     }
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 
-                // 【変更】間違って消した時などに何度でも再投稿できるようにしました
+                // 【修正】重複チェックを外し、何度でも投稿可能にしました
                 Section(header: Text("過去の履歴").foregroundColor(Color(hex: themeSubText)), footer: Text("間違って消してしまった時や、アプリ導入前の履歴を一気に作成します。何度でも作成可能で、残高には影響しません。").foregroundColor(Color(hex: themeSubText))) {
                     Button(action: postPastTransactions) {
                         Text("過去の分を履歴に追加（残高除外・何度でも可）")
@@ -1031,7 +1073,6 @@ struct RecurringPaymentEditView: View {
         }
     }
     
-    // 【変更】重複チェックを外し、何度でも投稿可能にしました。また、0:00固定で本文に○月分を含めます。
     func postPastTransactions() {
         let cal = Calendar.current
         let now = Date()
