@@ -2,7 +2,7 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
-// 【修正】クレジットカードの予定額を保持する変数を追加
+// 【修正】引き落とし予定額（creditAmount）を保持できるように復活
 struct DisplayHomeItem: Identifiable, Equatable {
     let id: String
     let title: String
@@ -19,12 +19,13 @@ struct HomeHeaderCell: View, Equatable {
     let isDragged: Bool
     let dragOffset: CGFloat
     
-    // 【修正】creditAmountも比較対象に追加
+    // 【修正】creditAmountも更新チェックの対象に含める
     static func == (lhs: HomeHeaderCell, rhs: HomeHeaderCell) -> Bool {
         lhs.item.id == rhs.item.id && lhs.item.amount == rhs.item.amount && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset && lhs.item.creditAmount == rhs.item.creditAmount
     }
     
     var body: some View {
+        // 【修正】BalanceViewにcreditAmountを渡す
         BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: isSilentUpdate, creditAmount: item.creditAmount)
             .background(isDragged ? Color(hex: themeMain).opacity(0.1) : Color.clear)
             .cornerRadius(8)
@@ -815,7 +816,7 @@ struct ContentView: View {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedMediaItems: medias, attachedFiles: files))
     }
 
-    // 【修正】クレジットカードの予定額をホーム画面に渡すロジックを追加
+    // 【修正】クレジットカードの予定額をホーム画面に渡すロジック
     func syncHomeItems() {
         var items: [DisplayHomeItem] = []
         if showTotalAssets {
@@ -825,8 +826,10 @@ struct ContentView: View {
         }
         for acc in accounts where acc.isVisible {
             var creditAmt: Int? = nil
+            // 引き落とし口座がこのアカウントになっているクレジットカードを探す
             let linkedCards = accounts.filter { $0.type == .credit && $0.withdrawalAccountId == acc.id }
             if !linkedCards.isEmpty {
+                // クレジットカードの残高はマイナスなので、反転させて未精算額として計算
                 let sum = linkedCards.reduce(0) { $0 + max(0, -$1.balance) }
                 if sum > 0 { creditAmt = sum }
             }
@@ -853,7 +856,7 @@ struct ContentView: View {
     }
     
     func createFullBackupData() -> FullBackupData { return FullBackupData( transactions: transactions, accounts: accounts, groups: groups, profiles: profiles, monthlyBudget: monthlyBudget, isDarkMode: isDarkMode, themeMain: themeMain, themeIncome: themeIncome, themeExpense: themeExpense, themeHoliday: themeHoliday, themeSaturday: themeSaturday, themeBG: themeBG, themeBarBG: themeBarBG, themeBarText: themeBarText, themeTabAccent: themeTabAccent, themeBodyText: themeBodyText, themeSubText: themeSubText, showTotalAssets: showTotalAssets, homeDisplayOrder: homeDisplayOrder, backupDate: BackupManager.currentDateString() ) }
-    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = backup.showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance(); updateVisibleTransactions() }
+    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance(); updateVisibleTransactions() }
     func handleImport(from url: URL) { guard let data = try? Data(contentsOf: url) else { return }; if let fd = try? JSONDecoder().decode(FullBackupData.self, from: data) { self.pendingImportData = fd; self.activeAlert = .importConfirm } else if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dec = try? JSONDecoder().decode([Transaction].self, from: txStr.data(using: .utf8)!), let aDec = try? JSONDecoder().decode([Account].self, from: accStr.data(using: .utf8)!) { let fd = createFullBackupData(); self.pendingImportData = FullBackupData( transactions: dec, accounts: aDec, groups: fd.groups, profiles: fd.profiles, monthlyBudget: fd.monthlyBudget, isDarkMode: fd.isDarkMode, themeMain: fd.themeMain, themeIncome: fd.themeIncome, themeExpense: fd.themeExpense, themeHoliday: fd.themeHoliday, themeSaturday: fd.themeSaturday, themeBG: fd.themeBG, themeBarBG: fd.themeBarBG, themeBarText: fd.themeBarText, themeTabAccent: fd.themeTabAccent, themeBodyText: fd.themeBodyText, themeSubText: fd.themeSubText, showTotalAssets: fd.showTotalAssets, homeDisplayOrder: fd.homeDisplayOrder, backupDate: "以前の形式" ); self.activeAlert = .importConfirm } }
     func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recurringPayments = []; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("リセット完了") } 
     
