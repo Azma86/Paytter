@@ -77,7 +77,7 @@ struct ContentView: View {
             
             let startComps = cal.dateComponents([.year, .month], from: rp.startDate)
             var currentMonthDate = cal.date(from: startComps)!
-            let startMonthDate = currentMonthDate // 端数判定用
+            let startMonthDate = currentMonthDate
             
             let nowComps = cal.dateComponents([.year, .month], from: now)
             let nowMonthDate = cal.date(from: nowComps)!
@@ -95,8 +95,6 @@ struct ContentView: View {
                     var targetComps = comps
                     let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
                     targetComps.day = min(rp.paymentDay, range.count)
-                    
-                    // 【修正】投稿の時間を 0:00 に設定
                     targetComps.hour = 0
                     targetComps.minute = 0
                     targetComps.second = 0
@@ -106,14 +104,12 @@ struct ContentView: View {
                         if currentMonthDate >= creationMonth {
                             var postAmount = rp.amount
                             
-                            // 端数の判定
                             if currentMonthDate == startMonthDate && rp.fractionType == 1 {
                                 postAmount = rp.fractionAmount
                             } else if rp.hasEndDate && monthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
                                 postAmount = rp.fractionAmount
                             }
                             
-                            // 【修正】○月分、金額を含めた投稿テキストを作成
                             let monthNum = cal.component(.month, from: currentMonthDate)
                             let noteText = "\(rp.name) \(monthNum)月分 ¥\(postAmount)"
                             
@@ -189,6 +185,13 @@ struct ContentView: View {
             } 
         }
         .alert(item: $activeAlert) { type in switch type { case .reset: return Alert(title: Text("全リセット"), message: Text("初期化します。"), primaryButton: .destructive(Text("リセット")) { resetAll() }, secondaryButton: .cancel()); case .restore: return Alert(title: Text("復元"), message: Text("データを復元しますか？"), primaryButton: .destructive(Text("復元")) { if let b = BackupManager.loadFullBackup(isManual: isRestoringManual) { applyFullBackup(b); activeAlert = .completion("完了") } }, secondaryButton: .cancel()); case .save: return Alert(title: Text("保存"), message: Text("上書きしますか？"), primaryButton: .default(Text("保存")) { BackupManager.saveFullBackup(data: createFullBackupData(), isManual: true); activeAlert = .completion("完了") }, secondaryButton: .cancel()); case .importConfirm: return Alert(title: Text("読込"), message: Text("上書きしますか？"), primaryButton: .destructive(Text("読込")) { if let d = pendingImportData { applyFullBackup(d); activeAlert = .completion("完了") }; pendingImportData = nil }, secondaryButton: .cancel() { pendingImportData = nil }); case .completion(let msg): return Alert(title: Text("完了"), message: Text(msg), dismissButton: .default(Text("OK"))) } }
+        // 【重要修正】競合を防ぐため、スワイプ削除のアラートはここで一元管理します！
+        .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) { 
+            Button("キャンセル", role: .cancel) {}
+            Button("削除", role: .destructive) { 
+                if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } 
+            } 
+        }
         .sheet(isPresented: $isShowingInputSheet) {
             PostView(inputText: $inputText, isPresented: $isShowingInputSheet, initialDate: Date(), isExcludedInitial: false, initialMedias: nil, initialFiles: nil, onPost: handlePostTransaction, transactions: transactions, accounts: accounts)
         }
@@ -204,7 +207,8 @@ struct ContentView: View {
                     List { ForEach(cachedVisibleTransactions) { item in let isFuture = item.date > Date(); ZStack { NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0); TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0) }.listRowInsets(EdgeInsets()).listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG)).swipeActions(edge: .trailing, allowsFullSwipe: false) { Button { transactionToDelete = item; isShowingSwipeDeleteAlert = true } label: { Text("削除") }.tint(.red) } } }.listStyle(.plain).scrollContentBackground(.hidden).refreshable { NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil) }
                 }
                 if !isHomeEditMode { Button(action: { inputText = ""; isShowingInputSheet = true }) { Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle()) }.padding(20).padding(.bottom, 10) }
-            }.navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } }; ToolbarItem(placement: .navigationBarTrailing) { Button(action: { withAnimation(.spring()) { isHomeEditMode.toggle() } }) { Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.left.and.right.circle").foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain)) } } }.toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) { Button("キャンセル", role: .cancel) {}; Button("削除", role: .destructive) { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } } }
+            }.navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } }; ToolbarItem(placement: .navigationBarTrailing) { Button(action: { withAnimation(.spring()) { isHomeEditMode.toggle() } }) { Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.left.and.right.circle").foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain)) } } }.toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            // (ここに記載されていた個別のalertは削除済みです)
         }
     }
     
@@ -278,12 +282,7 @@ struct ContentView: View {
             }
             .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
-            .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) { 
-                Button("キャンセル", role: .cancel) {}
-                Button("削除", role: .destructive) { 
-                    if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } 
-                } 
-            }
+            // (ここに記載されていた個別のalertは削除済みです)
         }
     }
     
@@ -355,7 +354,7 @@ struct ContentView: View {
                         }.foregroundColor(Color(hex: themeBodyText))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
-                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { Button("手バックアップを保存") { activeAlert = .save }.foregroundColor(Color(hex: themeBodyText)); Button("手動保存から復元") { isRestoringManual = true; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("自動保存から復元") { isRestoringManual = false; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("すべてのデータを外部に書き出す") { exportBackup() }.foregroundColor(Color(hex: themeMain)); Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { Button("手動保存") { activeAlert = .save }.foregroundColor(Color(hex: themeBodyText)); Button("手動保存から復元") { isRestoringManual = true; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("自動保存から復元") { isRestoringManual = false; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("すべてのデータを外部に書き出す") { exportBackup() }.foregroundColor(Color(hex: themeMain)); Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { Button("全データをリセット", role: .destructive) { activeAlert = .reset } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }.navigationTitle("設定").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }.toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in if case .success(let url) = result { if url.startAccessingSecurityScopedResource() { handleImport(from: url); url.stopAccessingSecurityScopedResource() } } }
