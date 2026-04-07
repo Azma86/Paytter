@@ -177,10 +177,17 @@ struct ContentView: View {
             guard let startNorm = cal.date(from: cal.dateComponents([.year, .month], from: rp.startDate)) else { continue }
             var currentMonthDate = startNorm
             let startMonthDate = startNorm
-            
             let nowMonthDate = cal.date(from: cal.dateComponents([.year, .month], from: now))!
             
-            while currentMonthDate <= nowMonthDate {
+            // 【修正】当月・翌月の設定を反映して投稿のタイミングを計算
+            while true {
+                var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
+                if rp.isNextMonth == true { targetComps.month! += 1 }
+                let targetMonthDate = cal.date(from: targetComps)!
+                
+                // 未来の引き落とし月になったら抜ける
+                if targetMonthDate > nowMonthDate { break }
+                
                 let monthStr = fmt.string(from: currentMonthDate)
                 
                 if rp.hasEndDate {
@@ -189,8 +196,7 @@ struct ContentView: View {
                 }
                 
                 if !posted.contains(monthStr) {
-                    var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
-                    let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
+                    let range = cal.range(of: .day, in: .month, for: targetMonthDate)!
                     targetComps.day = min(rp.paymentDay, range.count)
                     targetComps.hour = 0
                     targetComps.minute = 0
@@ -813,7 +819,7 @@ struct ContentView: View {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedMediaItems: medias, attachedFiles: files))
     }
 
-    // 【修正】クレジットカードの予定額に加え、サブスク・ローンの当月予定額も合算して渡すロジックを追加
+    // 【修正】当月／翌月の設定を考慮してホーム画面の引き落とし予定額を計算するロジック
     func syncHomeItems() {
         var items: [DisplayHomeItem] = []
         let cal = Calendar.current
@@ -831,35 +837,39 @@ struct ContentView: View {
         for acc in accounts where acc.isVisible {
             var creditAmt: Int? = nil
             
-            // 1. クレジットカードの引き落とし額（マイナス残高）を合算
             let linkedCards = accounts.filter { $0.type == .credit && $0.withdrawalAccountId == acc.id }
             if !linkedCards.isEmpty {
                 let sum = linkedCards.reduce(0) { $0 + max(0, -$1.balance) }
                 if sum > 0 { creditAmt = sum }
             }
             
-            // 2. まだ今月支払われていないサブスク・ローンの予定額を合算
             var rpSum = 0
             for rp in recurringPayments where rp.source == acc.name && !rp.isIncome {
                 let posted = rp.postedMonths ?? []
-                if !posted.contains(currentMonthStr) {
-                    let startComps = cal.dateComponents([.year, .month], from: rp.startDate)
-                    if let startMonthDate = cal.date(from: startComps), nowMonthDate >= startMonthDate {
-                        var isTargetMonth = true
-                        if rp.hasEndDate {
-                            let endMonthStr = fmt.string(from: rp.endDate)
-                            if currentMonthStr > endMonthStr { isTargetMonth = false }
+                let startComps = cal.dateComponents([.year, .month], from: rp.startDate)
+                guard let startMonthDate = cal.date(from: startComps) else { continue }
+                
+                var iterDate = startMonthDate
+                while true {
+                    var targetComps = cal.dateComponents([.year, .month], from: iterDate)
+                    if rp.isNextMonth == true { targetComps.month! += 1 }
+                    let targetMonthDate = cal.date(from: targetComps)!
+                    
+                    if targetMonthDate > nowMonthDate { break }
+                    
+                    let monthStr = fmt.string(from: iterDate)
+                    if rp.hasEndDate && monthStr > fmt.string(from: rp.endDate) { break }
+                    
+                    if !posted.contains(monthStr) && targetMonthDate == nowMonthDate {
+                        var expectedAmount = rp.amount
+                        if iterDate == startMonthDate && rp.fractionType == 1 {
+                            expectedAmount = rp.fractionAmount
+                        } else if rp.hasEndDate && monthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
+                            expectedAmount = rp.fractionAmount
                         }
-                        if isTargetMonth {
-                            var expectedAmount = rp.amount
-                            if nowMonthDate == startMonthDate && rp.fractionType == 1 {
-                                expectedAmount = rp.fractionAmount
-                            } else if rp.hasEndDate && currentMonthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
-                                expectedAmount = rp.fractionAmount
-                            }
-                            rpSum += expectedAmount
-                        }
+                        rpSum += expectedAmount
                     }
+                    iterDate = cal.date(byAdding: .month, value: 1, to: iterDate)!
                 }
             }
             if rpSum > 0 {
@@ -874,36 +884,40 @@ struct ContentView: View {
             let d = accs.reduce(0) { $0 + $1.diffAmount }
             var creditAmt: Int? = nil
             
-            // グループ内のクレジットカード引き落とし額合算
             let linkedCards = accounts.filter { card in card.type == .credit && accs.contains(where: { $0.id == card.withdrawalAccountId }) }
             if !linkedCards.isEmpty {
                 let sum = linkedCards.reduce(0) { $0 + max(0, -$1.balance) }
                 if sum > 0 { creditAmt = sum }
             }
             
-            // グループ内のサブスク予定額合算
             var rpSum = 0
             for acc in accs {
                 for rp in recurringPayments where rp.source == acc.name && !rp.isIncome {
                     let posted = rp.postedMonths ?? []
-                    if !posted.contains(currentMonthStr) {
-                        let startComps = cal.dateComponents([.year, .month], from: rp.startDate)
-                        if let startMonthDate = cal.date(from: startComps), nowMonthDate >= startMonthDate {
-                            var isTargetMonth = true
-                            if rp.hasEndDate {
-                                let endMonthStr = fmt.string(from: rp.endDate)
-                                if currentMonthStr > endMonthStr { isTargetMonth = false }
+                    let startComps = cal.dateComponents([.year, .month], from: rp.startDate)
+                    guard let startMonthDate = cal.date(from: startComps) else { continue }
+                    
+                    var iterDate = startMonthDate
+                    while true {
+                        var targetComps = cal.dateComponents([.year, .month], from: iterDate)
+                        if rp.isNextMonth == true { targetComps.month! += 1 }
+                        let targetMonthDate = cal.date(from: targetComps)!
+                        
+                        if targetMonthDate > nowMonthDate { break }
+                        
+                        let monthStr = fmt.string(from: iterDate)
+                        if rp.hasEndDate && monthStr > fmt.string(from: rp.endDate) { break }
+                        
+                        if !posted.contains(monthStr) && targetMonthDate == nowMonthDate {
+                            var expectedAmount = rp.amount
+                            if iterDate == startMonthDate && rp.fractionType == 1 {
+                                expectedAmount = rp.fractionAmount
+                            } else if rp.hasEndDate && monthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
+                                expectedAmount = rp.fractionAmount
                             }
-                            if isTargetMonth {
-                                var expectedAmount = rp.amount
-                                if nowMonthDate == startMonthDate && rp.fractionType == 1 {
-                                    expectedAmount = rp.fractionAmount
-                                } else if rp.hasEndDate && currentMonthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
-                                    expectedAmount = rp.fractionAmount
-                                }
-                                rpSum += expectedAmount
-                            }
+                            rpSum += expectedAmount
                         }
+                        iterDate = cal.date(byAdding: .month, value: 1, to: iterDate)!
                     }
                 }
             }
