@@ -2,7 +2,6 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
-// 【修正】引き落とし予定額（creditAmount）を保持できるように追加
 struct DisplayHomeItem: Identifiable, Equatable {
     let id: String
     let title: String
@@ -19,13 +18,11 @@ struct HomeHeaderCell: View, Equatable {
     let isDragged: Bool
     let dragOffset: CGFloat
     
-    // 【修正】creditAmountも比較対象に追加
     static func == (lhs: HomeHeaderCell, rhs: HomeHeaderCell) -> Bool {
         lhs.item.id == rhs.item.id && lhs.item.amount == rhs.item.amount && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset && lhs.item.creditAmount == rhs.item.creditAmount
     }
     
     var body: some View {
-        // 【修正】BalanceViewにcreditAmountを渡す
         BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: isSilentUpdate, creditAmount: item.creditAmount)
             .background(isDragged ? Color(hex: themeMain).opacity(0.1) : Color.clear)
             .cornerRadius(8)
@@ -816,9 +813,16 @@ struct ContentView: View {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedMediaItems: medias, attachedFiles: files))
     }
 
-    // 【修正】クレジットカードの予定額をホーム画面に渡すロジック
+    // 【修正】クレジットカードの予定額に加え、サブスク・ローンの当月予定額も合算して渡すロジックを追加
     func syncHomeItems() {
         var items: [DisplayHomeItem] = []
+        let cal = Calendar.current
+        let now = Date()
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM"
+        let currentMonthStr = fmt.string(from: now)
+        let nowMonthDate = cal.date(from: cal.dateComponents([.year, .month], from: now))!
+
         if showTotalAssets {
             let totalB = accounts.reduce(0) { $0 + $1.balance }
             let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
@@ -826,11 +830,42 @@ struct ContentView: View {
         }
         for acc in accounts where acc.isVisible {
             var creditAmt: Int? = nil
+            
+            // 1. クレジットカードの引き落とし額（マイナス残高）を合算
             let linkedCards = accounts.filter { $0.type == .credit && $0.withdrawalAccountId == acc.id }
             if !linkedCards.isEmpty {
                 let sum = linkedCards.reduce(0) { $0 + max(0, -$1.balance) }
                 if sum > 0 { creditAmt = sum }
             }
+            
+            // 2. まだ今月支払われていないサブスク・ローンの予定額を合算
+            var rpSum = 0
+            for rp in recurringPayments where rp.source == acc.name && !rp.isIncome {
+                let posted = rp.postedMonths ?? []
+                if !posted.contains(currentMonthStr) {
+                    let startComps = cal.dateComponents([.year, .month], from: rp.startDate)
+                    if let startMonthDate = cal.date(from: startComps), nowMonthDate >= startMonthDate {
+                        var isTargetMonth = true
+                        if rp.hasEndDate {
+                            let endMonthStr = fmt.string(from: rp.endDate)
+                            if currentMonthStr > endMonthStr { isTargetMonth = false }
+                        }
+                        if isTargetMonth {
+                            var expectedAmount = rp.amount
+                            if nowMonthDate == startMonthDate && rp.fractionType == 1 {
+                                expectedAmount = rp.fractionAmount
+                            } else if rp.hasEndDate && currentMonthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
+                                expectedAmount = rp.fractionAmount
+                            }
+                            rpSum += expectedAmount
+                        }
+                    }
+                }
+            }
+            if rpSum > 0 {
+                creditAmt = (creditAmt ?? 0) + rpSum
+            }
+            
             items.append(DisplayHomeItem(id: "ACCOUNT_\(acc.id.uuidString)", title: acc.name, amount: acc.balance, diffAmount: acc.diffAmount, creditAmount: creditAmt))
         }
         for g in groups where g.isVisible {
@@ -838,11 +873,44 @@ struct ContentView: View {
             let b = accs.reduce(0) { $0 + $1.balance }
             let d = accs.reduce(0) { $0 + $1.diffAmount }
             var creditAmt: Int? = nil
+            
+            // グループ内のクレジットカード引き落とし額合算
             let linkedCards = accounts.filter { card in card.type == .credit && accs.contains(where: { $0.id == card.withdrawalAccountId }) }
             if !linkedCards.isEmpty {
                 let sum = linkedCards.reduce(0) { $0 + max(0, -$1.balance) }
                 if sum > 0 { creditAmt = sum }
             }
+            
+            // グループ内のサブスク予定額合算
+            var rpSum = 0
+            for acc in accs {
+                for rp in recurringPayments where rp.source == acc.name && !rp.isIncome {
+                    let posted = rp.postedMonths ?? []
+                    if !posted.contains(currentMonthStr) {
+                        let startComps = cal.dateComponents([.year, .month], from: rp.startDate)
+                        if let startMonthDate = cal.date(from: startComps), nowMonthDate >= startMonthDate {
+                            var isTargetMonth = true
+                            if rp.hasEndDate {
+                                let endMonthStr = fmt.string(from: rp.endDate)
+                                if currentMonthStr > endMonthStr { isTargetMonth = false }
+                            }
+                            if isTargetMonth {
+                                var expectedAmount = rp.amount
+                                if nowMonthDate == startMonthDate && rp.fractionType == 1 {
+                                    expectedAmount = rp.fractionAmount
+                                } else if rp.hasEndDate && currentMonthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
+                                    expectedAmount = rp.fractionAmount
+                                }
+                                rpSum += expectedAmount
+                            }
+                        }
+                    }
+                }
+            }
+            if rpSum > 0 {
+                creditAmt = (creditAmt ?? 0) + rpSum
+            }
+            
             items.append(DisplayHomeItem(id: "GROUP_\(g.id.uuidString)", title: g.name, amount: b, diffAmount: d, creditAmount: creditAmt))
         }
         items.sort { i1, i2 in
