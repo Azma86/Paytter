@@ -33,7 +33,7 @@ struct TransactionDetailView: View {
         let displayName = isDeleted ? "削除されたユーザー" : profile.name
         let displayId = isDeleted ? "deleted_user" : profile.userId
         
-        return ZStack { // 【修正】確実にViewとして認識させるため return を追加
+        return ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -791,11 +791,10 @@ struct AccountGroupCreateView: View {
     }
 }
 
-// 【修正】View生成時に変数を外に出すことで「Type '()' cannot conform to 'View'」エラーを回避
 struct WalletAnalysisView: View {
     let transactions: [Transaction]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
-    @AppStorage("closingDay") var closingDay: Int = 0 // 締め日
+    @AppStorage("closingDay") var closingDay: Int = 0
     
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -821,12 +820,12 @@ struct WalletAnalysisView: View {
         let now = Date()
         let currentDay = cal.component(.day, from: now)
         
-        if closingDay == 0 { // 月末締め
+        if closingDay == 0 { 
             let comps = cal.dateComponents([.year, .month], from: now)
             let start = cal.date(from: comps)!
             let end = cal.date(byAdding: DateComponents(month: 1, day: -1), to: start)!
             return (start, cal.date(bySettingHour: 23, minute: 59, second: 59, of: end)!)
-        } else { // 指定日締め
+        } else { 
             var startComps = cal.dateComponents([.year, .month], from: now)
             if currentDay <= closingDay { startComps.month! -= 1 }
             startComps.day = closingDay + 1
@@ -843,7 +842,6 @@ struct WalletAnalysisView: View {
         return validTransactions.filter { !$0.isIncome && $0.date >= range.start && $0.date <= range.end }.reduce(0) { $0 + $1.amount }
     }
     
-    // 【重要修正】List内で変数を宣言するとエラーになるため、Computed Propertyに切り出しました
     var rangeText: String {
         let df = DateFormatter()
         df.dateFormat = "M/d"
@@ -943,7 +941,7 @@ struct RecurringPaymentCreateView: View {
             .navigationTitle("新規登録")
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)), trailing: Button("追加") {
-                let rp = RecurringPayment(name: name, amount: Int(amountStr) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr) ?? 0)
+                let rp = RecurringPayment(name: name, amount: Int(amountStr) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr) ?? 0, createdAt: Date())
                 recurringPayments.append(rp)
                 NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
                 dismiss()
@@ -959,6 +957,7 @@ struct RecurringPaymentCreateView: View {
 struct RecurringPaymentEditView: View {
     @Binding var payment: RecurringPayment
     @Binding var recurringPayments: [RecurringPayment]
+    @Binding var transactions: [Transaction] // 【追加】履歴を保存するために必要
     let accounts: [Account]
     let profiles: [UserProfile]
     
@@ -1012,6 +1011,15 @@ struct RecurringPaymentEditView: View {
                         TextField("調整月の金額", text: $fractionAmountStr).keyboardType(.numberPad).foregroundColor(Color(hex: themeBodyText)).onChange(of: fractionAmountStr) { val in payment.fractionAmount = Int(val) ?? 0 }
                     }
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                
+                // 【新規】過去の未反映分を一気に投稿する（残高から除外）
+                Section(header: Text("過去の履歴").foregroundColor(Color(hex: themeSubText)), footer: Text("今日より前の支払いで、まだタイムラインに反映されていない月を一気に登録します。残高には影響しません。").foregroundColor(Color(hex: themeSubText))) {
+                    Button(action: postPastTransactions) {
+                        Text("過去の未反映分を履歴に追加（残高除外）")
+                            .foregroundColor(Color(hex: themeMain))
+                            .bold()
+                    }
+                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
             }.scrollContentBackground(.hidden)
         }
         .navigationTitle(payment.name)
@@ -1020,6 +1028,59 @@ struct RecurringPaymentEditView: View {
         .onAppear { amountStr = String(payment.amount); fractionAmountStr = String(payment.fractionAmount) }
         .onDisappear {
             NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
+        }
+    }
+    
+    // 【新規】過去の未反映分を一気に投稿する機能（isExcludedFromBalance = true で投稿）
+    func postPastTransactions() {
+        let cal = Calendar.current
+        let now = Date()
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM"
+        
+        var posted = payment.postedMonths ?? []
+        var newTransactions: [Transaction] = []
+        
+        guard let startNorm = cal.date(from: cal.dateComponents([.year, .month], from: payment.startDate)) else { return }
+        let nowMonthDate = cal.date(from: cal.dateComponents([.year, .month], from: now))!
+        
+        var currentMonthDate = startNorm
+        
+        while currentMonthDate <= nowMonthDate {
+            let monthStr = fmt.string(from: currentMonthDate)
+            
+            if payment.hasEndDate {
+                let endMonthStr = fmt.string(from: payment.endDate)
+                if monthStr > endMonthStr { break }
+            }
+            
+            if !posted.contains(monthStr) {
+                var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
+                let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
+                targetComps.day = min(payment.paymentDay, range.count)
+                targetComps.hour = 8
+                
+                if let targetDate = cal.date(from: targetComps), now >= targetDate {
+                    var postAmount = payment.amount
+                    if posted.isEmpty && payment.fractionType == 1 {
+                        postAmount = payment.fractionAmount
+                    } else if payment.hasEndDate && monthStr == fmt.string(from: payment.endDate) && payment.fractionType == 2 {
+                        postAmount = payment.fractionAmount
+                    }
+                    
+                    // 「過去分」とわかるようにメモを追加し、残高計算から除外する
+                    let tx = Transaction(amount: postAmount, date: targetDate, note: "\(payment.name) (過去分)", source: payment.source, isIncome: payment.isIncome, isExcludedFromBalance: true, profileId: payment.profileId)
+                    newTransactions.append(tx)
+                    posted.append(monthStr)
+                }
+            }
+            currentMonthDate = cal.date(byAdding: .month, value: 1, to: currentMonthDate)!
+        }
+        
+        if !newTransactions.isEmpty {
+            transactions.append(contentsOf: newTransactions)
+            payment.postedMonths = posted
+            dismiss()
         }
     }
 }
