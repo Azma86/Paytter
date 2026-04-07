@@ -794,7 +794,7 @@ struct AccountGroupCreateView: View {
 struct WalletAnalysisView: View {
     let transactions: [Transaction]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
-    @AppStorage("closingDay") var closingDay: Int = 0
+    @AppStorage("closingDay") var closingDay: Int = 0 // 締め日
     
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
@@ -957,7 +957,7 @@ struct RecurringPaymentCreateView: View {
 struct RecurringPaymentEditView: View {
     @Binding var payment: RecurringPayment
     @Binding var recurringPayments: [RecurringPayment]
-    @Binding var transactions: [Transaction] // 【追加】履歴を保存するために必要
+    @Binding var transactions: [Transaction] 
     let accounts: [Account]
     let profiles: [UserProfile]
     
@@ -1012,10 +1012,10 @@ struct RecurringPaymentEditView: View {
                     }
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 
-                // 【新規】過去の未反映分を一気に投稿する（残高から除外）
-                Section(header: Text("過去の履歴").foregroundColor(Color(hex: themeSubText)), footer: Text("今日より前の支払いで、まだタイムラインに反映されていない月を一気に登録します。残高には影響しません。").foregroundColor(Color(hex: themeSubText))) {
+                // 【変更】間違って消した時などに何度でも再投稿できるようにしました
+                Section(header: Text("過去の履歴").foregroundColor(Color(hex: themeSubText)), footer: Text("間違って消してしまった時や、アプリ導入前の履歴を一気に作成します。何度でも作成可能で、残高には影響しません。").foregroundColor(Color(hex: themeSubText))) {
                     Button(action: postPastTransactions) {
-                        Text("過去の未反映分を履歴に追加（残高除外）")
+                        Text("過去の分を履歴に追加（残高除外・何度でも可）")
                             .foregroundColor(Color(hex: themeMain))
                             .bold()
                     }
@@ -1031,14 +1031,13 @@ struct RecurringPaymentEditView: View {
         }
     }
     
-    // 【新規】過去の未反映分を一気に投稿する機能（isExcludedFromBalance = true で投稿）
+    // 【変更】重複チェックを外し、何度でも投稿可能にしました。また、0:00固定で本文に○月分を含めます。
     func postPastTransactions() {
         let cal = Calendar.current
         let now = Date()
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM"
         
-        var posted = payment.postedMonths ?? []
         var newTransactions: [Transaction] = []
         
         guard let startNorm = cal.date(from: cal.dateComponents([.year, .month], from: payment.startDate)) else { return }
@@ -1054,32 +1053,35 @@ struct RecurringPaymentEditView: View {
                 if monthStr > endMonthStr { break }
             }
             
-            if !posted.contains(monthStr) {
-                var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
-                let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
-                targetComps.day = min(payment.paymentDay, range.count)
-                targetComps.hour = 8
-                
-                if let targetDate = cal.date(from: targetComps), now >= targetDate {
-                    var postAmount = payment.amount
-                    if posted.isEmpty && payment.fractionType == 1 {
-                        postAmount = payment.fractionAmount
-                    } else if payment.hasEndDate && monthStr == fmt.string(from: payment.endDate) && payment.fractionType == 2 {
-                        postAmount = payment.fractionAmount
-                    }
-                    
-                    // 「過去分」とわかるようにメモを追加し、残高計算から除外する
-                    let tx = Transaction(amount: postAmount, date: targetDate, note: "\(payment.name) (過去分)", source: payment.source, isIncome: payment.isIncome, isExcludedFromBalance: true, profileId: payment.profileId)
-                    newTransactions.append(tx)
-                    posted.append(monthStr)
+            var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
+            let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
+            targetComps.day = min(payment.paymentDay, range.count)
+            // 【修正】投稿の時間を 0:00 に設定
+            targetComps.hour = 0
+            targetComps.minute = 0
+            targetComps.second = 0
+            
+            if let targetDate = cal.date(from: targetComps), now >= targetDate {
+                var postAmount = payment.amount
+                if currentMonthDate == startNorm && payment.fractionType == 1 {
+                    postAmount = payment.fractionAmount
+                } else if payment.hasEndDate && monthStr == fmt.string(from: payment.endDate) && payment.fractionType == 2 {
+                    postAmount = payment.fractionAmount
                 }
+                
+                // 【修正】○月分、金額を含めた投稿テキストを作成し、(過去分)を追加
+                let monthNum = cal.component(.month, from: currentMonthDate)
+                let noteText = "\(payment.name) \(monthNum)月分 ¥\(postAmount) (過去分)"
+                
+                let tx = Transaction(amount: postAmount, date: targetDate, note: noteText, source: payment.source, isIncome: payment.isIncome, isExcludedFromBalance: true, profileId: payment.profileId)
+                newTransactions.append(tx)
             }
             currentMonthDate = cal.date(byAdding: .month, value: 1, to: currentMonthDate)!
         }
         
         if !newTransactions.isEmpty {
             transactions.append(contentsOf: newTransactions)
-            payment.postedMonths = posted
+            // postedMonthsは更新しないことで、何度でも作成可能にしています
             dismiss()
         }
     }
