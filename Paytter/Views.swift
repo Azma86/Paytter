@@ -150,7 +150,6 @@ struct TransactionDetailView: View {
                 }.foregroundColor(Color(hex: themeMain))
             }
         }
-        // 【重要修正】詳細画面での削除アラートが消えないように、より安定したconfirmationDialogに変更
         .confirmationDialog("投稿を削除しますか？", isPresented: $isShowingDeleteConfirm, titleVisibility: .visible) {
             Button("削除", role: .destructive) {
                 if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
@@ -179,7 +178,8 @@ struct TransactionDetailView: View {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
                 .filter { $0.contains("¥") }
-                .reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) }
+                // 【修正】カンマが含まれる金額も正しく再計算されるように変更
+                .reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "").replacingOccurrences(of: ",", with: "")) ?? 0) }
             
             var nSrc = currentItem.source
             for acc in accounts {
@@ -556,7 +556,25 @@ struct AccountCreateView: View {
                                 Label(type.rawValue, systemImage: type.icon).tag(type)
                             }
                         } label: { Text("種類").foregroundColor(Color(hex: themeBodyText)) }
-                        TextField("現在の金額", text: $initial).keyboardType(.numbersAndPunctuation).foregroundColor(Color(hex: themeBodyText))
+                        
+                        // 【修正】¥マークを数字のすぐ左にピタッとくっつけました
+                        HStack {
+                            Text("現在の金額").foregroundColor(Color(hex: themeBodyText))
+                            Spacer()
+                            HStack(spacing: 2) {
+                                Text("¥").foregroundColor(Color(hex: themeSubText))
+                                TextField("0", text: $initial)
+                                    .keyboardType(.numberPad)
+                                    .foregroundColor(Color(hex: themeBodyText))
+                                    .multilineTextAlignment(.trailing)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .onChange(of: initial) { val in
+                                        let clean = val.replacingOccurrences(of: "[^0-9-]", with: "", options: .regularExpression)
+                                        if let intVal = Int(clean) { initial = intVal.formattedWithComma } else { initial = "" }
+                                    }
+                            }
+                        }
+                        
                         Toggle("ホーム上部に表示", isOn: $isVisible).foregroundColor(Color(hex: themeBodyText))
                     }
                     .listRowBackground(Color(hex: themeBG).opacity(0.5))
@@ -567,11 +585,11 @@ struct AccountCreateView: View {
             .navigationBarItems(
                 leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)),
                 trailing: Button("追加") {
-                    let val = Int(initial) ?? 0
+                    let val = Int(initial.replacingOccurrences(of: ",", with: "")) ?? 0
                     let newAcc = Account(name: name, balance: val, type: selectedType, isVisible: isVisible)
                     accounts.append(newAcc)
                     if val != 0 {
-                        transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val)", source: name, isIncome: true))
+                        transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val.formattedWithComma)", source: name, isIncome: true))
                     }
                     dismiss()
                 }.disabled(name.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold)
@@ -612,14 +630,24 @@ struct AccountEditView: View {
                 
                 Section(header: Text("残高の調整").foregroundColor(Color(hex: themeSubText))) {
                     HStack {
-                        TextField("新しい残高を入力", text: $editBalance)
-                            .keyboardType(.numbersAndPunctuation)
-                            .foregroundColor(Color(hex: themeBodyText))
+                        // 【修正】¥マークを数字のすぐ左にピタッとくっつけました
+                        HStack(spacing: 2) {
+                            Text("¥").foregroundColor(Color(hex: themeSubText))
+                            TextField("新しい残高", text: $editBalance)
+                                .keyboardType(.numberPad)
+                                .foregroundColor(Color(hex: themeBodyText))
+                                .fixedSize(horizontal: true, vertical: false)
+                                .onChange(of: editBalance) { val in
+                                    let clean = val.replacingOccurrences(of: "[^0-9-]", with: "", options: .regularExpression)
+                                    if let intVal = Int(clean) { editBalance = intVal.formattedWithComma } else { editBalance = "" }
+                                }
+                        }
+                        Spacer()
                         Button("調整投稿") {
-                            if let newVal = Int(editBalance) {
+                            if let newVal = Int(editBalance.replacingOccurrences(of: ",", with: "")) {
                                 let diff = newVal - account.balance
                                 if diff != 0 {
-                                    transactions.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff))", source: account.name, isIncome: diff > 0))
+                                    transactions.append(Transaction(amount: abs(diff), date: Date(), note: "残額調整 @\(account.name) ¥\(abs(diff).formattedWithComma)", source: account.name, isIncome: diff > 0))
                                 }
                                 editBalance = ""
                                 NotificationCenter.default.post(name: NSNotification.Name("SwitchToHomeTab"), object: nil)
@@ -792,88 +820,6 @@ struct AccountGroupCreateView: View {
     }
 }
 
-struct WalletAnalysisView: View {
-    let transactions: [Transaction]
-    @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
-    @AppStorage("closingDay") var closingDay: Int = 0
-    
-    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
-    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
-    @ObservedObject var lockManager = LockManager.shared
-    
-    var validTransactions: [Transaction] {
-        if lockManager.isUnlocked || lockManager.reflectPrivateBalanceWhenLocked {
-            return transactions
-        } else {
-            return transactions.filter { tx in
-                let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
-                return !(profile?.isPrivate ?? false)
-            }
-        }
-    }
-    
-    var currentPeriodRange: (start: Date, end: Date) {
-        let cal = Calendar.current
-        let now = Date()
-        let currentDay = cal.component(.day, from: now)
-        
-        if closingDay == 0 { 
-            let comps = cal.dateComponents([.year, .month], from: now)
-            let start = cal.date(from: comps)!
-            let end = cal.date(byAdding: DateComponents(month: 1, day: -1), to: start)!
-            return (start, cal.date(bySettingHour: 23, minute: 59, second: 59, of: end)!)
-        } else { 
-            var startComps = cal.dateComponents([.year, .month], from: now)
-            if currentDay <= closingDay { startComps.month! -= 1 }
-            startComps.day = closingDay + 1
-            let start = cal.date(from: startComps)!
-            
-            let endMonth = cal.date(byAdding: .month, value: 1, to: start)!
-            let end = cal.date(byAdding: .day, value: -1, to: endMonth)!
-            return (start, cal.date(bySettingHour: 23, minute: 59, second: 59, of: end)!)
-        }
-    }
-    
-    var monthlyTotal: Int {
-        let range = currentPeriodRange
-        return validTransactions.filter { !$0.isIncome && $0.date >= range.start && $0.date <= range.end }.reduce(0) { $0 + $1.amount }
-    }
-    
-    var rangeText: String {
-        let df = DateFormatter()
-        df.dateFormat = "M/d"
-        return "\(df.string(from: currentPeriodRange.start)) 〜 \(df.string(from: currentPeriodRange.end))"
-    }
-    
-    var body: some View {
-        ZStack {
-            Color(hex: themeBG).ignoresSafeArea()
-            List {
-                Section(header: Text("今期のサマリー (\(rangeText))").foregroundColor(Color(hex: themeSubText))) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("合計支出").font(.caption).foregroundColor(Color(hex: themeSubText))
-                        Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()).foregroundColor(Color(hex: themeBodyText))
-                        
-                        ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget))
-                            .accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? Color(hex: themeExpense) : Color(hex: themeMain))
-                        
-                        Text("予算 ¥\(monthlyBudget) まであと ¥\(max(0, monthlyBudget - monthlyTotal))")
-                            .font(.caption2).foregroundColor(Color(hex: themeSubText))
-                    }.padding(.vertical, 10)
-                }
-                .listRowBackground(Color(hex: themeBG).opacity(0.5))
-            }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-        }
-        .navigationTitle("分析")
-    }
-}
-
 struct RecurringPaymentCreateView: View {
     @Binding var recurringPayments: [RecurringPayment]
     let accounts: [Account]
@@ -905,15 +851,22 @@ struct RecurringPaymentCreateView: View {
                     Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
                         TextField("名前（例：Apple Music）", text: $name).foregroundColor(Color(hex: themeBodyText))
                         
-                        // 【修正】毎月の金額入力欄をわかりやすく変更
+                        // 【修正】¥マークを数字のすぐ左にピタッとくっつけました
                         HStack {
                             Text("毎月の金額").foregroundColor(Color(hex: themeBodyText))
                             Spacer()
-                            Text("¥").foregroundColor(Color(hex: themeSubText))
-                            TextField("0", text: $amountStr)
-                                .keyboardType(.numberPad)
-                                .foregroundColor(Color(hex: themeBodyText))
-                                .multilineTextAlignment(.trailing)
+                            HStack(spacing: 2) {
+                                Text("¥").foregroundColor(Color(hex: themeSubText))
+                                TextField("0", text: $amountStr)
+                                    .keyboardType(.numberPad)
+                                    .foregroundColor(Color(hex: themeBodyText))
+                                    .multilineTextAlignment(.trailing)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .onChange(of: amountStr) { val in
+                                        let clean = val.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+                                        if let intVal = Int(clean) { amountStr = intVal.formattedWithComma } else { amountStr = "" }
+                                    }
+                            }
                         }
                         
                         Picker(selection: $selectedSourceName) {
@@ -943,16 +896,23 @@ struct RecurringPaymentCreateView: View {
                             Text("初回").tag(1)
                             Text("最終回").tag(2)
                         }.pickerStyle(.segmented)
+                        
                         if fractionType != 0 {
-                            // 【修正】端数金額の入力欄をわかりやすく変更
                             HStack {
                                 Text("調整金額").foregroundColor(Color(hex: themeBodyText))
                                 Spacer()
-                                Text("¥").foregroundColor(Color(hex: themeSubText))
-                                TextField("0", text: $fractionAmountStr)
-                                    .keyboardType(.numberPad)
-                                    .foregroundColor(Color(hex: themeBodyText))
-                                    .multilineTextAlignment(.trailing)
+                                HStack(spacing: 2) {
+                                    Text("¥").foregroundColor(Color(hex: themeSubText))
+                                    TextField("0", text: $fractionAmountStr)
+                                        .keyboardType(.numberPad)
+                                        .foregroundColor(Color(hex: themeBodyText))
+                                        .multilineTextAlignment(.trailing)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                        .onChange(of: fractionAmountStr) { val in
+                                            let clean = val.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+                                            if let intVal = Int(clean) { fractionAmountStr = intVal.formattedWithComma } else { fractionAmountStr = "" }
+                                        }
+                                }
                             }
                         }
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
@@ -961,7 +921,7 @@ struct RecurringPaymentCreateView: View {
             .navigationTitle("新規登録")
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)), trailing: Button("追加") {
-                let rp = RecurringPayment(name: name, amount: Int(amountStr) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr) ?? 0, createdAt: Date())
+                let rp = RecurringPayment(name: name, amount: Int(amountStr.replacingOccurrences(of: ",", with: "")) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr.replacingOccurrences(of: ",", with: "")) ?? 0, createdAt: Date())
                 recurringPayments.append(rp)
                 NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
                 dismiss()
@@ -997,10 +957,10 @@ struct RecurringPaymentEditView: View {
             Form {
                 let info = payment.paymentInfo()
                 Section(header: Text("状況").foregroundColor(Color(hex: themeSubText))) {
-                    HStack { Text("支払った金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(info.paid)").foregroundColor(Color(hex: themeBodyText)).bold() }
+                    HStack { Text("支払った金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(info.paid.formattedWithComma)").foregroundColor(Color(hex: themeBodyText)).bold() }
                     if payment.hasEndDate {
-                        HStack { Text("残りの金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(info.remaining)").foregroundColor(Color(hex: themeBodyText)).bold() }
-                        HStack { Text("合計金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(info.total)").foregroundColor(Color(hex: themeBodyText)).bold() }
+                        HStack { Text("残りの金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(info.remaining.formattedWithComma)").foregroundColor(Color(hex: themeBodyText)).bold() }
+                        HStack { Text("合計金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(info.total.formattedWithComma)").foregroundColor(Color(hex: themeBodyText)).bold() }
                         if info.total > 0 {
                             ProgressView(value: min(Double(info.paid), Double(info.total)), total: Double(info.total)).accentColor(Color(hex: themeMain))
                         }
@@ -1012,16 +972,27 @@ struct RecurringPaymentEditView: View {
                 Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
                     TextField("名前", text: $payment.name).foregroundColor(Color(hex: themeBodyText))
                     
-                    // 【修正】毎月の金額入力欄をわかりやすく変更
                     HStack {
                         Text("毎月の金額").foregroundColor(Color(hex: themeBodyText))
                         Spacer()
-                        Text("¥").foregroundColor(Color(hex: themeSubText))
-                        TextField("0", text: $amountStr)
-                            .keyboardType(.numberPad)
-                            .foregroundColor(Color(hex: themeBodyText))
-                            .multilineTextAlignment(.trailing)
-                            .onChange(of: amountStr) { val in payment.amount = Int(val) ?? 0 }
+                        HStack(spacing: 2) {
+                            Text("¥").foregroundColor(Color(hex: themeSubText))
+                            TextField("0", text: $amountStr)
+                                .keyboardType(.numberPad)
+                                .foregroundColor(Color(hex: themeBodyText))
+                                .multilineTextAlignment(.trailing)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .onChange(of: amountStr) { val in
+                                    let clean = val.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+                                    if let intVal = Int(clean) {
+                                        amountStr = intVal.formattedWithComma
+                                        payment.amount = intVal
+                                    } else {
+                                        amountStr = ""
+                                        payment.amount = 0
+                                    }
+                                }
+                        }
                     }
                     
                     Picker(selection: $payment.source) { ForEach(accounts, id: \.name) { acc in Text(acc.name).tag(acc.name) } } label: { Text("お財布").foregroundColor(Color(hex: themeBodyText)) }
@@ -1040,21 +1011,31 @@ struct RecurringPaymentEditView: View {
                 Section(header: Text("端数調整").foregroundColor(Color(hex: themeSubText))) {
                     Picker("調整のタイミング", selection: $payment.fractionType) { Text("なし").tag(0); Text("初回").tag(1); Text("最終回").tag(2) }.pickerStyle(.segmented)
                     if payment.fractionType != 0 {
-                        // 【修正】端数金額の入力欄をわかりやすく変更
                         HStack {
                             Text("調整金額").foregroundColor(Color(hex: themeBodyText))
                             Spacer()
-                            Text("¥").foregroundColor(Color(hex: themeSubText))
-                            TextField("0", text: $fractionAmountStr)
-                                .keyboardType(.numberPad)
-                                .foregroundColor(Color(hex: themeBodyText))
-                                .multilineTextAlignment(.trailing)
-                                .onChange(of: fractionAmountStr) { val in payment.fractionAmount = Int(val) ?? 0 }
+                            HStack(spacing: 2) {
+                                Text("¥").foregroundColor(Color(hex: themeSubText))
+                                TextField("0", text: $fractionAmountStr)
+                                    .keyboardType(.numberPad)
+                                    .foregroundColor(Color(hex: themeBodyText))
+                                    .multilineTextAlignment(.trailing)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .onChange(of: fractionAmountStr) { val in
+                                        let clean = val.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+                                        if let intVal = Int(clean) {
+                                            fractionAmountStr = intVal.formattedWithComma
+                                            payment.fractionAmount = intVal
+                                        } else {
+                                            fractionAmountStr = ""
+                                            payment.fractionAmount = 0
+                                        }
+                                    }
+                            }
                         }
                     }
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 
-                // 【修正】重複チェックを外し、何度でも投稿可能にしました
                 Section(header: Text("過去の履歴").foregroundColor(Color(hex: themeSubText)), footer: Text("間違って消してしまった時や、アプリ導入前の履歴を一気に作成します。何度でも作成可能で、残高には影響しません。").foregroundColor(Color(hex: themeSubText))) {
                     Button(action: postPastTransactions) {
                         Text("過去の分を履歴に追加（残高除外・何度でも可）")
@@ -1067,7 +1048,7 @@ struct RecurringPaymentEditView: View {
         .navigationTitle(payment.name)
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(isDarkMode ? .dark : .light)
-        .onAppear { amountStr = String(payment.amount); fractionAmountStr = String(payment.fractionAmount) }
+        .onAppear { amountStr = payment.amount.formattedWithComma; fractionAmountStr = payment.fractionAmount.formattedWithComma }
         .onDisappear {
             NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
         }
@@ -1097,7 +1078,6 @@ struct RecurringPaymentEditView: View {
             var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
             let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
             targetComps.day = min(payment.paymentDay, range.count)
-            // 【修正】投稿の時間を 0:00 に設定
             targetComps.hour = 0
             targetComps.minute = 0
             targetComps.second = 0
@@ -1110,9 +1090,8 @@ struct RecurringPaymentEditView: View {
                     postAmount = payment.fractionAmount
                 }
                 
-                // 【修正】○月分、金額を含めた投稿テキストを作成し、(過去分)を追加
                 let monthNum = cal.component(.month, from: currentMonthDate)
-                let noteText = "\(payment.name) \(monthNum)月分 ¥\(postAmount) (過去分)"
+                let noteText = "\(payment.name) \(monthNum)月分 ¥\(postAmount.formattedWithComma) (過去分)"
                 
                 let tx = Transaction(amount: postAmount, date: targetDate, note: noteText, source: payment.source, isIncome: payment.isIncome, isExcludedFromBalance: true, profileId: payment.profileId)
                 newTransactions.append(tx)
@@ -1122,7 +1101,6 @@ struct RecurringPaymentEditView: View {
         
         if !newTransactions.isEmpty {
             transactions.append(contentsOf: newTransactions)
-            // postedMonthsは更新しないことで、何度でも作成可能にしています
             dismiss()
         }
     }
