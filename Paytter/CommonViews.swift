@@ -759,7 +759,7 @@ struct TimelineImageGrid: View {
     }
 }
 
-// 【修正】引落予定をレイアウトの外側（overlay）に配置し、高さのズレを完全に防ぎました
+// 【修正】レイアウトを維持したまま、引落予定を薄く表示できるように変更しました
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int; let isSilent: Bool
     var creditAmount: Int? = nil
@@ -779,15 +779,14 @@ struct BalanceView: View {
         }
         .frame(maxWidth: .infinity)
         .overlay(
-            Group {
+            ZStack {
                 if let creditAmt = creditAmount, creditAmt > 0 {
                     Text("引落予定 ¥\(creditAmt.formattedWithComma)")
                         .font(.system(size: 9))
                         .foregroundColor(Color(hex: themeSubText).opacity(0.8))
-                        .offset(y: 16) // 金額表示の下に重ならないように配置
+                        .offset(y: 16) // メインの金額の下にズラして配置
                 }
-            }
-            , alignment: .bottom
+            }, alignment: .bottom
         )
         .onChange(of: amount) { newValue in if newValue != lastAmount { if isSilent { showDiff = true; lastAmount = newValue } else { showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }; lastAmount = newValue } } }
         .onAppear { lastAmount = amount }
