@@ -2,11 +2,13 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
+// 【修正】クレジットカードの予定額を保持する変数を追加
 struct DisplayHomeItem: Identifiable, Equatable {
     let id: String
     let title: String
     let amount: Int
     let diffAmount: Int
+    var creditAmount: Int? = nil
 }
 
 struct HomeHeaderCell: View, Equatable {
@@ -17,12 +19,13 @@ struct HomeHeaderCell: View, Equatable {
     let isDragged: Bool
     let dragOffset: CGFloat
     
+    // 【修正】creditAmountも比較対象に追加
     static func == (lhs: HomeHeaderCell, rhs: HomeHeaderCell) -> Bool {
-        lhs.item.id == rhs.item.id && lhs.item.amount == rhs.item.amount && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset
+        lhs.item.id == rhs.item.id && lhs.item.amount == rhs.item.amount && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset && lhs.item.creditAmount == rhs.item.creditAmount
     }
     
     var body: some View {
-        BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: isSilentUpdate)
+        BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: isSilentUpdate, creditAmount: item.creditAmount)
             .background(isDragged ? Color(hex: themeMain).opacity(0.1) : Color.clear)
             .cornerRadius(8)
             .offset(x: isDragged ? dragOffset : 0, y: 0)
@@ -230,7 +233,6 @@ struct ContentView: View {
         }
     }
 
-    // 【新規】クレジットカードの自動引き落とし（精算）チェック処理
     func checkAndPostCreditCardWithdrawals() {
         let cal = Calendar.current
         let now = Date()
@@ -266,7 +268,6 @@ struct ContentView: View {
                         let creationMonth = cal.date(from: cal.dateComponents([.year, .month], from: acc.createdAt ?? Date()))!
                         if currentMonthDate >= creationMonth {
                             
-                            // 締め日の期間を計算
                             var closingComps = cal.dateComponents([.year, .month], from: targetDate)
                             if closingDay == 0 {
                                 closingComps.month! -= 1
@@ -299,7 +300,6 @@ struct ContentView: View {
                             }
                             let closingDateStart = cal.date(byAdding: .second, value: 1, to: cal.date(from: prevClosingComps)!)!
                             
-                            // 期間内のカード利用額を計算
                             var amount = 0
                             for tx in transactions {
                                 if tx.source == acc.name && !tx.isIncome && tx.date >= closingDateStart && tx.date <= closingDateEnd && tx.isExcludedFromBalance != true {
@@ -313,10 +313,9 @@ struct ContentView: View {
                             
                             if amount > 0 {
                                 let monthNum = cal.component(.month, from: currentMonthDate)
-                                // 1. 引き落とし元口座から引く（支出）
                                 let noteText1 = "\(acc.name) \(monthNum)月分 カード引き落とし ¥\(amount.formattedWithComma)"
                                 let tx1 = Transaction(amount: amount, date: targetDate, note: noteText1, source: withdrawalAccount.name, isIncome: false, isExcludedFromBalance: false, profileId: profiles.first?.id)
-                                // 2. カードの残高を回復させる（収入）
+                                
                                 let noteText2 = "\(acc.name) \(monthNum)月分 カード引き落とし精算 ¥\(amount.formattedWithComma)"
                                 let tx2 = Transaction(amount: amount, date: targetDate, note: noteText2, source: acc.name, isIncome: true, isExcludedFromBalance: false, profileId: profiles.first?.id)
                                 
@@ -404,7 +403,7 @@ struct ContentView: View {
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { 
             checkAndPostRecurringPayments()
-            checkAndPostCreditCardWithdrawals() // 【追加】カードの引き落としもチェック
+            checkAndPostCreditCardWithdrawals()
             recalculateBalances(saveBackup: false)
             updateVisibleTransactions()
             updateAppearance()
@@ -431,7 +430,7 @@ struct ContentView: View {
             if newPhase == .background { lockManager.lock() } 
             else if newPhase == .active { 
                 checkAndPostRecurringPayments()
-                checkAndPostCreditCardWithdrawals() // 【追加】
+                checkAndPostCreditCardWithdrawals()
                 if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
                     lockManager.promptUnlock()
                 } 
@@ -816,9 +815,45 @@ struct ContentView: View {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedMediaItems: medias, attachedFiles: files))
     }
 
-    func syncHomeItems() { var items: [DisplayHomeItem] = []; if showTotalAssets { let totalB = accounts.reduce(0) { $0 + $1.balance }; let totalD = accounts.reduce(0) { $0 + $1.diffAmount }; items.append(DisplayHomeItem(id: "TOTAL_ASSETS", title: "総資産", amount: totalB, diffAmount: totalD)) }; for acc in accounts where acc.isVisible { items.append(DisplayHomeItem(id: "ACCOUNT_\(acc.id.uuidString)", title: acc.name, amount: acc.balance, diffAmount: acc.diffAmount)) }; for g in groups where g.isVisible { let accs = accounts.filter { g.accountIds.contains($0.id) }; let b = accs.reduce(0) { $0 + $1.balance }; let d = accs.reduce(0) { $0 + $1.diffAmount }; items.append(DisplayHomeItem(id: "GROUP_\(g.id.uuidString)", title: g.name, amount: b, diffAmount: d)) }; items.sort { i1, i2 in let idx1 = homeDisplayOrder.firstIndex(of: i1.id) ?? Int.max; let idx2 = homeDisplayOrder.firstIndex(of: i2.id) ?? Int.max; return idx1 < idx2 }; self.homeItems = items }
+    // 【修正】クレジットカードの予定額をホーム画面に渡すロジックを追加
+    func syncHomeItems() {
+        var items: [DisplayHomeItem] = []
+        if showTotalAssets {
+            let totalB = accounts.reduce(0) { $0 + $1.balance }
+            let totalD = accounts.reduce(0) { $0 + $1.diffAmount }
+            items.append(DisplayHomeItem(id: "TOTAL_ASSETS", title: "総資産", amount: totalB, diffAmount: totalD, creditAmount: nil))
+        }
+        for acc in accounts where acc.isVisible {
+            var creditAmt: Int? = nil
+            let linkedCards = accounts.filter { $0.type == .credit && $0.withdrawalAccountId == acc.id }
+            if !linkedCards.isEmpty {
+                let sum = linkedCards.reduce(0) { $0 + max(0, -$1.balance) }
+                if sum > 0 { creditAmt = sum }
+            }
+            items.append(DisplayHomeItem(id: "ACCOUNT_\(acc.id.uuidString)", title: acc.name, amount: acc.balance, diffAmount: acc.diffAmount, creditAmount: creditAmt))
+        }
+        for g in groups where g.isVisible {
+            let accs = accounts.filter { g.accountIds.contains($0.id) }
+            let b = accs.reduce(0) { $0 + $1.balance }
+            let d = accs.reduce(0) { $0 + $1.diffAmount }
+            var creditAmt: Int? = nil
+            let linkedCards = accounts.filter { card in card.type == .credit && accs.contains(where: { $0.id == card.withdrawalAccountId }) }
+            if !linkedCards.isEmpty {
+                let sum = linkedCards.reduce(0) { $0 + max(0, -$1.balance) }
+                if sum > 0 { creditAmt = sum }
+            }
+            items.append(DisplayHomeItem(id: "GROUP_\(g.id.uuidString)", title: g.name, amount: b, diffAmount: d, creditAmount: creditAmt))
+        }
+        items.sort { i1, i2 in
+            let idx1 = homeDisplayOrder.firstIndex(of: i1.id) ?? Int.max
+            let idx2 = homeDisplayOrder.firstIndex(of: i2.id) ?? Int.max
+            return idx1 < idx2
+        }
+        self.homeItems = items
+    }
+    
     func createFullBackupData() -> FullBackupData { return FullBackupData( transactions: transactions, accounts: accounts, groups: groups, profiles: profiles, monthlyBudget: monthlyBudget, isDarkMode: isDarkMode, themeMain: themeMain, themeIncome: themeIncome, themeExpense: themeExpense, themeHoliday: themeHoliday, themeSaturday: themeSaturday, themeBG: themeBG, themeBarBG: themeBarBG, themeBarText: themeBarText, themeTabAccent: themeTabAccent, themeBodyText: themeBodyText, themeSubText: themeSubText, showTotalAssets: showTotalAssets, homeDisplayOrder: homeDisplayOrder, backupDate: BackupManager.currentDateString() ) }
-    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance(); updateVisibleTransactions() }
+    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = backup.showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance(); updateVisibleTransactions() }
     func handleImport(from url: URL) { guard let data = try? Data(contentsOf: url) else { return }; if let fd = try? JSONDecoder().decode(FullBackupData.self, from: data) { self.pendingImportData = fd; self.activeAlert = .importConfirm } else if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dec = try? JSONDecoder().decode([Transaction].self, from: txStr.data(using: .utf8)!), let aDec = try? JSONDecoder().decode([Account].self, from: accStr.data(using: .utf8)!) { let fd = createFullBackupData(); self.pendingImportData = FullBackupData( transactions: dec, accounts: aDec, groups: fd.groups, profiles: fd.profiles, monthlyBudget: fd.monthlyBudget, isDarkMode: fd.isDarkMode, themeMain: fd.themeMain, themeIncome: fd.themeIncome, themeExpense: fd.themeExpense, themeHoliday: fd.themeHoliday, themeSaturday: fd.themeSaturday, themeBG: fd.themeBG, themeBarBG: fd.themeBarBG, themeBarText: fd.themeBarText, themeTabAccent: fd.themeTabAccent, themeBodyText: fd.themeBodyText, themeSubText: fd.themeSubText, showTotalAssets: fd.showTotalAssets, homeDisplayOrder: fd.homeDisplayOrder, backupDate: "以前の形式" ); self.activeAlert = .importConfirm } }
     func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recurringPayments = []; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("リセット完了") } 
     
