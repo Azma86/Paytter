@@ -75,7 +75,7 @@ struct AttachedMediaItem: Identifiable, Codable, Equatable {
     var id = UUID()
     var type: MediaType
     var localFileName: String
-    var originalFileName: String?
+    var originalFileName: String? 
     var thumbnailData: Data?
     var durationText: String?
 }
@@ -138,7 +138,6 @@ extension Transaction {
     }
 }
 
-// 【新規】サブスク・ローン用のデータモデル
 struct RecurringPayment: Identifiable, Codable, Equatable {
     var id = UUID()
     var name: String
@@ -150,10 +149,12 @@ struct RecurringPayment: Identifiable, Codable, Equatable {
     var profileId: UUID?
     var source: String
     var isIncome: Bool
-    var fractionType: Int // 0: なし, 1: 初回, 2: 最終回
+    var fractionType: Int 
     var fractionAmount: Int
     
-    // 【新規】現在の年月と設定に基づいて、支払い状況を自動計算する関数
+    // 【新規】自動投稿された「年月（yyyy-MM）」を記憶し、二重投稿を防ぐ
+    var postedMonths: [String]?
+    
     func paymentInfo() -> (total: Int, paid: Int, remaining: Int) {
         let cal = Calendar.current
         guard let startNorm = cal.date(from: cal.dateComponents([.year, .month], from: startDate)),
