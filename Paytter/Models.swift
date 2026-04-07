@@ -64,8 +64,24 @@ enum AccountType: String, Codable, CaseIterable {
 }
 
 struct AccountGroup: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var isVisible: Bool = true; var accountIds: [UUID] = [] }
-// 【修正】クレジットカード用の設定（closingDay, withdrawalDay）を追加しました
-struct Account: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var balance: Int; var type: AccountType; var isVisible: Bool = true; var payday: Int? = nil; var withdrawalAccountId: UUID? = nil; var diffAmount: Int = 0; var closingDay: Int? = nil; var withdrawalDay: Int? = nil }
+
+// 【修正】クレジットカード用の設定（限度額や引き落とし記録）を追加
+struct Account: Identifiable, Codable, Equatable { 
+    var id = UUID(); 
+    var name: String; 
+    var balance: Int; 
+    var type: AccountType; 
+    var isVisible: Bool = true; 
+    var payday: Int? = nil; 
+    var withdrawalAccountId: UUID? = nil; 
+    var diffAmount: Int = 0; 
+    var closingDay: Int? = nil; 
+    var withdrawalDay: Int? = nil; 
+    var creditLimit: Int? = nil; 
+    var postedWithdrawalMonths: [String]? = nil; 
+    var createdAt: Date? = nil 
+}
+
 struct UserProfile: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var userId: String; var iconData: Data?; var isVisible: Bool = true; var isPrivate: Bool?; var isDeleted: Bool? }
 
 enum MediaType: String, Codable {
