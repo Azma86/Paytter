@@ -770,8 +770,9 @@ struct BalanceView: View {
         VStack {
             Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
             ZStack(alignment: .topTrailing) {
-                Text("¥\(amount)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
-                if diff != 0 { Text(diff > 0 ? "+\(diff)" : "\(diff)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense)).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) }
+                // 【修正】カンマ区切りの金額表示に変更
+                Text("¥\(amount.formattedWithComma)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
+                if diff != 0 { Text(diff > 0 ? "+\(diff.formattedWithComma)" : "\(diff.formattedWithComma)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense)).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) }
             }
         }.frame(maxWidth: .infinity).onChange(of: amount) { newValue in if newValue != lastAmount { if isSilent { showDiff = true; lastAmount = newValue } else { showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }; lastAmount = newValue } } }.onAppear { lastAmount = amount }
     }
@@ -800,7 +801,6 @@ struct TwitterRow: View {
                 if hideContent { Text("鍵アカウントによる投稿です").font(.subheadline).foregroundColor(Color(hex: themeSubText)) } else {
                     HighlightedText(text: item.cleanNote, isIncome: item.isIncome).font(.subheadline).fixedSize(horizontal: false, vertical: true).foregroundColor(Color(hex: themeBodyText))
                     
-                    // 【修正】タイムラインのタグを文字だけのシンプルなデザインに変更
                     if !item.tags.isEmpty {
                         HStack {
                             ForEach(item.tags, id: \.self) { tag in
@@ -834,7 +834,8 @@ struct HighlightedText: View {
     let text: String; let isIncome: Bool
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    var body: some View { let components = tokenize(text); return components.reduce(Text("")) { (res, token) in if token == "\n" { return res + Text("\n") } else if token.contains("¥") { let amountVal = Int(token.replacingOccurrences(of: "¥", with: "")) ?? 0; let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome; return res + Text(token.replacingOccurrences(of: "-", with: "")).foregroundColor(actuallyIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).fontWeight(.bold) } else { return res + Text(token) } } }
+    // 【修正】カンマが含まれる金額も正しくハイライトされるように変更
+    var body: some View { let components = tokenize(text); return components.reduce(Text("")) { (res, token) in if token == "\n" { return res + Text("\n") } else if token.contains("¥") { let amountVal = Int(token.replacingOccurrences(of: "¥", with: "").replacingOccurrences(of: ",", with: "")) ?? 0; let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome; return res + Text(token.replacingOccurrences(of: "-", with: "")).foregroundColor(actuallyIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).fontWeight(.bold) } else { return res + Text(token) } } }
     func tokenize(_ input: String) -> [String] { var tokens: [String] = []; var current = ""; for char in input { if char == " " || char == "　" || char == "\n" { if !current.isEmpty { tokens.append(current); current = "" }; tokens.append(String(char)) } else { current.append(char) } }; if !current.isEmpty { tokens.append(current) }; return tokens }
 }
 
