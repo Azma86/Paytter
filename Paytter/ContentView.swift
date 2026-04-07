@@ -77,6 +77,7 @@ struct ContentView: View {
             
             let startComps = cal.dateComponents([.year, .month], from: rp.startDate)
             var currentMonthDate = cal.date(from: startComps)!
+            let startMonthDate = currentMonthDate // 端数判定用
             
             let nowComps = cal.dateComponents([.year, .month], from: now)
             let nowMonthDate = cal.date(from: nowComps)!
@@ -94,20 +95,29 @@ struct ContentView: View {
                     var targetComps = comps
                     let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
                     targetComps.day = min(rp.paymentDay, range.count)
-                    targetComps.hour = 8 
+                    
+                    // 【修正】投稿の時間を 0:00 に設定
+                    targetComps.hour = 0
+                    targetComps.minute = 0
+                    targetComps.second = 0
                     
                     if let targetDate = cal.date(from: targetComps), now >= targetDate {
-                        // 【重要】アプリ設定前（過去分）は自動投稿しない（ボタンで手動対応させる）
                         let creationMonth = cal.date(from: cal.dateComponents([.year, .month], from: rp.createdAt ?? Date()))!
                         if currentMonthDate >= creationMonth {
                             var postAmount = rp.amount
-                            if posted.isEmpty && rp.fractionType == 1 {
+                            
+                            // 端数の判定
+                            if currentMonthDate == startMonthDate && rp.fractionType == 1 {
                                 postAmount = rp.fractionAmount
                             } else if rp.hasEndDate && monthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
                                 postAmount = rp.fractionAmount
                             }
                             
-                            let tx = Transaction(amount: postAmount, date: targetDate, note: "\(rp.name)", source: rp.source, isIncome: rp.isIncome, profileId: rp.profileId)
+                            // 【修正】○月分、金額を含めた投稿テキストを作成
+                            let monthNum = cal.component(.month, from: currentMonthDate)
+                            let noteText = "\(rp.name) \(monthNum)月分 ¥\(postAmount)"
+                            
+                            let tx = Transaction(amount: postAmount, date: targetDate, note: noteText, source: rp.source, isIncome: rp.isIncome, profileId: rp.profileId)
                             newTransactions.append(tx)
                             posted.append(monthStr)
                             updatedRP = true
@@ -286,7 +296,6 @@ struct ContentView: View {
                 List { 
                     Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) { ForEach(accounts) { acc in NavigationLink(destination: AccountEditView(account: binding(for: acc), transactions: $transactions, allAccounts: accounts)) { HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { accountToDelete = acc; isShowingAccountDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
-                    // 【修正】詳細画面に transactions を渡せるように変更
                     Section(header: Text("サブスク・ローンの管理").foregroundColor(Color(hex: themeSubText))) {
                         ForEach(recurringPayments) { rp in
                             NavigationLink(destination: RecurringPaymentEditView(payment: binding(forRP: rp), recurringPayments: $recurringPayments, transactions: $transactions, accounts: accounts, profiles: profiles)) {
@@ -346,7 +355,7 @@ struct ContentView: View {
                         }.foregroundColor(Color(hex: themeBodyText))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
-                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { Button("手動保存") { activeAlert = .save }.foregroundColor(Color(hex: themeBodyText)); Button("手動保存から復元") { isRestoringManual = true; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("自動保存から復元") { isRestoringManual = false; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("すべてのデータを外部に書き出す") { exportBackup() }.foregroundColor(Color(hex: themeMain)); Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("バックアップ管理").foregroundColor(Color(hex: themeSubText))) { Button("手バックアップを保存") { activeAlert = .save }.foregroundColor(Color(hex: themeBodyText)); Button("手動保存から復元") { isRestoringManual = true; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("自動保存から復元") { isRestoringManual = false; activeAlert = .restore }.foregroundColor(Color(hex: themeBodyText)); Button("すべてのデータを外部に書き出す") { exportBackup() }.foregroundColor(Color(hex: themeMain)); Button("外部から読み込む") { isShowingImporter = true }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("データ管理").foregroundColor(Color(hex: themeSubText))) { Button("全データをリセット", role: .destructive) { activeAlert = .reset } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }.navigationTitle("設定").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }.toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json]) { result in if case .success(let url) = result { if url.startAccessingSecurityScopedResource() { handleImport(from: url); url.stopAccessingSecurityScopedResource() } } }
