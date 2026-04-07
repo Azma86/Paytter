@@ -543,6 +543,11 @@ struct AccountCreateView: View {
     @State private var selectedType: AccountType = .wallet
     @State private var isVisible = true
     
+    // 【新規】クレジットカード用の設定項目
+    @State private var closingDay = 0
+    @State private var withdrawalDay = 0
+    @State private var withdrawalAccountId: UUID? = nil
+    
     var body: some View {
         NavigationView {
             ZStack {
@@ -576,6 +581,29 @@ struct AccountCreateView: View {
                         Toggle("ホーム上部に表示", isOn: $isVisible).foregroundColor(Color(hex: themeBodyText))
                     }
                     .listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
+                    // 【新規】クレジットカード設定のセクション
+                    if selectedType == .credit {
+                        Section(header: Text("クレジットカード設定").foregroundColor(Color(hex: themeSubText))) {
+                            Picker("締め日", selection: $closingDay) {
+                                ForEach(1...28, id: \.self) { day in Text("\(day)日").tag(day) }
+                                Text("月末").tag(0)
+                            }.foregroundColor(Color(hex: themeBodyText))
+                            
+                            Picker("引き落とし日", selection: $withdrawalDay) {
+                                ForEach(1...28, id: \.self) { day in Text("\(day)日").tag(day) }
+                                Text("月末").tag(0)
+                            }.foregroundColor(Color(hex: themeBodyText))
+                            
+                            Picker("引き落とし口座", selection: $withdrawalAccountId) {
+                                Text("未設定").tag(UUID?(nil))
+                                ForEach(accounts) { acc in
+                                    Text(acc.name).tag(UUID?(acc.id))
+                                }
+                            }.foregroundColor(Color(hex: themeBodyText))
+                        }
+                        .listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    }
                 }.scrollContentBackground(.hidden)
             }
             .navigationTitle("新しいお財布")
@@ -584,7 +612,14 @@ struct AccountCreateView: View {
                 leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)),
                 trailing: Button("追加") {
                     let val = Int(initial.replacingOccurrences(of: ",", with: "")) ?? 0
-                    let newAcc = Account(name: name, balance: val, type: selectedType, isVisible: isVisible)
+                    var newAcc = Account(name: name, balance: val, type: selectedType, isVisible: isVisible)
+                    
+                    if selectedType == .credit {
+                        newAcc.closingDay = closingDay
+                        newAcc.withdrawalDay = withdrawalDay
+                        newAcc.withdrawalAccountId = withdrawalAccountId
+                    }
+                    
                     accounts.append(newAcc)
                     if val != 0 {
                         transactions.append(Transaction(amount: val, date: Date(), note: "お財布登録 @\(name) ¥\(val.formattedWithComma)", source: name, isIncome: true))
@@ -625,6 +660,28 @@ struct AccountEditView: View {
                     } label: { Text("種類") }
                     Toggle("ホーム上部に表示", isOn: $account.isVisible).foregroundColor(Color(hex: themeBodyText))
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                
+                // 【新規】クレジットカード設定のセクション
+                if account.type == .credit {
+                    Section(header: Text("クレジットカード設定").foregroundColor(Color(hex: themeSubText))) {
+                        Picker("締め日", selection: Binding(get: { account.closingDay ?? 0 }, set: { account.closingDay = $0 })) {
+                            ForEach(1...28, id: \.self) { day in Text("\(day)日").tag(day) }
+                            Text("月末").tag(0)
+                        }.foregroundColor(Color(hex: themeBodyText))
+                        
+                        Picker("引き落とし日", selection: Binding(get: { account.withdrawalDay ?? 0 }, set: { account.withdrawalDay = $0 })) {
+                            ForEach(1...28, id: \.self) { day in Text("\(day)日").tag(day) }
+                            Text("月末").tag(0)
+                        }.foregroundColor(Color(hex: themeBodyText))
+                        
+                        Picker("引き落とし口座", selection: $account.withdrawalAccountId) {
+                            Text("未設定").tag(UUID?(nil))
+                            ForEach(allAccounts.filter { $0.id != account.id }) { acc in
+                                Text(acc.name).tag(UUID?(acc.id))
+                            }
+                        }.foregroundColor(Color(hex: themeBodyText))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                }
                 
                 Section(header: Text("残高の調整").foregroundColor(Color(hex: themeSubText))) {
                     HStack {
