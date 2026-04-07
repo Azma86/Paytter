@@ -791,9 +791,12 @@ struct AccountGroupCreateView: View {
     }
 }
 
+// 【変更】締め日を考慮した「今期のサマリー」に変更
 struct WalletAnalysisView: View {
     let transactions: [Transaction]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
+    @AppStorage("closingDay") var closingDay: Int = 0 // 締め日
+    
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
@@ -813,15 +816,43 @@ struct WalletAnalysisView: View {
         }
     }
     
+    // 【新規】現在の締め日に基づく期間（開始日・終了日）を計算
+    var currentPeriodRange: (start: Date, end: Date) {
+        let cal = Calendar.current
+        let now = Date()
+        let currentDay = cal.component(.day, from: now)
+        
+        if closingDay == 0 { // 月末締め
+            let comps = cal.dateComponents([.year, .month], from: now)
+            let start = cal.date(from: comps)!
+            let end = cal.date(byAdding: DateComponents(month: 1, day: -1), to: start)!
+            return (start, cal.date(bySettingHour: 23, minute: 59, second: 59, of: end)!)
+        } else { // 指定日締め
+            var startComps = cal.dateComponents([.year, .month], from: now)
+            if currentDay <= closingDay { startComps.month! -= 1 }
+            startComps.day = closingDay + 1
+            let start = cal.date(from: startComps)!
+            
+            let endMonth = cal.date(byAdding: .month, value: 1, to: start)!
+            let end = cal.date(byAdding: .day, value: -1, to: endMonth)!
+            return (start, cal.date(bySettingHour: 23, minute: 59, second: 59, of: end)!)
+        }
+    }
+    
     var monthlyTotal: Int {
-        validTransactions.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount }
+        let range = currentPeriodRange
+        return validTransactions.filter { !$0.isIncome && $0.date >= range.start && $0.date <= range.end }.reduce(0) { $0 + $1.amount }
     }
     
     var body: some View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             List {
-                Section(header: Text("今月のサマリー").foregroundColor(Color(hex: themeSubText))) {
+                let df = DateFormatter()
+                df.dateFormat = "M/d"
+                let rangeText = "\(df.string(from: currentPeriodRange.start)) 〜 \(df.string(from: currentPeriodRange.end))"
+                
+                Section(header: Text("今期のサマリー (\(rangeText))").foregroundColor(Color(hex: themeSubText))) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("合計支出").font(.caption).foregroundColor(Color(hex: themeSubText))
                         Text("¥\(monthlyTotal)").font(.system(.title, design: .rounded).bold()).foregroundColor(Color(hex: themeBodyText))
@@ -842,7 +873,6 @@ struct WalletAnalysisView: View {
     }
 }
 
-// 【新規】サブスク・ローンを作成する画面
 struct RecurringPaymentCreateView: View {
     @Binding var recurringPayments: [RecurringPayment]
     let accounts: [Account]
@@ -913,6 +943,10 @@ struct RecurringPaymentCreateView: View {
             .navigationBarItems(leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)), trailing: Button("追加") {
                 let rp = RecurringPayment(name: name, amount: Int(amountStr) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr) ?? 0)
                 recurringPayments.append(rp)
+                
+                // 【追加】新規登録直後に自動投稿の条件を満たしているかチェックする
+                NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
+                
                 dismiss()
             }.disabled(name.isEmpty || amountStr.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold))
             .preferredColorScheme(isDarkMode ? .dark : .light)
@@ -923,7 +957,6 @@ struct RecurringPaymentCreateView: View {
     }
 }
 
-// 【新規】サブスク・ローンを閲覧・編集する画面（自動計算のプログレスバー付き）
 struct RecurringPaymentEditView: View {
     @Binding var payment: RecurringPayment
     @Binding var recurringPayments: [RecurringPayment]
@@ -986,5 +1019,9 @@ struct RecurringPaymentEditView: View {
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { amountStr = String(payment.amount); fractionAmountStr = String(payment.fractionAmount) }
+        .onDisappear {
+            // 【追加】編集画面を閉じた時にも、条件が変わっていれば自動投稿をチェックする
+            NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
+        }
     }
 }
