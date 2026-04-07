@@ -78,7 +78,10 @@ struct Account: Identifiable, Codable, Equatable {
     var withdrawalDay: Int? = nil; 
     var creditLimit: Int? = nil; 
     var postedWithdrawalMonths: [String]? = nil; 
-    var createdAt: Date? = nil 
+    var createdAt: Date? = nil
+    
+    // 【新規】クレジットカードの引き落とし月（当月/翌月）を保存
+    var isWithdrawalNextMonth: Bool? = nil 
 }
 
 struct UserProfile: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var userId: String; var iconData: Data?; var isVisible: Bool = true; var isPrivate: Bool?; var isDeleted: Bool? }
@@ -169,8 +172,6 @@ struct RecurringPayment: Identifiable, Codable, Equatable {
     var fractionAmount: Int
     var postedMonths: [String]?
     var createdAt: Date?
-    
-    // 【追加】当月引き落としか、翌月引き落としかを管理
     var isNextMonth: Bool? 
     
     func paymentInfo() -> (total: Int, paid: Int, remaining: Int) {
@@ -187,7 +188,6 @@ struct RecurringPayment: Identifiable, Codable, Equatable {
         
         var paidM = 0
         
-        // 【修正】引き落とし開始月を「当月」か「翌月」かに応じてずらす
         var targetStartComps = cal.dateComponents([.year, .month], from: startNorm)
         if isNextMonth == true { targetStartComps.month! += 1 }
         let targetStartNorm = cal.date(from: targetStartComps)!
