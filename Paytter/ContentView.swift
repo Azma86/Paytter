@@ -270,7 +270,6 @@ struct ContentView: View {
                         let creationMonth = cal.date(from: cal.dateComponents([.year, .month], from: acc.createdAt ?? Date()))!
                         if currentMonthDate >= creationMonth {
                             
-                            // 【修正】当月/翌月の設定を反映して対象の締め日を計算
                             var closingComps = cal.dateComponents([.year, .month], from: targetDate)
                             if acc.isWithdrawalNextMonth == true {
                                 closingComps.month! -= 1
@@ -313,7 +312,6 @@ struct ContentView: View {
                             amount = max(0, amount)
                             
                             if amount > 0 {
-                                // 【修正】「対象月の利用分」として表示するように計算
                                 let targetMonthNum = cal.component(.month, from: closingDateEnd)
                                 let noteText1 = "\(acc.name) \(targetMonthNum)月分 カード引き落とし ¥\(amount.formattedWithComma)"
                                 let tx1 = Transaction(amount: amount, date: targetDate, note: noteText1, source: withdrawalAccount.name, isIncome: false, isExcludedFromBalance: false, profileId: profiles.first?.id)
@@ -823,7 +821,6 @@ struct ContentView: View {
         let now = Date()
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM"
-        let currentMonthStr = fmt.string(from: now)
         let nowMonthDate = cal.date(from: cal.dateComponents([.year, .month], from: now))!
 
         if showTotalAssets {
@@ -834,12 +831,14 @@ struct ContentView: View {
         for acc in accounts where acc.isVisible {
             var creditAmt: Int? = nil
             
+            // クレジットカード引き落とし予定額
             let linkedCards = accounts.filter { $0.type == .credit && $0.withdrawalAccountId == acc.id }
             if !linkedCards.isEmpty {
                 let sum = linkedCards.reduce(0) { $0 + max(0, -$1.balance) }
                 if sum > 0 { creditAmt = sum }
             }
             
+            // 【修正】サブスク・ローンの予定額（現在月までの未投稿分をすべて合算）
             var rpSum = 0
             for rp in recurringPayments where rp.source == acc.name && !rp.isIncome {
                 let posted = rp.postedMonths ?? []
@@ -847,17 +846,11 @@ struct ContentView: View {
                 guard let startMonthDate = cal.date(from: startComps) else { continue }
                 
                 var iterDate = startMonthDate
-                while true {
-                    var targetComps = cal.dateComponents([.year, .month], from: iterDate)
-                    if rp.isNextMonth == true { targetComps.month! += 1 }
-                    let targetMonthDate = cal.date(from: targetComps)!
-                    
-                    if targetMonthDate > nowMonthDate { break }
-                    
+                while iterDate <= nowMonthDate {
                     let monthStr = fmt.string(from: iterDate)
                     if rp.hasEndDate && monthStr > fmt.string(from: rp.endDate) { break }
                     
-                    if !posted.contains(monthStr) && targetMonthDate == nowMonthDate {
+                    if !posted.contains(monthStr) {
                         var expectedAmount = rp.amount
                         if iterDate == startMonthDate && rp.fractionType == 1 {
                             expectedAmount = rp.fractionAmount
@@ -895,17 +888,11 @@ struct ContentView: View {
                     guard let startMonthDate = cal.date(from: startComps) else { continue }
                     
                     var iterDate = startMonthDate
-                    while true {
-                        var targetComps = cal.dateComponents([.year, .month], from: iterDate)
-                        if rp.isNextMonth == true { targetComps.month! += 1 }
-                        let targetMonthDate = cal.date(from: targetComps)!
-                        
-                        if targetMonthDate > nowMonthDate { break }
-                        
+                    while iterDate <= nowMonthDate {
                         let monthStr = fmt.string(from: iterDate)
                         if rp.hasEndDate && monthStr > fmt.string(from: rp.endDate) { break }
                         
-                        if !posted.contains(monthStr) && targetMonthDate == nowMonthDate {
+                        if !posted.contains(monthStr) {
                             var expectedAmount = rp.amount
                             if iterDate == startMonthDate && rp.fractionType == 1 {
                                 expectedAmount = rp.fractionAmount
