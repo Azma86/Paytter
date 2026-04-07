@@ -33,7 +33,7 @@ struct TransactionDetailView: View {
         let displayName = isDeleted ? "削除されたユーザー" : profile.name
         let displayId = isDeleted ? "deleted_user" : profile.userId
         
-        ZStack {
+        return ZStack { // 【修正】確実にViewとして認識させるため return を追加
             Color(hex: themeBG).ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -791,7 +791,7 @@ struct AccountGroupCreateView: View {
     }
 }
 
-// 【変更】締め日を考慮した「今期のサマリー」に変更
+// 【修正】View生成時に変数を外に出すことで「Type '()' cannot conform to 'View'」エラーを回避
 struct WalletAnalysisView: View {
     let transactions: [Transaction]
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
@@ -816,7 +816,6 @@ struct WalletAnalysisView: View {
         }
     }
     
-    // 【新規】現在の締め日に基づく期間（開始日・終了日）を計算
     var currentPeriodRange: (start: Date, end: Date) {
         let cal = Calendar.current
         let now = Date()
@@ -844,14 +843,17 @@ struct WalletAnalysisView: View {
         return validTransactions.filter { !$0.isIncome && $0.date >= range.start && $0.date <= range.end }.reduce(0) { $0 + $1.amount }
     }
     
+    // 【重要修正】List内で変数を宣言するとエラーになるため、Computed Propertyに切り出しました
+    var rangeText: String {
+        let df = DateFormatter()
+        df.dateFormat = "M/d"
+        return "\(df.string(from: currentPeriodRange.start)) 〜 \(df.string(from: currentPeriodRange.end))"
+    }
+    
     var body: some View {
         ZStack {
             Color(hex: themeBG).ignoresSafeArea()
             List {
-                let df = DateFormatter()
-                df.dateFormat = "M/d"
-                let rangeText = "\(df.string(from: currentPeriodRange.start)) 〜 \(df.string(from: currentPeriodRange.end))"
-                
                 Section(header: Text("今期のサマリー (\(rangeText))").foregroundColor(Color(hex: themeSubText))) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("合計支出").font(.caption).foregroundColor(Color(hex: themeSubText))
@@ -943,10 +945,7 @@ struct RecurringPaymentCreateView: View {
             .navigationBarItems(leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)), trailing: Button("追加") {
                 let rp = RecurringPayment(name: name, amount: Int(amountStr) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr) ?? 0)
                 recurringPayments.append(rp)
-                
-                // 【追加】新規登録直後に自動投稿の条件を満たしているかチェックする
                 NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
-                
                 dismiss()
             }.disabled(name.isEmpty || amountStr.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold))
             .preferredColorScheme(isDarkMode ? .dark : .light)
@@ -1020,7 +1019,6 @@ struct RecurringPaymentEditView: View {
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { amountStr = String(payment.amount); fractionAmountStr = String(payment.fractionAmount) }
         .onDisappear {
-            // 【追加】編集画面を閉じた時にも、条件が変わっていれば自動投稿をチェックする
             NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
         }
     }
