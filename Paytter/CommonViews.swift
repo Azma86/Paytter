@@ -759,19 +759,28 @@ struct TimelineImageGrid: View {
     }
 }
 
+// 【修正】クレジットカードの引き落とし予定額を薄く表示できるように変更
 struct BalanceView: View {
     let title: String; let amount: Int; let color: Color; let diff: Int; let isSilent: Bool
+    var creditAmount: Int? = nil
+    
     @State private var showDiff = false; @State private var lastAmount: Int = 0 
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
     var body: some View {
-        VStack {
+        VStack(spacing: 2) {
             Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
             ZStack(alignment: .topTrailing) {
                 Text("¥\(amount.formattedWithComma)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
                 if diff != 0 { Text(diff > 0 ? "+\(diff.formattedWithComma)" : "\(diff.formattedWithComma)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense)).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) }
+            }
+            
+            if let creditAmt = creditAmount, creditAmt > 0 {
+                Text("引落予定 ¥\(creditAmt.formattedWithComma)")
+                    .font(.system(size: 9))
+                    .foregroundColor(Color(hex: themeSubText).opacity(0.8))
             }
         }.frame(maxWidth: .infinity).onChange(of: amount) { newValue in if newValue != lastAmount { if isSilent { showDiff = true; lastAmount = newValue } else { showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }; lastAmount = newValue } } }.onAppear { lastAmount = amount }
     }
@@ -836,7 +845,6 @@ struct HighlightedText: View {
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     
-    // 【修正】投稿の本文（テキスト）から金額部分を見つけ出し、自動的にカンマ付きにフォーマットして表示します！
     var body: some View {
         let components = tokenize(text)
         return components.reduce(Text("")) { (res, token) in
