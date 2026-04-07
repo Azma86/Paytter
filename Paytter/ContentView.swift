@@ -43,7 +43,6 @@ struct ContentView: View {
     @AppStorage("recurring_payments_v1") var recurringPayments: [RecurringPayment] = []
     
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000; 
-    // 【新規】締め日の設定（0:月末, 1〜28:指定日）
     @AppStorage("closingDay") var closingDay: Int = 0 
     
     @AppStorage("isDarkMode") var isDarkMode: Bool = false; @AppStorage("theme_main") var themeMain: String = "#FF007AFF"; @AppStorage("theme_income") var themeIncome: String = "#FF19B219"; @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"; @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"; @AppStorage("theme_saturday") var themeSaturday: String = "#FF007AFF"; @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"; @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"; @AppStorage("theme_barText") var themeBarText: String = "#FF000000"; @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"; @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"; @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
@@ -63,7 +62,6 @@ struct ContentView: View {
     let appearancePublisher = NotificationCenter.default.publisher(for: NSNotification.Name("UpdateAppearance"))
     @ObservedObject var lockManager = LockManager.shared; @Environment(\.scenePhase) var scenePhase
 
-    // 【新規】サブスク・ローンの自動投稿処理
     func checkAndPostRecurringPayments() {
         let cal = Calendar.current
         let now = Date()
@@ -95,8 +93,8 @@ struct ContentView: View {
                     let comps = cal.dateComponents([.year, .month], from: currentMonthDate)
                     var targetComps = comps
                     let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
-                    targetComps.day = min(rp.paymentDay, range.count) // 月末対応
-                    targetComps.hour = 8 // 自動投稿は朝8時扱い
+                    targetComps.day = min(rp.paymentDay, range.count)
+                    targetComps.hour = 8 
                     
                     if let targetDate = cal.date(from: targetComps), now >= targetDate {
                         var postAmount = rp.amount
@@ -161,7 +159,6 @@ struct ContentView: View {
             if lockManager.isShowingLockScreen { PasscodeLockOverlay().zIndex(200).transition(.opacity) }
         }.preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { 
-            // 【重要】アプリを開いた時に自動投稿をチェックする
             checkAndPostRecurringPayments()
             recalculateBalances(saveBackup: false); updateVisibleTransactions(); updateAppearance(); syncHomeItems(); 
             if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 { lockManager.promptUnlock() } 
@@ -173,7 +170,6 @@ struct ContentView: View {
         .onChange(of: scenePhase) { newPhase in 
             if newPhase == .background { lockManager.lock() } 
             else if newPhase == .active { 
-                // 【重要】バックグラウンドから復帰した時も自動投稿をチェック
                 checkAndPostRecurringPayments()
                 if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 { lockManager.promptUnlock() } 
             } 
@@ -309,7 +305,7 @@ struct ContentView: View {
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: TotalAssetEditView(isVisible: $showTotalAssets)) { HStack { Image(systemName: "sum").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text("総資産").foregroundColor(Color(hex: themeBodyText)); Spacer(); let totalB = accounts.reduce(0) { $0 + $1.balance }; Text("¥\(totalB)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }; ForEach(groups) { group in NavigationLink(destination: AccountGroupEditView(group: binding(for: group), accounts: $accounts)) { HStack { Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(group.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); let groupTotal = accounts.filter { group.accountIds.contains($0.id) }.reduce(0) { $0 + $1.balance }; Text("¥\(groupTotal)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { groupToDelete = group; isShowingGroupDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
-                    Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("収支の分析を見る", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
             }.navigationTitle("お財布").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }.toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
@@ -335,14 +331,14 @@ struct ContentView: View {
                     Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: UserProfileSettingView(transactions: $transactions)) { Label("表示ユーザー設定", systemImage: "person.2.circle").foregroundColor(Color(hex: themeBodyText)) }; NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("セキュリティ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: PasscodeSettingView()) { Label("パスコードロック設定", systemImage: "lock.shield").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
-                    // 【変更】予算設定に「締め日」の項目を追加
+                    // 【修正】「月末」を28日の下に配置しました
                     Section(header: Text("予算・締め日設定").foregroundColor(Color(hex: themeSubText))) { 
                         Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000).foregroundColor(Color(hex: themeBodyText)) 
                         Picker("締め日", selection: $closingDay) {
-                            Text("月末").tag(0)
                             ForEach(1...28, id: \.self) { day in
                                 Text("\(day)日").tag(day)
                             }
+                            Text("月末").tag(0)
                         }.foregroundColor(Color(hex: themeBodyText))
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
