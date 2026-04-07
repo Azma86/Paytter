@@ -64,7 +64,8 @@ enum AccountType: String, Codable, CaseIterable {
 }
 
 struct AccountGroup: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var isVisible: Bool = true; var accountIds: [UUID] = [] }
-struct Account: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var balance: Int; var type: AccountType; var isVisible: Bool = true; var payday: Int? = nil; var withdrawalAccountId: UUID? = nil; var diffAmount: Int = 0 }
+// 【修正】クレジットカード用の設定（closingDay, withdrawalDay）を追加しました
+struct Account: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var balance: Int; var type: AccountType; var isVisible: Bool = true; var payday: Int? = nil; var withdrawalAccountId: UUID? = nil; var diffAmount: Int = 0; var closingDay: Int? = nil; var withdrawalDay: Int? = nil }
 struct UserProfile: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var userId: String; var iconData: Data?; var isVisible: Bool = true; var isPrivate: Bool?; var isDeleted: Bool? }
 
 enum MediaType: String, Codable {
@@ -197,7 +198,6 @@ extension Array: RawRepresentable where Element: Codable {
     public var rawValue: String { guard let data = try? JSONEncoder().encode(self), let result = String(data: data, encoding: .utf8) else { return "[]" }; return result }
 }
 
-// 【新規】数字にカンマを付与する拡張機能
 extension Int {
     var formattedWithComma: String {
         let formatter = NumberFormatter()
