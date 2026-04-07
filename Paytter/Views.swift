@@ -527,6 +527,7 @@ struct PasscodeLockOverlay: View {
     }
 }
 
+// 【修正】クレジットカード用の設定（限度額、締め日、引き落とし日など）をUIに追加
 struct AccountCreateView: View {
     @Binding var accounts: [Account]
     @Binding var transactions: [Transaction]
@@ -543,7 +544,7 @@ struct AccountCreateView: View {
     @State private var selectedType: AccountType = .wallet
     @State private var isVisible = true
     
-    // 【新規】クレジットカード用の設定項目
+    @State private var creditLimitStr = ""
     @State private var closingDay = 0
     @State private var withdrawalDay = 0
     @State private var withdrawalAccountId: UUID? = nil
@@ -582,9 +583,25 @@ struct AccountCreateView: View {
                     }
                     .listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
-                    // 【新規】クレジットカード設定のセクション
                     if selectedType == .credit {
                         Section(header: Text("クレジットカード設定").foregroundColor(Color(hex: themeSubText))) {
+                            HStack {
+                                Text("限度額").foregroundColor(Color(hex: themeBodyText))
+                                Spacer()
+                                HStack(spacing: 2) {
+                                    Text("¥").foregroundColor(Color(hex: themeSubText))
+                                    TextField("0", text: $creditLimitStr)
+                                        .keyboardType(.numberPad)
+                                        .foregroundColor(Color(hex: themeBodyText))
+                                        .multilineTextAlignment(.trailing)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                        .onChange(of: creditLimitStr) { val in
+                                            let clean = val.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+                                            if let intVal = Int(clean) { creditLimitStr = intVal.formattedWithComma } else { creditLimitStr = "" }
+                                        }
+                                }
+                            }
+                            
                             Picker("締め日", selection: $closingDay) {
                                 ForEach(1...28, id: \.self) { day in Text("\(day)日").tag(day) }
                                 Text("月末").tag(0)
@@ -612,12 +629,13 @@ struct AccountCreateView: View {
                 leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)),
                 trailing: Button("追加") {
                     let val = Int(initial.replacingOccurrences(of: ",", with: "")) ?? 0
-                    var newAcc = Account(name: name, balance: val, type: selectedType, isVisible: isVisible)
+                    var newAcc = Account(name: name, balance: val, type: selectedType, isVisible: isVisible, createdAt: Date())
                     
                     if selectedType == .credit {
                         newAcc.closingDay = closingDay
                         newAcc.withdrawalDay = withdrawalDay
                         newAcc.withdrawalAccountId = withdrawalAccountId
+                        newAcc.creditLimit = Int(creditLimitStr.replacingOccurrences(of: ",", with: ""))
                     }
                     
                     accounts.append(newAcc)
@@ -645,6 +663,7 @@ struct AccountEditView: View {
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
     @State private var editBalance: String = ""
+    @State private var creditLimitStr = ""
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
@@ -664,6 +683,29 @@ struct AccountEditView: View {
                 // 【新規】クレジットカード設定のセクション
                 if account.type == .credit {
                     Section(header: Text("クレジットカード設定").foregroundColor(Color(hex: themeSubText))) {
+                        HStack {
+                            Text("限度額").foregroundColor(Color(hex: themeBodyText))
+                            Spacer()
+                            HStack(spacing: 2) {
+                                Text("¥").foregroundColor(Color(hex: themeSubText))
+                                TextField("0", text: $creditLimitStr)
+                                    .keyboardType(.numberPad)
+                                    .foregroundColor(Color(hex: themeBodyText))
+                                    .multilineTextAlignment(.trailing)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .onChange(of: creditLimitStr) { val in
+                                        let clean = val.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+                                        if let intVal = Int(clean) { 
+                                            creditLimitStr = intVal.formattedWithComma
+                                            account.creditLimit = intVal
+                                        } else { 
+                                            creditLimitStr = "" 
+                                            account.creditLimit = 0
+                                        }
+                                    }
+                            }
+                        }
+                        
                         Picker("締め日", selection: Binding(get: { account.closingDay ?? 0 }, set: { account.closingDay = $0 })) {
                             ForEach(1...28, id: \.self) { day in Text("\(day)日").tag(day) }
                             Text("月末").tag(0)
@@ -730,6 +772,11 @@ struct AccountEditView: View {
         .navigationTitle(account.name)
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(isDarkMode ? .dark : .light)
+        .onAppear {
+            if let limit = account.creditLimit {
+                creditLimitStr = limit.formattedWithComma
+            }
+        }
     }
 }
 
