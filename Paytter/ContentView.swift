@@ -179,13 +179,11 @@ struct ContentView: View {
             let startMonthDate = startNorm
             let nowMonthDate = cal.date(from: cal.dateComponents([.year, .month], from: now))!
             
-            // 【修正】当月・翌月の設定を反映して投稿のタイミングを計算
             while true {
                 var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
                 if rp.isNextMonth == true { targetComps.month! += 1 }
                 let targetMonthDate = cal.date(from: targetComps)!
                 
-                // 未来の引き落とし月になったら抜ける
                 if targetMonthDate > nowMonthDate { break }
                 
                 let monthStr = fmt.string(from: currentMonthDate)
@@ -272,20 +270,20 @@ struct ContentView: View {
                         let creationMonth = cal.date(from: cal.dateComponents([.year, .month], from: acc.createdAt ?? Date()))!
                         if currentMonthDate >= creationMonth {
                             
+                            // 【修正】当月/翌月の設定を反映して対象の締め日を計算
                             var closingComps = cal.dateComponents([.year, .month], from: targetDate)
-                            if closingDay == 0 {
+                            if acc.isWithdrawalNextMonth == true {
                                 closingComps.month! -= 1
+                            }
+                            
+                            if closingDay == 0 {
                                 let tempDate = cal.date(from: closingComps)!
                                 let rangeC = cal.range(of: .day, in: .month, for: tempDate)!
                                 closingComps.day = rangeC.count
                             } else {
-                                closingComps.day = closingDay
-                                if closingComps.day! >= wDay {
-                                    closingComps.month! -= 1
-                                }
-                                let tempDate = cal.date(from: cal.dateComponents([.year, .month], from: cal.date(from: closingComps)!))!
+                                let tempDate = cal.date(from: closingComps)!
                                 let rangeC = cal.range(of: .day, in: .month, for: tempDate)!
-                                closingComps.day = min(closingComps.day!, rangeC.count)
+                                closingComps.day = min(closingDay, rangeC.count)
                             }
                             closingComps.hour = 23; closingComps.minute = 59; closingComps.second = 59
                             let closingDateEnd = cal.date(from: closingComps)!
@@ -297,10 +295,9 @@ struct ContentView: View {
                                 let rangeP = cal.range(of: .day, in: .month, for: tempDate)!
                                 prevClosingComps.day = rangeP.count
                             } else {
-                                prevClosingComps.day = closingDay
-                                let tempDate = cal.date(from: cal.dateComponents([.year, .month], from: cal.date(from: prevClosingComps)!))!
+                                let tempDate = cal.date(from: prevClosingComps)!
                                 let rangeP = cal.range(of: .day, in: .month, for: tempDate)!
-                                prevClosingComps.day = min(prevClosingComps.day!, rangeP.count)
+                                prevClosingComps.day = min(closingDay, rangeP.count)
                             }
                             let closingDateStart = cal.date(byAdding: .second, value: 1, to: cal.date(from: prevClosingComps)!)!
                             
@@ -316,11 +313,12 @@ struct ContentView: View {
                             amount = max(0, amount)
                             
                             if amount > 0 {
-                                let monthNum = cal.component(.month, from: currentMonthDate)
-                                let noteText1 = "\(acc.name) \(monthNum)月分 カード引き落とし ¥\(amount.formattedWithComma)"
+                                // 【修正】「対象月の利用分」として表示するように計算
+                                let targetMonthNum = cal.component(.month, from: closingDateEnd)
+                                let noteText1 = "\(acc.name) \(targetMonthNum)月分 カード引き落とし ¥\(amount.formattedWithComma)"
                                 let tx1 = Transaction(amount: amount, date: targetDate, note: noteText1, source: withdrawalAccount.name, isIncome: false, isExcludedFromBalance: false, profileId: profiles.first?.id)
                                 
-                                let noteText2 = "\(acc.name) \(monthNum)月分 カード引き落とし精算 ¥\(amount.formattedWithComma)"
+                                let noteText2 = "\(acc.name) \(targetMonthNum)月分 カード引き落とし精算 ¥\(amount.formattedWithComma)"
                                 let tx2 = Transaction(amount: amount, date: targetDate, note: noteText2, source: acc.name, isIncome: true, isExcludedFromBalance: false, profileId: profiles.first?.id)
                                 
                                 newTransactions.append(tx1)
@@ -819,7 +817,6 @@ struct ContentView: View {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedMediaItems: medias, attachedFiles: files))
     }
 
-    // 【修正】当月／翌月の設定を考慮してホーム画面の引き落とし予定額を計算するロジック
     func syncHomeItems() {
         var items: [DisplayHomeItem] = []
         let cal = Calendar.current
