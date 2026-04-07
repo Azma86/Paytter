@@ -759,12 +759,17 @@ struct TimelineImageGrid: View {
     }
 }
 
-// 【修正】レイアウトを維持したまま、引落予定を薄く表示できるように変更しました
+// 【修正】全てのお財布の高さが同じになるように透明なプレースホルダーを配置し、位置ズレと見切れを防ぎました
 struct BalanceView: View {
-    let title: String; let amount: Int; let color: Color; let diff: Int; let isSilent: Bool
+    let title: String
+    let amount: Int
+    let color: Color
+    let diff: Int
+    let isSilent: Bool
     var creditAmount: Int? = nil
     
-    @State private var showDiff = false; @State private var lastAmount: Int = 0 
+    @State private var showDiff = false
+    @State private var lastAmount: Int = 0 
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
@@ -772,23 +777,50 @@ struct BalanceView: View {
     var body: some View {
         VStack(spacing: 2) {
             Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
+            
             ZStack(alignment: .topTrailing) {
-                Text("¥\(amount.formattedWithComma)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
-                if diff != 0 { Text(diff > 0 ? "+\(diff.formattedWithComma)" : "\(diff.formattedWithComma)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense)).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) }
+                Text("¥\(amount.formattedWithComma)")
+                    .font(.system(.subheadline, design: .monospaced))
+                    .fontWeight(.bold)
+                    .foregroundColor(color)
+                    .padding(.horizontal, 4)
+                
+                if diff != 0 { 
+                    Text(diff > 0 ? "+\(diff.formattedWithComma)" : "\(diff.formattedWithComma)")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense))
+                        .offset(x: 20, y: showDiff ? -15 : 0)
+                        .opacity(showDiff ? 0 : 1) 
+                }
             }
-        }
-        .frame(maxWidth: .infinity)
-        .overlay(
+            
+            // 全てのお財布に同じ高さのエリアを確保することで、名前と金額の位置を完全に一致させる
             ZStack {
                 if let creditAmt = creditAmount, creditAmt > 0 {
                     Text("引落予定 ¥\(creditAmt.formattedWithComma)")
                         .font(.system(size: 9))
                         .foregroundColor(Color(hex: themeSubText).opacity(0.8))
-                        .offset(y: 16) // メインの金額の下にズラして配置
+                } else {
+                    Text(" ")
+                        .font(.system(size: 9))
+                        .opacity(0)
                 }
-            }, alignment: .bottom
-        )
-        .onChange(of: amount) { newValue in if newValue != lastAmount { if isSilent { showDiff = true; lastAmount = newValue } else { showDiff = false; withAnimation(.easeOut(duration: 0.6)) { showDiff = true }; lastAmount = newValue } } }
+            }
+            .frame(height: 12)
+        }
+        .frame(maxWidth: .infinity)
+        .onChange(of: amount) { newValue in 
+            if newValue != lastAmount { 
+                if isSilent { 
+                    showDiff = true
+                    lastAmount = newValue 
+                } else { 
+                    showDiff = false
+                    withAnimation(.easeOut(duration: 0.6)) { showDiff = true }
+                    lastAmount = newValue 
+                } 
+            } 
+        }
         .onAppear { lastAmount = amount }
     }
 }
