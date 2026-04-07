@@ -151,9 +151,10 @@ struct RecurringPayment: Identifiable, Codable, Equatable {
     var isIncome: Bool
     var fractionType: Int 
     var fractionAmount: Int
-    
-    // 【新規】自動投稿された「年月（yyyy-MM）」を記憶し、二重投稿を防ぐ
     var postedMonths: [String]?
+    
+    // 【新規】このサブスクが「いつアプリに登録されたか」を記憶（過去分の自動投稿を防ぐため）
+    var createdAt: Date?
     
     func paymentInfo() -> (total: Int, paid: Int, remaining: Int) {
         let cal = Calendar.current
