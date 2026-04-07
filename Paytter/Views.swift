@@ -545,6 +545,10 @@ struct AccountCreateView: View {
     
     @State private var creditLimitStr = ""
     @State private var closingDay = 0
+    
+    // 【新規】クレジットカードの引き落とし月
+    @State private var isWithdrawalNextMonth = true 
+    
     @State private var withdrawalDay = 0
     @State private var withdrawalAccountId: UUID? = nil
     
@@ -606,6 +610,12 @@ struct AccountCreateView: View {
                                 Text("月末").tag(0)
                             }.foregroundColor(Color(hex: themeBodyText))
                             
+                            // 【新規】クレジットカードの引き落とし月設定
+                            Picker("引き落とし月", selection: $isWithdrawalNextMonth) {
+                                Text("当月").tag(false)
+                                Text("翌月").tag(true)
+                            }.foregroundColor(Color(hex: themeBodyText))
+                            
                             Picker("引き落とし日", selection: $withdrawalDay) {
                                 ForEach(1...28, id: \.self) { day in Text("\(day)日").tag(day) }
                                 Text("月末").tag(0)
@@ -632,6 +642,7 @@ struct AccountCreateView: View {
                     
                     if selectedType == .credit {
                         newAcc.closingDay = closingDay
+                        newAcc.isWithdrawalNextMonth = isWithdrawalNextMonth
                         newAcc.withdrawalDay = withdrawalDay
                         newAcc.withdrawalAccountId = withdrawalAccountId
                         newAcc.creditLimit = Int(creditLimitStr.replacingOccurrences(of: ",", with: ""))
@@ -707,6 +718,12 @@ struct AccountEditView: View {
                         Picker("締め日", selection: Binding(get: { account.closingDay ?? 0 }, set: { account.closingDay = $0 })) {
                             ForEach(1...28, id: \.self) { day in Text("\(day)日").tag(day) }
                             Text("月末").tag(0)
+                        }.foregroundColor(Color(hex: themeBodyText))
+                        
+                        // 【新規】クレジットカードの引き落とし月設定
+                        Picker("引き落とし月", selection: Binding(get: { account.isWithdrawalNextMonth ?? true }, set: { account.isWithdrawalNextMonth = $0 })) {
+                            Text("当月").tag(false)
+                            Text("翌月").tag(true)
                         }.foregroundColor(Color(hex: themeBodyText))
                         
                         Picker("引き落とし日", selection: Binding(get: { account.withdrawalDay ?? 0 }, set: { account.withdrawalDay = $0 })) {
@@ -1024,7 +1041,6 @@ struct RecurringPaymentCreateView: View {
     @State private var fractionType = 0
     @State private var fractionAmountStr = ""
     
-    // 【新規】「当月」「翌月」の選択
     @State private var isNextMonth = false
     
     var body: some View {
@@ -1065,7 +1081,6 @@ struct RecurringPaymentCreateView: View {
                     Section(header: Text("スケジュール").foregroundColor(Color(hex: themeSubText))) {
                         DatePicker("開始月", selection: $startDate, displayedComponents: .date).environment(\.locale, Locale(identifier: "ja_JP"))
                         
-                        // 【新規】当月/翌月の選択
                         Picker("引き落とし", selection: $isNextMonth) {
                             Text("当月").tag(false)
                             Text("翌月").tag(true)
@@ -1110,7 +1125,7 @@ struct RecurringPaymentCreateView: View {
             .navigationTitle("新規登録")
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)), trailing: Button("追加") {
-                let rp = RecurringPayment(name: name, amount: Int(amountStr.replacingOccurrences(of: ",", with: "")) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr.replacingOccurrences(of: ",", with: "")) ?? 0, createdAt: Date(), isNextMonth: isNextMonth) // 【追加】isNextMonthを渡す
+                let rp = RecurringPayment(name: name, amount: Int(amountStr.replacingOccurrences(of: ",", with: "")) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr.replacingOccurrences(of: ",", with: "")) ?? 0, createdAt: Date(), isNextMonth: isNextMonth)
                 recurringPayments.append(rp)
                 NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
                 dismiss()
@@ -1191,7 +1206,6 @@ struct RecurringPaymentEditView: View {
                 Section(header: Text("スケジュール").foregroundColor(Color(hex: themeSubText))) {
                     DatePicker("開始月", selection: $payment.startDate, displayedComponents: .date).environment(\.locale, Locale(identifier: "ja_JP"))
                     
-                    // 【新規】当月/翌月の選択
                     Picker("引き落とし", selection: Binding(get: { payment.isNextMonth ?? false }, set: { payment.isNextMonth = $0 })) {
                         Text("当月").tag(false)
                         Text("翌月").tag(true)
@@ -1250,7 +1264,6 @@ struct RecurringPaymentEditView: View {
         }
     }
     
-    // 【修正】手動投稿のロジックも「翌月」設定に対応
     func postPastTransactions() {
         let cal = Calendar.current
         let now = Date()
