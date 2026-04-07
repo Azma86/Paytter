@@ -527,7 +527,6 @@ struct PasscodeLockOverlay: View {
     }
 }
 
-// 【修正】クレジットカード用の設定（限度額、締め日、引き落とし日など）をUIに追加
 struct AccountCreateView: View {
     @Binding var accounts: [Account]
     @Binding var transactions: [Transaction]
@@ -680,7 +679,6 @@ struct AccountEditView: View {
                     Toggle("ホーム上部に表示", isOn: $account.isVisible).foregroundColor(Color(hex: themeBodyText))
                 }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 
-                // 【新規】クレジットカード設定のセクション
                 if account.type == .credit {
                     Section(header: Text("クレジットカード設定").foregroundColor(Color(hex: themeSubText))) {
                         HStack {
@@ -1026,6 +1024,9 @@ struct RecurringPaymentCreateView: View {
     @State private var fractionType = 0
     @State private var fractionAmountStr = ""
     
+    // 【新規】「当月」「翌月」の選択
+    @State private var isNextMonth = false
+    
     var body: some View {
         NavigationView {
             ZStack {
@@ -1063,6 +1064,13 @@ struct RecurringPaymentCreateView: View {
                     
                     Section(header: Text("スケジュール").foregroundColor(Color(hex: themeSubText))) {
                         DatePicker("開始月", selection: $startDate, displayedComponents: .date).environment(\.locale, Locale(identifier: "ja_JP"))
+                        
+                        // 【新規】当月/翌月の選択
+                        Picker("引き落とし", selection: $isNextMonth) {
+                            Text("当月").tag(false)
+                            Text("翌月").tag(true)
+                        }.foregroundColor(Color(hex: themeBodyText))
+                        
                         Picker("支払日", selection: $paymentDay) {
                             ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
                         }
@@ -1102,7 +1110,7 @@ struct RecurringPaymentCreateView: View {
             .navigationTitle("新規登録")
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)), trailing: Button("追加") {
-                let rp = RecurringPayment(name: name, amount: Int(amountStr.replacingOccurrences(of: ",", with: "")) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr.replacingOccurrences(of: ",", with: "")) ?? 0, createdAt: Date())
+                let rp = RecurringPayment(name: name, amount: Int(amountStr.replacingOccurrences(of: ",", with: "")) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr.replacingOccurrences(of: ",", with: "")) ?? 0, createdAt: Date(), isNextMonth: isNextMonth) // 【追加】isNextMonthを渡す
                 recurringPayments.append(rp)
                 NotificationCenter.default.post(name: NSNotification.Name("CheckRecurringPayments"), object: nil)
                 dismiss()
@@ -1182,6 +1190,13 @@ struct RecurringPaymentEditView: View {
                 
                 Section(header: Text("スケジュール").foregroundColor(Color(hex: themeSubText))) {
                     DatePicker("開始月", selection: $payment.startDate, displayedComponents: .date).environment(\.locale, Locale(identifier: "ja_JP"))
+                    
+                    // 【新規】当月/翌月の選択
+                    Picker("引き落とし", selection: Binding(get: { payment.isNextMonth ?? false }, set: { payment.isNextMonth = $0 })) {
+                        Text("当月").tag(false)
+                        Text("翌月").tag(true)
+                    }.foregroundColor(Color(hex: themeBodyText))
+                    
                     Picker("支払日", selection: $payment.paymentDay) { ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) } }
                     Toggle("終了月を設定する", isOn: $payment.hasEndDate).foregroundColor(Color(hex: themeBodyText))
                     if payment.hasEndDate {
@@ -1235,6 +1250,7 @@ struct RecurringPaymentEditView: View {
         }
     }
     
+    // 【修正】手動投稿のロジックも「翌月」設定に対応
     func postPastTransactions() {
         let cal = Calendar.current
         let now = Date()
@@ -1248,7 +1264,13 @@ struct RecurringPaymentEditView: View {
         
         var currentMonthDate = startNorm
         
-        while currentMonthDate <= nowMonthDate {
+        while true {
+            var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
+            if payment.isNextMonth == true { targetComps.month! += 1 }
+            let targetMonthDate = cal.date(from: targetComps)!
+            
+            if targetMonthDate > nowMonthDate { break }
+            
             let monthStr = fmt.string(from: currentMonthDate)
             
             if payment.hasEndDate {
@@ -1256,8 +1278,7 @@ struct RecurringPaymentEditView: View {
                 if monthStr > endMonthStr { break }
             }
             
-            var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
-            let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
+            let range = cal.range(of: .day, in: .month, for: targetMonthDate)!
             targetComps.day = min(payment.paymentDay, range.count)
             targetComps.hour = 0
             targetComps.minute = 0
