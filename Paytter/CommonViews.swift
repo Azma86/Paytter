@@ -770,7 +770,6 @@ struct BalanceView: View {
         VStack {
             Text(title).font(.caption).foregroundColor(Color(hex: themeSubText))
             ZStack(alignment: .topTrailing) {
-                // 【修正】カンマ区切りの金額表示に変更
                 Text("¥\(amount.formattedWithComma)").font(.system(.subheadline, design: .monospaced)).fontWeight(.bold).foregroundColor(color).padding(.horizontal, 4)
                 if diff != 0 { Text(diff > 0 ? "+\(diff.formattedWithComma)" : "\(diff.formattedWithComma)").font(.system(size: 8, weight: .bold, design: .rounded)).foregroundColor(diff > 0 ? Color(hex: themeIncome) : Color(hex: themeExpense)).offset(x: 20, y: showDiff ? -15 : 0).opacity(showDiff ? 0 : 1) }
             }
@@ -831,12 +830,52 @@ struct TwitterRow: View {
 }
 
 struct HighlightedText: View {
-    let text: String; let isIncome: Bool
+    let text: String
+    let isIncome: Bool
+    
     @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
-    // 【修正】カンマが含まれる金額も正しくハイライトされるように変更
-    var body: some View { let components = tokenize(text); return components.reduce(Text("")) { (res, token) in if token == "\n" { return res + Text("\n") } else if token.contains("¥") { let amountVal = Int(token.replacingOccurrences(of: "¥", with: "").replacingOccurrences(of: ",", with: "")) ?? 0; let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome; return res + Text(token.replacingOccurrences(of: "-", with: "")).foregroundColor(actuallyIncome ? Color(hex: themeIncome) : Color(hex: themeExpense)).fontWeight(.bold) } else { return res + Text(token) } } }
-    func tokenize(_ input: String) -> [String] { var tokens: [String] = []; var current = ""; for char in input { if char == " " || char == "　" || char == "\n" { if !current.isEmpty { tokens.append(current); current = "" }; tokens.append(String(char)) } else { current.append(char) } }; if !current.isEmpty { tokens.append(current) }; return tokens }
+    
+    // 【修正】投稿の本文（テキスト）から金額部分を見つけ出し、自動的にカンマ付きにフォーマットして表示します！
+    var body: some View {
+        let components = tokenize(text)
+        return components.reduce(Text("")) { (res, token) in
+            if token == "\n" {
+                return res + Text("\n")
+            } else if token.contains("¥") {
+                let cleanStr = token.replacingOccurrences(of: "¥", with: "").replacingOccurrences(of: "-", with: "").replacingOccurrences(of: ",", with: "")
+                if let amountVal = Int(cleanStr) {
+                    let actuallyIncome = amountVal >= 0 ? isIncome : !isIncome
+                    let prefix = token.contains("-") ? "-" : ""
+                    return res + Text("\(prefix)¥\(amountVal.formattedWithComma)")
+                        .foregroundColor(actuallyIncome ? Color(hex: themeIncome) : Color(hex: themeExpense))
+                        .fontWeight(.bold)
+                } else {
+                    return res + Text(token)
+                }
+            } else {
+                return res + Text(token)
+            }
+        }
+    }
+    
+    func tokenize(_ input: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        for char in input {
+            if char == " " || char == "　" || char == "\n" {
+                if !current.isEmpty {
+                    tokens.append(current)
+                    current = ""
+                }
+                tokens.append(String(char))
+            } else {
+                current.append(char)
+            }
+        }
+        if !current.isEmpty { tokens.append(current) }
+        return tokens
+    }
 }
 
 struct CustomTextEditor: UIViewRepresentable {
