@@ -331,12 +331,15 @@ struct ContentView: View {
             case .completion(let msg): return Alert(title: Text("完了"), message: Text(msg), dismissButton: .default(Text("OK")))
             }
         }
+        // 【修正】アラートによる削除時のアニメーションの衝突を防ぐため、少し遅らせて実行
         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) { 
             Button("キャンセル", role: .cancel) {}
             Button("削除", role: .destructive) { 
-                withAnimation {
-                    if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } 
-                }
+                if let t = transactionToDelete {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation { transactions.removeAll(where: { $0.id == t.id }) }
+                    }
+                } 
             } 
         }
         .sheet(isPresented: $isShowingInputSheet) {
@@ -360,18 +363,19 @@ struct ContentView: View {
                     List {
                         ForEach(cachedVisibleTransactions) { item in
                             let isFuture = item.date > Date()
-                            ZStack {
-                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
-                                TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0)
-                            }
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button {
-                                    transactionToDelete = item
-                                    isShowingSwipeDeleteAlert = true
-                                } label: { Text("削除") }.tint(.red)
-                            }
+                            // 【修正】リスト行全体をリンクの背景にする（ZStackを解除）
+                            TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0)
+                                .background(
+                                    NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
+                                )
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button {
+                                        transactionToDelete = item
+                                        isShowingSwipeDeleteAlert = true
+                                    } label: { Text("削除") }.tint(.red)
+                                }
                         }
                     }
                     .listStyle(.plain)
@@ -436,17 +440,18 @@ struct ContentView: View {
                         List {
                             ForEach(filteredSearchTransactions) { item in
                                 let isFuture = item.date > Date()
-                                ZStack {
-                                    NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
-                                    TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0)
-                                }
-                                .listRowInsets(EdgeInsets())
-                                .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) { 
-                                    Button { 
-                                        transactionToDelete = item; isShowingSwipeDeleteAlert = true 
-                                    } label: { Text("削除") }.tint(.red) 
-                                }
+                                // 【修正】リスト行全体をリンクの背景にする（ZStackを解除）
+                                TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0)
+                                    .background(
+                                        NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
+                                    )
+                                    .listRowInsets(EdgeInsets())
+                                    .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) { 
+                                        Button { 
+                                            transactionToDelete = item; isShowingSwipeDeleteAlert = true 
+                                        } label: { Text("削除") }.tint(.red) 
+                                    }
                             }
                         }
                         .listStyle(.plain)
@@ -488,9 +493,8 @@ struct ContentView: View {
                 List { 
                     Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) {
                         ForEach(accounts) { acc in
-                            // 【修正】削除時のアニメーションバグ（吸い込まれる）をZStackで防ぐ
-                            ZStack {
-                                NavigationLink(destination: AccountEditView(account: binding(for: acc), transactions: $transactions, allAccounts: accounts)) { EmptyView() }.opacity(0)
+                            // 【修正】ZStackを使わずに純正のNavigationLinkを使用する
+                            NavigationLink(destination: AccountEditView(account: binding(for: acc), transactions: $transactions, allAccounts: accounts)) {
                                 HStack {
                                     Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                                     Text(acc.name).foregroundColor(Color(hex: themeBodyText))
@@ -512,9 +516,8 @@ struct ContentView: View {
                     
                     Section(header: Text("サブスク・ローンの管理").foregroundColor(Color(hex: themeSubText))) {
                         ForEach(recurringPayments) { rp in
-                            // 【修正】削除時のアニメーションバグ（吸い込まれる）をZStackで防ぐ
-                            ZStack {
-                                NavigationLink(destination: RecurringPaymentEditView(payment: binding(forRP: rp), recurringPayments: $recurringPayments, transactions: $transactions, accounts: accounts, profiles: profiles)) { EmptyView() }.opacity(0)
+                            // 【修正】ZStackを使わずに純正のNavigationLinkを使用する
+                            NavigationLink(destination: RecurringPaymentEditView(payment: binding(forRP: rp), recurringPayments: $recurringPayments, transactions: $transactions, accounts: accounts, profiles: profiles)) {
                                 HStack {
                                     Image(systemName: "repeat.circle").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                                     Text(rp.name).foregroundColor(Color(hex: themeBodyText))
@@ -535,8 +538,7 @@ struct ContentView: View {
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) {
-                        ZStack {
-                            NavigationLink(destination: TotalAssetEditView(isVisible: $showTotalAssets)) { EmptyView() }.opacity(0)
+                        NavigationLink(destination: TotalAssetEditView(isVisible: $showTotalAssets)) {
                             HStack {
                                 Image(systemName: "sum").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                                 Text("総資産").foregroundColor(Color(hex: themeBodyText))
@@ -546,9 +548,8 @@ struct ContentView: View {
                             }
                         }
                         ForEach(groups) { group in
-                            // 【修正】削除時のアニメーションバグ（吸い込まれる）をZStackで防ぐ
-                            ZStack {
-                                NavigationLink(destination: AccountGroupEditView(group: binding(for: group), accounts: $accounts)) { EmptyView() }.opacity(0)
+                            // 【修正】ZStackを使わずに純正のNavigationLinkを使用する
+                            NavigationLink(destination: AccountGroupEditView(group: binding(for: group), accounts: $accounts)) {
                                 HStack {
                                     Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                                     Text(group.name).foregroundColor(Color(hex: themeBodyText))
@@ -570,12 +571,8 @@ struct ContentView: View {
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) {
-                        ZStack {
-                            NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { EmptyView() }.opacity(0)
-                            HStack {
-                                Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText))
-                                Spacer()
-                            }
+                        NavigationLink(destination: WalletAnalysisView(transactions: transactions)) {
+                            Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText))
                         }
                     }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }
@@ -598,15 +595,19 @@ struct ContentView: View {
             .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
             .sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }
             .sheet(isPresented: $isShowingRPCreator) { RecurringPaymentCreateView(recurringPayments: $recurringPayments, accounts: accounts, profiles: profiles) } 
+            
+            // 【修正】アラートによる削除時のアニメーションの衝突を防ぐため、少し遅らせて実行
             .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) { 
                 Button("キャンセル", role: .cancel) { accountToDelete = nil }
                 Button("削除", role: .destructive) { 
                     if let acc = accountToDelete { 
-                        withAnimation {
-                            for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == acc.id }) }
-                            accounts.removeAll(where: { $0.id == acc.id })
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation {
+                                for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == acc.id }) }
+                                accounts.removeAll(where: { $0.id == acc.id })
+                            }
+                            recalculateBalances() 
                         }
-                        recalculateBalances() 
                     }
                     accountToDelete = nil 
                 } 
@@ -615,7 +616,9 @@ struct ContentView: View {
                 Button("キャンセル", role: .cancel) { groupToDelete = nil }
                 Button("削除", role: .destructive) { 
                     if let grp = groupToDelete { 
-                        withAnimation { groups.removeAll(where: { $0.id == grp.id }) }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation { groups.removeAll(where: { $0.id == grp.id }) }
+                        }
                     }
                     groupToDelete = nil 
                 } 
@@ -624,7 +627,9 @@ struct ContentView: View {
                 Button("キャンセル", role: .cancel) { rpToDelete = nil }
                 Button("削除", role: .destructive) {
                     if let rp = rpToDelete { 
-                        withAnimation { recurringPayments.removeAll(where: { $0.id == rp.id }) }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation { recurringPayments.removeAll(where: { $0.id == rp.id }) }
+                        }
                     }
                     rpToDelete = nil
                 }
