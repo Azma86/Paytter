@@ -2,7 +2,7 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 
-// 【修正】引き落とし予定額（creditAmount）を保持できるように復活
+// 【修正】引き落とし予定額（creditAmount）を保持できるように追加
 struct DisplayHomeItem: Identifiable, Equatable {
     let id: String
     let title: String
@@ -19,7 +19,7 @@ struct HomeHeaderCell: View, Equatable {
     let isDragged: Bool
     let dragOffset: CGFloat
     
-    // 【修正】creditAmountも更新チェックの対象に含める
+    // 【修正】creditAmountも比較対象に追加
     static func == (lhs: HomeHeaderCell, rhs: HomeHeaderCell) -> Bool {
         lhs.item.id == rhs.item.id && lhs.item.amount == rhs.item.amount && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset && lhs.item.creditAmount == rhs.item.creditAmount
     }
@@ -826,10 +826,8 @@ struct ContentView: View {
         }
         for acc in accounts where acc.isVisible {
             var creditAmt: Int? = nil
-            // 引き落とし口座がこのアカウントになっているクレジットカードを探す
             let linkedCards = accounts.filter { $0.type == .credit && $0.withdrawalAccountId == acc.id }
             if !linkedCards.isEmpty {
-                // クレジットカードの残高はマイナスなので、反転させて未精算額として計算
                 let sum = linkedCards.reduce(0) { $0 + max(0, -$1.balance) }
                 if sum > 0 { creditAmt = sum }
             }
