@@ -10,16 +10,33 @@ struct DisplayHomeItem: Identifiable, Equatable {
 }
 
 struct HomeHeaderCell: View, Equatable {
-    let item: DisplayHomeItem; let themeMain: String; let themeBodyText: String; let isSilentUpdate: Bool; let isDragged: Bool; let dragOffset: CGFloat
-    static func == (lhs: HomeHeaderCell, rhs: HomeHeaderCell) -> Bool { lhs.item.id == rhs.item.id && lhs.item.amount == rhs.item.amount && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset }
-    var body: some View { BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: isSilentUpdate).background(isDragged ? Color(hex: themeMain).opacity(0.1) : Color.clear).cornerRadius(8).offset(x: isDragged ? dragOffset : 0, y: 0).zIndex(isDragged ? 100 : 0) }
+    let item: DisplayHomeItem
+    let themeMain: String
+    let themeBodyText: String
+    let isSilentUpdate: Bool
+    let isDragged: Bool
+    let dragOffset: CGFloat
+    
+    static func == (lhs: HomeHeaderCell, rhs: HomeHeaderCell) -> Bool {
+        lhs.item.id == rhs.item.id && lhs.item.amount == rhs.item.amount && lhs.isDragged == rhs.isDragged && lhs.dragOffset == rhs.dragOffset
+    }
+    
+    var body: some View {
+        BalanceView(title: item.title, amount: item.amount, color: Color(hex: themeBodyText), diff: item.diffAmount, isSilent: isSilentUpdate)
+            .background(isDragged ? Color(hex: themeMain).opacity(0.1) : Color.clear)
+            .cornerRadius(8)
+            .offset(x: isDragged ? dragOffset : 0, y: 0)
+            .zIndex(isDragged ? 100 : 0)
+    }
 }
 
 struct HomeHeaderView: View {
     @Binding var homeItems: [DisplayHomeItem]
     @Binding var isHomeEditMode: Bool
     @Binding var homeDisplayOrder: [String]
-    let themeMain: String; let themeBodyText: String; let isSilentUpdate: Bool
+    let themeMain: String
+    let themeBodyText: String
+    let isSilentUpdate: Bool
     
     @State private var localItems: [DisplayHomeItem] = []
     @State private var draggedItemId: String?
@@ -28,39 +45,120 @@ struct HomeHeaderView: View {
     
     var body: some View {
         HStack(spacing: 10) {
-            ForEach(localItems) { item in let isDragged = draggedItemId == item.id; HomeHeaderCell(item: item, themeMain: themeMain, themeBodyText: themeBodyText, isSilentUpdate: isSilentUpdate, isDragged: isDragged, dragOffset: isDragged ? dragOffset : 0).equatable().overlay(isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil).gesture(isHomeEditMode ? DragGesture(coordinateSpace: .global).onChanged { value in handleDragChange(value: value, item: item) }.onEnded { _ in handleDragEnded() } : nil) }
-        }.padding().onAppear { localItems = homeItems }.onChange(of: homeItems) { newItems in if draggedItemId == nil { localItems = newItems } }
+            ForEach(localItems) { item in
+                let isDragged = draggedItemId == item.id
+                HomeHeaderCell(item: item, themeMain: themeMain, themeBodyText: themeBodyText, isSilentUpdate: isSilentUpdate, isDragged: isDragged, dragOffset: isDragged ? dragOffset : 0)
+                    .equatable()
+                    .overlay(
+                        isHomeEditMode ? RoundedRectangle(cornerRadius: 8).stroke(Color(hex: themeMain).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4])) : nil
+                    )
+                    .gesture(
+                        isHomeEditMode ? DragGesture(coordinateSpace: .global)
+                            .onChanged { value in handleDragChange(value: value, item: item) }
+                            .onEnded { _ in handleDragEnded() } : nil
+                    )
+            }
+        }
+        .padding()
+        .onAppear { localItems = homeItems }
+        .onChange(of: homeItems) { newItems in
+            if draggedItemId == nil { localItems = newItems }
+        }
     }
-    private func handleDragChange(value: DragGesture.Value, item: DisplayHomeItem) { if draggedItemId != item.id { draggedItemId = item.id; dragHomeTotalJump = 0 }; dragOffset = value.translation.width - dragHomeTotalJump; if let idx = localItems.firstIndex(where: { $0.id == item.id }) { let jumpDistance: CGFloat = 88; let threshold = jumpDistance * 0.5; if dragOffset > threshold && idx < localItems.count - 1 { withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) { localItems.swapAt(idx, idx + 1); dragHomeTotalJump += jumpDistance; dragOffset -= jumpDistance } } else if dragOffset < -threshold && idx > 0 { withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) { localItems.swapAt(idx, idx - 1); dragHomeTotalJump -= jumpDistance; dragOffset += jumpDistance } } } }
-    private func handleDragEnded() { withAnimation(.interactiveSpring()) { draggedItemId = nil; dragOffset = 0; dragHomeTotalJump = 0 }; homeDisplayOrder = localItems.map { $0.id }; homeItems = localItems }
+    
+    private func handleDragChange(value: DragGesture.Value, item: DisplayHomeItem) {
+        if draggedItemId != item.id {
+            draggedItemId = item.id
+            dragHomeTotalJump = 0
+        }
+        dragOffset = value.translation.width - dragHomeTotalJump
+        
+        if let idx = localItems.firstIndex(where: { $0.id == item.id }) {
+            let jumpDistance: CGFloat = 88
+            let threshold = jumpDistance * 0.5
+            
+            if dragOffset > threshold && idx < localItems.count - 1 {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
+                    localItems.swapAt(idx, idx + 1)
+                    dragHomeTotalJump += jumpDistance
+                    dragOffset -= jumpDistance
+                }
+            } else if dragOffset < -threshold && idx > 0 {
+                withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.8, blendDuration: 0)) {
+                    localItems.swapAt(idx, idx - 1)
+                    dragHomeTotalJump -= jumpDistance
+                    dragOffset += jumpDistance
+                }
+            }
+        }
+    }
+    
+    private func handleDragEnded() {
+        withAnimation(.interactiveSpring()) {
+            draggedItemId = nil
+            dragOffset = 0
+            dragHomeTotalJump = 0
+        }
+        homeDisplayOrder = localItems.map { $0.id }
+        homeItems = localItems
+    }
 }
 
 struct ContentView: View {
     @AppStorage("transactions_v4") var transactions: [Transaction] = []
     @AppStorage("accounts_v2") var accounts: [Account] = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]
-    @AppStorage("account_groups") var groups: [AccountGroup] = []; @AppStorage("user_profiles_v1") var profiles: [UserProfile] = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]
+    @AppStorage("account_groups") var groups: [AccountGroup] = []
+    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]
     
     @AppStorage("recurring_payments_v1") var recurringPayments: [RecurringPayment] = []
     
-    @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000; 
+    @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
     @AppStorage("closingDay") var closingDay: Int = 0 
     
-    @AppStorage("isDarkMode") var isDarkMode: Bool = false; @AppStorage("theme_main") var themeMain: String = "#FF007AFF"; @AppStorage("theme_income") var themeIncome: String = "#FF19B219"; @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"; @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"; @AppStorage("theme_saturday") var themeSaturday: String = "#FF007AFF"; @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"; @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"; @AppStorage("theme_barText") var themeBarText: String = "#FF000000"; @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"; @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"; @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @AppStorage("show_total_assets") var showTotalAssets: Bool = true; @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
+    @AppStorage("isDarkMode") var isDarkMode: Bool = false
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_income") var themeIncome: String = "#FF19B219"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"
+    @AppStorage("theme_saturday") var themeSaturday: String = "#FF007AFF"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"
+    @AppStorage("theme_barText") var themeBarText: String = "#FF000000"
+    @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("show_total_assets") var showTotalAssets: Bool = true
+    @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
 
-    @State private var selection = 0; @State private var isShowingInputSheet = false; @State private var inputText: String = ""; @State private var isShowingSwipeDeleteAlert = false; @State private var transactionToDelete: Transaction?; @State private var isShowingAccountCreator = false; @State private var isShowingGroupCreator = false; @State private var isShowingAccountDeleteAlert = false; @State private var isShowingGroupDeleteAlert = false; @State private var accountToDelete: Account?; @State private var groupToDelete: AccountGroup?
+    @State private var selection = 0
+    @State private var isShowingInputSheet = false
+    @State private var inputText: String = ""
+    @State private var isShowingSwipeDeleteAlert = false
+    @State private var transactionToDelete: Transaction?
+    @State private var isShowingAccountCreator = false
+    @State private var isShowingGroupCreator = false
+    @State private var isShowingAccountDeleteAlert = false
+    @State private var isShowingGroupDeleteAlert = false
+    @State private var accountToDelete: Account?
+    @State private var groupToDelete: AccountGroup?
     
     @State private var isShowingRPCreator = false
     @State private var isShowingRPDeleteAlert = false
     @State private var rpToDelete: RecurringPayment?
     
-    @State private var isHomeEditMode = false; @State private var homeItems: [DisplayHomeItem] = []; @State private var cachedVisibleTransactions: [Transaction] = []
-    @State private var activeAlert: ActiveAlert?; @State private var isRestoringManual = false; @State private var isShowingImporter = false; @State private var pendingImportData: FullBackupData?
+    @State private var isHomeEditMode = false
+    @State private var homeItems: [DisplayHomeItem] = []
+    @State private var cachedVisibleTransactions: [Transaction] = []
+    @State private var activeAlert: ActiveAlert?
+    @State private var isRestoringManual = false
+    @State private var isShowingImporter = false
+    @State private var pendingImportData: FullBackupData?
     
     @State private var searchText = ""
 
     let appearancePublisher = NotificationCenter.default.publisher(for: NSNotification.Name("UpdateAppearance"))
-    @ObservedObject var lockManager = LockManager.shared; @Environment(\.scenePhase) var scenePhase
+    @ObservedObject var lockManager = LockManager.shared
+    @Environment(\.scenePhase) var scenePhase
 
     func checkAndPostRecurringPayments() {
         let cal = Calendar.current
@@ -132,7 +230,142 @@ struct ContentView: View {
         }
     }
 
-    func updateVisibleTransactions() { let currentTx = transactions; let currentProf = profiles; let isUn = lockManager.isUnlocked; let hidePriv = lockManager.privatePostDisplayMode == 0; DispatchQueue.global(qos: .userInitiated).async { let profileDict = Dictionary(uniqueKeysWithValues: currentProf.map { ($0.id, $0) }); let defaultProfile = currentProf.first; let filtered = currentTx.filter { tx in let profile = profileDict[tx.profileId ?? UUID()] ?? defaultProfile; let isVisible = profile?.isVisible ?? true; let isPrivate = profile?.isPrivate ?? false; let isDeleted = profile?.isDeleted ?? false; if isDeleted { return true }; if !isVisible { return false }; if isPrivate && !isUn && hidePriv { return false }; return true }; let sorted = filtered.sorted(by: { $0.date > $1.date }); DispatchQueue.main.async { self.cachedVisibleTransactions = sorted } } }
+    // 【新規】クレジットカードの自動引き落とし（精算）チェック処理
+    func checkAndPostCreditCardWithdrawals() {
+        let cal = Calendar.current
+        let now = Date()
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM"
+        
+        var updatedAcc = false
+        var newTransactions: [Transaction] = []
+        
+        for i in 0..<accounts.count {
+            var acc = accounts[i]
+            if acc.type != .credit { continue }
+            guard let wDay = acc.withdrawalDay, wDay > 0, let wAccId = acc.withdrawalAccountId, let closingDay = acc.closingDay else { continue }
+            guard let withdrawalAccount = accounts.first(where: { $0.id == wAccId }) else { continue }
+            
+            var posted = acc.postedWithdrawalMonths ?? []
+            guard let startNorm = cal.date(from: cal.dateComponents([.year, .month], from: acc.createdAt ?? Date())) else { continue }
+            var currentMonthDate = startNorm
+            let nowMonthDate = cal.date(from: cal.dateComponents([.year, .month], from: now))!
+            
+            while currentMonthDate <= nowMonthDate {
+                let monthStr = fmt.string(from: currentMonthDate)
+                
+                if !posted.contains(monthStr) {
+                    var targetComps = cal.dateComponents([.year, .month], from: currentMonthDate)
+                    let range = cal.range(of: .day, in: .month, for: currentMonthDate)!
+                    targetComps.day = min(wDay, range.count)
+                    targetComps.hour = 0
+                    targetComps.minute = 0
+                    targetComps.second = 0
+                    
+                    if let targetDate = cal.date(from: targetComps), now >= targetDate {
+                        let creationMonth = cal.date(from: cal.dateComponents([.year, .month], from: acc.createdAt ?? Date()))!
+                        if currentMonthDate >= creationMonth {
+                            
+                            // 締め日の期間を計算
+                            var closingComps = cal.dateComponents([.year, .month], from: targetDate)
+                            if closingDay == 0 {
+                                closingComps.month! -= 1
+                                let tempDate = cal.date(from: closingComps)!
+                                let rangeC = cal.range(of: .day, in: .month, for: tempDate)!
+                                closingComps.day = rangeC.count
+                            } else {
+                                closingComps.day = closingDay
+                                if closingComps.day! >= wDay {
+                                    closingComps.month! -= 1
+                                }
+                                let tempDate = cal.date(from: cal.dateComponents([.year, .month], from: cal.date(from: closingComps)!))!
+                                let rangeC = cal.range(of: .day, in: .month, for: tempDate)!
+                                closingComps.day = min(closingComps.day!, rangeC.count)
+                            }
+                            closingComps.hour = 23; closingComps.minute = 59; closingComps.second = 59
+                            let closingDateEnd = cal.date(from: closingComps)!
+                            
+                            var prevClosingComps = closingComps
+                            prevClosingComps.month! -= 1
+                            if closingDay == 0 {
+                                let tempDate = cal.date(from: prevClosingComps)!
+                                let rangeP = cal.range(of: .day, in: .month, for: tempDate)!
+                                prevClosingComps.day = rangeP.count
+                            } else {
+                                prevClosingComps.day = closingDay
+                                let tempDate = cal.date(from: cal.dateComponents([.year, .month], from: cal.date(from: prevClosingComps)!))!
+                                let rangeP = cal.range(of: .day, in: .month, for: tempDate)!
+                                prevClosingComps.day = min(prevClosingComps.day!, rangeP.count)
+                            }
+                            let closingDateStart = cal.date(byAdding: .second, value: 1, to: cal.date(from: prevClosingComps)!)!
+                            
+                            // 期間内のカード利用額を計算
+                            var amount = 0
+                            for tx in transactions {
+                                if tx.source == acc.name && !tx.isIncome && tx.date >= closingDateStart && tx.date <= closingDateEnd && tx.isExcludedFromBalance != true {
+                                    amount += tx.amount
+                                }
+                                if tx.source == acc.name && tx.isIncome && tx.date >= closingDateStart && tx.date <= closingDateEnd && tx.isExcludedFromBalance != true {
+                                    amount -= tx.amount
+                                }
+                            }
+                            amount = max(0, amount)
+                            
+                            if amount > 0 {
+                                let monthNum = cal.component(.month, from: currentMonthDate)
+                                // 1. 引き落とし元口座から引く（支出）
+                                let noteText1 = "\(acc.name) \(monthNum)月分 カード引き落とし ¥\(amount.formattedWithComma)"
+                                let tx1 = Transaction(amount: amount, date: targetDate, note: noteText1, source: withdrawalAccount.name, isIncome: false, isExcludedFromBalance: false, profileId: profiles.first?.id)
+                                // 2. カードの残高を回復させる（収入）
+                                let noteText2 = "\(acc.name) \(monthNum)月分 カード引き落とし精算 ¥\(amount.formattedWithComma)"
+                                let tx2 = Transaction(amount: amount, date: targetDate, note: noteText2, source: acc.name, isIncome: true, isExcludedFromBalance: false, profileId: profiles.first?.id)
+                                
+                                newTransactions.append(tx1)
+                                newTransactions.append(tx2)
+                            }
+                            
+                            posted.append(monthStr)
+                            updatedAcc = true
+                        }
+                    }
+                }
+                currentMonthDate = cal.date(byAdding: .month, value: 1, to: currentMonthDate)!
+            }
+            
+            if updatedAcc {
+                acc.postedWithdrawalMonths = posted
+                accounts[i] = acc
+            }
+        }
+        
+        if updatedAcc {
+            transactions.append(contentsOf: newTransactions)
+        }
+    }
+
+    func updateVisibleTransactions() {
+        let currentTx = transactions
+        let currentProf = profiles
+        let isUn = lockManager.isUnlocked
+        let hidePriv = lockManager.privatePostDisplayMode == 0
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            let profileDict = Dictionary(uniqueKeysWithValues: currentProf.map { ($0.id, $0) })
+            let defaultProfile = currentProf.first
+            let filtered = currentTx.filter { tx in
+                let profile = profileDict[tx.profileId ?? UUID()] ?? defaultProfile
+                let isVisible = profile?.isVisible ?? true
+                let isPrivate = profile?.isPrivate ?? false
+                let isDeleted = profile?.isDeleted ?? false
+                if isDeleted { return true }
+                if !isVisible { return false }
+                if isPrivate && !isUn && hidePriv { return false }
+                return true
+            }
+            let sorted = filtered.sorted(by: { $0.date > $1.date })
+            DispatchQueue.main.async { self.cachedVisibleTransactions = sorted }
+        }
+    }
     
     var filteredSearchTransactions: [Transaction] {
         if searchText.isEmpty { return [] }
@@ -149,11 +382,11 @@ struct ContentView: View {
             Color(hex: themeBG).ignoresSafeArea()
             
             TabView(selection: $selection) { 
-                homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }; 
-                searchTab.tag(1).tabItem { Label("検索", systemImage: "magnifyingglass") }; 
-                calendarTab.tag(2).tabItem { Label("カレンダー", systemImage: "calendar") }; 
-                walletTab.tag(3).tabItem { Label("お財布", systemImage: "wallet.pass") }; 
-                settingTab.tag(4).tabItem { Label("設定", systemImage: "gearshape") } 
+                homeTab.tag(0).tabItem { Label("ホーム", systemImage: "house") }
+                searchTab.tag(1).tabItem { Label("検索", systemImage: "magnifyingglass") }
+                calendarTab.tag(2).tabItem { Label("カレンダー", systemImage: "calendar") }
+                walletTab.tag(3).tabItem { Label("お財布", systemImage: "wallet.pass") }
+                settingTab.tag(4).tabItem { Label("設定", systemImage: "gearshape") }
             }
             .accentColor(Color(hex: themeTabAccent))
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in self.selection = 0 }
@@ -164,29 +397,63 @@ struct ContentView: View {
                 }
             }
             
-            if lockManager.isShowingLockScreen { PasscodeLockOverlay().zIndex(200).transition(.opacity) }
-        }.preferredColorScheme(isDarkMode ? .dark : .light)
+            if lockManager.isShowingLockScreen {
+                PasscodeLockOverlay().zIndex(200).transition(.opacity)
+            }
+        }
+        .preferredColorScheme(isDarkMode ? .dark : .light)
         .onAppear { 
             checkAndPostRecurringPayments()
-            recalculateBalances(saveBackup: false); updateVisibleTransactions(); updateAppearance(); syncHomeItems(); 
-            if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 { lockManager.promptUnlock() } 
+            checkAndPostCreditCardWithdrawals() // 【追加】カードの引き落としもチェック
+            recalculateBalances(saveBackup: false)
+            updateVisibleTransactions()
+            updateAppearance()
+            syncHomeItems()
+            if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
+                lockManager.promptUnlock()
+            } 
         }
         .onReceive(appearancePublisher) { _ in updateAppearance() }
         .onChange(of: transactions) { _ in recalculateBalances(); updateVisibleTransactions() }
-        .onChange(of: lockManager.isUnlocked) { _ in DispatchQueue.global(qos: .userInitiated).async { recalculateBalances(saveBackup: false); DispatchQueue.main.async { updateVisibleTransactions() } } }
-        .onChange(of: profiles) { _ in updateVisibleTransactions() }.onChange(of: accounts) { _ in syncHomeItems() }.onChange(of: groups) { _ in syncHomeItems() }.onChange(of: showTotalAssets) { _ in syncHomeItems() }.onChange(of: themeBarBG) { _ in updateAppearance() }.onChange(of: isDarkMode) { _ in updateAppearance() }
+        .onChange(of: lockManager.isUnlocked) { _ in
+            DispatchQueue.global(qos: .userInitiated).async {
+                recalculateBalances(saveBackup: false)
+                DispatchQueue.main.async { updateVisibleTransactions() }
+            }
+        }
+        .onChange(of: profiles) { _ in updateVisibleTransactions() }
+        .onChange(of: accounts) { _ in syncHomeItems() }
+        .onChange(of: groups) { _ in syncHomeItems() }
+        .onChange(of: showTotalAssets) { _ in syncHomeItems() }
+        .onChange(of: themeBarBG) { _ in updateAppearance() }
+        .onChange(of: isDarkMode) { _ in updateAppearance() }
         .onChange(of: scenePhase) { newPhase in 
             if newPhase == .background { lockManager.lock() } 
             else if newPhase == .active { 
                 checkAndPostRecurringPayments()
-                if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 { lockManager.promptUnlock() } 
+                checkAndPostCreditCardWithdrawals() // 【追加】
+                if !lockManager.isUnlocked && !lockManager.passcode.isEmpty && lockManager.lockBehavior == 0 {
+                    lockManager.promptUnlock()
+                } 
             } 
         }
-        .alert(item: $activeAlert) { type in switch type { case .reset: return Alert(title: Text("全リセット"), message: Text("初期化します。"), primaryButton: .destructive(Text("リセット")) { resetAll() }, secondaryButton: .cancel()); case .restore: return Alert(title: Text("復元"), message: Text("データを復元しますか？"), primaryButton: .destructive(Text("復元")) { if let b = BackupManager.loadFullBackup(isManual: isRestoringManual) { applyFullBackup(b); activeAlert = .completion("完了") } }, secondaryButton: .cancel()); case .save: return Alert(title: Text("保存"), message: Text("上書きしますか？"), primaryButton: .default(Text("保存")) { BackupManager.saveFullBackup(data: createFullBackupData(), isManual: true); activeAlert = .completion("完了") }, secondaryButton: .cancel()); case .importConfirm: return Alert(title: Text("読込"), message: Text("上書きしますか？"), primaryButton: .destructive(Text("読込")) { if let d = pendingImportData { applyFullBackup(d); activeAlert = .completion("完了") }; pendingImportData = nil }, secondaryButton: .cancel() { pendingImportData = nil }); case .completion(let msg): return Alert(title: Text("完了"), message: Text(msg), dismissButton: .default(Text("OK"))) } }
+        .alert(item: $activeAlert) { type in
+            switch type {
+            case .reset: return Alert(title: Text("全リセット"), message: Text("初期化します。"), primaryButton: .destructive(Text("リセット")) { resetAll() }, secondaryButton: .cancel())
+            case .restore: return Alert(title: Text("復元"), message: Text("データを復元しますか？"), primaryButton: .destructive(Text("復元")) { if let b = BackupManager.loadFullBackup(isManual: isRestoringManual) { applyFullBackup(b); activeAlert = .completion("完了") } }, secondaryButton: .cancel())
+            case .save: return Alert(title: Text("保存"), message: Text("上書きしますか？"), primaryButton: .default(Text("保存")) { BackupManager.saveFullBackup(data: createFullBackupData(), isManual: true); activeAlert = .completion("完了") }, secondaryButton: .cancel())
+            case .importConfirm: return Alert(title: Text("読込"), message: Text("上書きしますか？"), primaryButton: .destructive(Text("読込")) { if let d = pendingImportData { applyFullBackup(d); activeAlert = .completion("完了") }; pendingImportData = nil }, secondaryButton: .cancel() { pendingImportData = nil })
+            case .completion(let msg): return Alert(title: Text("完了"), message: Text(msg), dismissButton: .default(Text("OK")))
+            }
+        }
         .alert("投稿を削除しますか？", isPresented: $isShowingSwipeDeleteAlert) { 
             Button("キャンセル", role: .cancel) {}
             Button("削除", role: .destructive) { 
-                withAnimation { if let t = transactionToDelete { transactions.removeAll(where: { $0.id == t.id }) } }
+                if let t = transactionToDelete {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation { transactions.removeAll(where: { $0.id == t.id }) }
+                    }
+                } 
             } 
         }
         .sheet(isPresented: $isShowingInputSheet) {
@@ -199,29 +466,60 @@ struct ContentView: View {
             ZStack(alignment: .bottomTrailing) {
                 Color(hex: themeBG).ignoresSafeArea()
                 VStack(spacing: 0) {
-                    VStack(spacing: 8) { HomeHeaderView(homeItems: $homeItems, isHomeEditMode: $isHomeEditMode, homeDisplayOrder: $homeDisplayOrder, themeMain: themeMain, themeBodyText: themeBodyText, isSilentUpdate: lockManager.isSilentUpdate); if isHomeEditMode { Text("横にスライドして並べ替えられます").font(.caption2).foregroundColor(Color(hex: themeMain)).padding(.bottom, 4) } }.background(Color(hex: themeBarBG).opacity(0.8))
-                    Divider()
-                    List { 
-                        ForEach(cachedVisibleTransactions) { item in 
-                            let isFuture = item.date > Date()
-                            ZStack { 
-                                NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
-                                TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0) 
-                            }
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) { 
-                                // 【修正】role: .destructive を外して色だけ赤くすることで、ダイアログが出る前の変な動きを防ぐ
-                                Button { 
-                                    transactionToDelete = item; isShowingSwipeDeleteAlert = true 
-                                } label: { Text("削除") }.tint(.red) 
-                            } 
-                        } 
+                    VStack(spacing: 8) {
+                        HomeHeaderView(homeItems: $homeItems, isHomeEditMode: $isHomeEditMode, homeDisplayOrder: $homeDisplayOrder, themeMain: themeMain, themeBodyText: themeBodyText, isSilentUpdate: lockManager.isSilentUpdate)
+                        if isHomeEditMode {
+                            Text("横にスライドして並べ替えられます").font(.caption2).foregroundColor(Color(hex: themeMain)).padding(.bottom, 4)
+                        }
                     }
-                    .listStyle(.plain).scrollContentBackground(.hidden).refreshable { NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil) }
+                    .background(Color(hex: themeBarBG).opacity(0.8))
+                    Divider()
+                    List {
+                        ForEach(cachedVisibleTransactions) { item in
+                            let isFuture = item.date > Date()
+                            TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0)
+                                .background(
+                                    NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
+                                )
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button {
+                                        transactionToDelete = item
+                                        isShowingSwipeDeleteAlert = true
+                                    } label: { Text("削除") }.tint(.red)
+                                }
+                        }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .refreshable { NotificationCenter.default.post(name: NSNotification.Name("UpdateAppearance"), object: nil) }
                 }
-                if !isHomeEditMode { Button(action: { inputText = ""; isShowingInputSheet = true }) { Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle()) }.padding(20).padding(.bottom, 10) }
-            }.navigationTitle("ホーム").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } }; ToolbarItem(placement: .navigationBarTrailing) { Button(action: { withAnimation(.spring()) { isHomeEditMode.toggle() } }) { Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.left.and.right.circle").foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain)) } } }.toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+                if !isHomeEditMode {
+                    Button(action: { inputText = ""; isShowingInputSheet = true }) {
+                        Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(.white).frame(width: 56, height: 56).background(Color(hex: themeMain)).clipShape(Circle())
+                    }
+                    .padding(20).padding(.bottom, 10)
+                }
+            }
+            .navigationTitle("ホーム")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if !lockManager.passcode.isEmpty {
+                        Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) {
+                            Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain))
+                        }
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { withAnimation(.spring()) { isHomeEditMode.toggle() } }) {
+                        Image(systemName: isHomeEditMode ? "checkmark.circle.fill" : "arrow.left.and.right.circle").foregroundColor(isHomeEditMode ? .green : Color(hex: themeMain))
+                    }
+                }
+            }
+            .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+            .toolbarBackground(.visible, for: .navigationBar, .tabBar)
         }
     }
     
@@ -255,18 +553,17 @@ struct ContentView: View {
                         List {
                             ForEach(filteredSearchTransactions) { item in
                                 let isFuture = item.date > Date()
-                                ZStack {
-                                    NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
-                                    TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0)
-                                }
-                                .listRowInsets(EdgeInsets())
-                                .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) { 
-                                    // 【修正】role: .destructive を外して色だけ赤くする
-                                    Button { 
-                                        transactionToDelete = item; isShowingSwipeDeleteAlert = true 
-                                    } label: { Text("削除") }.tint(.red) 
-                                }
+                                TwitterRow(item: item).opacity(isFuture ? 0.6 : 1.0)
+                                    .background(
+                                        NavigationLink(destination: TransactionDetailView(item: item, transactions: $transactions, accounts: $accounts)) { EmptyView() }.opacity(0)
+                                    )
+                                    .listRowInsets(EdgeInsets())
+                                    .listRowBackground(isFuture ? Color.black.opacity(0.06) : Color(hex: themeBG))
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) { 
+                                        Button { 
+                                            transactionToDelete = item; isShowingSwipeDeleteAlert = true 
+                                        } label: { Text("削除") }.tint(.red) 
+                                    }
                             }
                         }
                         .listStyle(.plain)
@@ -291,7 +588,15 @@ struct ContentView: View {
         }
     }
     
-    private var calendarTab: some View { NavigationView { CalendarView(transactions: $transactions, accounts: $accounts).navigationTitle("カレンダー").navigationBarTitleDisplayMode(.inline).toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar) } }
+    private var calendarTab: some View { 
+        NavigationView { 
+            CalendarView(transactions: $transactions, accounts: $accounts)
+                .navigationTitle("カレンダー")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar)
+                .toolbarBackground(.visible, for: .navigationBar, .tabBar) 
+        } 
+    }
 
     private var walletTab: some View { 
         NavigationView { 
@@ -309,7 +614,6 @@ struct ContentView: View {
                                 }
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                // 【修正】role: .destructive を外して色だけ赤くする（これでアラート前に消えかかるバグが直ります）
                                 Button {
                                     accountToDelete = acc
                                     isShowingAccountDeleteAlert = true
@@ -332,7 +636,6 @@ struct ContentView: View {
                                 }
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                // 【修正】role: .destructive を外して色だけ赤くする
                                 Button {
                                     rpToDelete = rp
                                     isShowingRPDeleteAlert = true
@@ -365,7 +668,6 @@ struct ContentView: View {
                                 }
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                // 【修正】role: .destructive を外して色だけ赤くする
                                 Button {
                                     groupToDelete = group
                                     isShowingGroupDeleteAlert = true
@@ -521,7 +823,9 @@ struct ContentView: View {
     func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recurringPayments = []; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("リセット完了") } 
     
     func recalculateBalances(saveBackup: Bool = true) { let currentAccounts = accounts; let currentTransactions = transactions; let currentProfiles = profiles; let isUn = lockManager.isUnlocked; let reflectPriv = lockManager.reflectPrivateBalanceWhenLocked; DispatchQueue.global(qos: .userInitiated).async { var tempAccounts = currentAccounts; for i in 0..<tempAccounts.count { var cur = 0; for tx in currentTransactions where tx.source == tempAccounts[i].name { if tx.isExcludedFromBalance == true { continue }; let profile = currentProfiles.first(where: { $0.id == tx.profileId }) ?? currentProfiles.first; let isPrivate = profile?.isPrivate ?? false; let isDeleted = profile?.isDeleted ?? false; if isDeleted { cur += (tx.isIncome ? tx.amount : -tx.amount); continue }; if isPrivate && !isUn && !reflectPriv { continue }; cur += (tx.isIncome ? tx.amount : -tx.amount) }; tempAccounts[i].diffAmount = cur - tempAccounts[i].balance; tempAccounts[i].balance = cur }; DispatchQueue.main.async { self.accounts = tempAccounts; if saveBackup { let backupData = self.createFullBackupData(); DispatchQueue.global(qos: .background).async { BackupManager.saveFullBackup(data: backupData, isManual: false) } } } } }
+    
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "").replacingOccurrences(of: ",", with: "")) ?? 0) } }
+    
     func parseSourceName(from t: String) -> String { for acc in accounts { if t.contains("@\(acc.name)") { return acc.name } }; return accounts.first?.name ?? "お財布" }
     func exportBackup() { let encoder = JSONEncoder(); encoder.outputFormatting = .prettyPrinted; let dict = createFullBackupData(); guard let finalData = try? encoder.encode(dict) else { return }; let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("Paytter_FullBackup.json"); try? finalData.write(to: tempURL); let av = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil); if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene, let rootVC = scene.windows.first?.rootViewController { av.popoverPresentationController?.sourceView = rootVC.view; rootVC.present(av, animated: true) } }
     func updateAppearance() { let bgColor = UIColor(Color(hex: themeBarBG)); let textColor = UIColor(Color(hex: themeBarText)); let appearance = UINavigationBarAppearance(); appearance.configureWithOpaqueBackground(); appearance.backgroundColor = bgColor; appearance.titleTextAttributes = [.foregroundColor: textColor]; appearance.largeTitleTextAttributes = [.foregroundColor: textColor]; UINavigationBar.appearance().standardAppearance = appearance; UINavigationBar.appearance().scrollEdgeAppearance = appearance; UINavigationBar.appearance().compactAppearance = appearance; let tabAppearance = UITabBarAppearance(); tabAppearance.configureWithOpaqueBackground(); tabAppearance.backgroundColor = bgColor; UITabBar.appearance().standardAppearance = tabAppearance; UITabBar.appearance().scrollEdgeAppearance = tabAppearance; if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene { windowScene.windows.forEach { window in updateViewHierarchy(window.rootViewController); window.setNeedsLayout(); window.layoutIfNeeded() } } }
