@@ -759,7 +759,7 @@ struct TimelineImageGrid: View {
     }
 }
 
-// 【修正】全てのお財布の高さが同じになるように透明なプレースホルダーを配置し、位置ズレと見切れを防ぎました
+// 【修正】高さを保つために等しく下部パディングを設け、そこに予定額を配置しました
 struct BalanceView: View {
     let title: String
     let amount: Int
@@ -793,22 +793,20 @@ struct BalanceView: View {
                         .opacity(showDiff ? 0 : 1) 
                 }
             }
-            
-            // 全てのお財布に同じ高さのエリアを確保することで、名前と金額の位置を完全に一致させる
+        }
+        .padding(.bottom, 14) // 全てのセルに等しく下部スペースを確保し、高さを完全に一致させる
+        .frame(maxWidth: .infinity)
+        .overlay(
             ZStack {
                 if let creditAmt = creditAmount, creditAmt > 0 {
                     Text("引落予定 ¥\(creditAmt.formattedWithComma)")
                         .font(.system(size: 9))
                         .foregroundColor(Color(hex: themeSubText).opacity(0.8))
-                } else {
-                    Text(" ")
-                        .font(.system(size: 9))
-                        .opacity(0)
+                        .padding(.bottom, 2)
                 }
             }
-            .frame(height: 12)
-        }
-        .frame(maxWidth: .infinity)
+            , alignment: .bottom
+        )
         .onChange(of: amount) { newValue in 
             if newValue != lastAmount { 
                 if isSilent { 
