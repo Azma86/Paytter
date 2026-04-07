@@ -759,7 +759,7 @@ struct TimelineImageGrid: View {
     }
 }
 
-// 【修正】高さを保つために等しく下部パディングを設け、そこに予定額を配置しました
+// 【修正】高さを完璧に揃え、かつ予定額が必ず表示されるように、VStack内に固定の高さ（箱）を用意しました
 struct BalanceView: View {
     let title: String
     let amount: Int
@@ -793,20 +793,18 @@ struct BalanceView: View {
                         .opacity(showDiff ? 0 : 1) 
                 }
             }
-        }
-        .padding(.bottom, 14) // 全てのセルに等しく下部スペースを確保し、高さを完全に一致させる
-        .frame(maxWidth: .infinity)
-        .overlay(
+            
+            // 【修正】レイアウトを一切崩さず、確実に表示させるための固定空間
             ZStack {
                 if let creditAmt = creditAmount, creditAmt > 0 {
                     Text("引落予定 ¥\(creditAmt.formattedWithComma)")
                         .font(.system(size: 9))
                         .foregroundColor(Color(hex: themeSubText).opacity(0.8))
-                        .padding(.bottom, 2)
                 }
             }
-            , alignment: .bottom
-        )
+            .frame(height: 12)
+        }
+        .frame(maxWidth: .infinity)
         .onChange(of: amount) { newValue in 
             if newValue != lastAmount { 
                 if isSilent { 
