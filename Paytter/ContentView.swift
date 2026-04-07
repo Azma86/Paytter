@@ -97,17 +97,21 @@ struct ContentView: View {
                     targetComps.hour = 8 
                     
                     if let targetDate = cal.date(from: targetComps), now >= targetDate {
-                        var postAmount = rp.amount
-                        if posted.isEmpty && rp.fractionType == 1 {
-                            postAmount = rp.fractionAmount
-                        } else if rp.hasEndDate && monthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
-                            postAmount = rp.fractionAmount
+                        // 【重要】アプリ設定前（過去分）は自動投稿しない（ボタンで手動対応させる）
+                        let creationMonth = cal.date(from: cal.dateComponents([.year, .month], from: rp.createdAt ?? Date()))!
+                        if currentMonthDate >= creationMonth {
+                            var postAmount = rp.amount
+                            if posted.isEmpty && rp.fractionType == 1 {
+                                postAmount = rp.fractionAmount
+                            } else if rp.hasEndDate && monthStr == fmt.string(from: rp.endDate) && rp.fractionType == 2 {
+                                postAmount = rp.fractionAmount
+                            }
+                            
+                            let tx = Transaction(amount: postAmount, date: targetDate, note: "\(rp.name)", source: rp.source, isIncome: rp.isIncome, profileId: rp.profileId)
+                            newTransactions.append(tx)
+                            posted.append(monthStr)
+                            updatedRP = true
                         }
-                        
-                        let tx = Transaction(amount: postAmount, date: targetDate, note: "\(rp.name)", source: rp.source, isIncome: rp.isIncome, profileId: rp.profileId)
-                        newTransactions.append(tx)
-                        posted.append(monthStr)
-                        updatedRP = true
                     }
                 }
                 currentMonthDate = cal.date(byAdding: .month, value: 1, to: currentMonthDate)!
@@ -282,9 +286,10 @@ struct ContentView: View {
                 List { 
                     Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) { ForEach(accounts) { acc in NavigationLink(destination: AccountEditView(account: binding(for: acc), transactions: $transactions, allAccounts: accounts)) { HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { accountToDelete = acc; isShowingAccountDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
+                    // 【修正】詳細画面に transactions を渡せるように変更
                     Section(header: Text("サブスク・ローンの管理").foregroundColor(Color(hex: themeSubText))) {
                         ForEach(recurringPayments) { rp in
-                            NavigationLink(destination: RecurringPaymentEditView(payment: binding(forRP: rp), recurringPayments: $recurringPayments, accounts: accounts, profiles: profiles)) {
+                            NavigationLink(destination: RecurringPaymentEditView(payment: binding(forRP: rp), recurringPayments: $recurringPayments, transactions: $transactions, accounts: accounts, profiles: profiles)) {
                                 HStack {
                                     Image(systemName: "repeat.circle").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
                                     Text(rp.name).foregroundColor(Color(hex: themeBodyText))
@@ -331,7 +336,6 @@ struct ContentView: View {
                     Section(header: Text("カスタマイズ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: UserProfileSettingView(transactions: $transactions)) { Label("表示ユーザー設定", systemImage: "person.2.circle").foregroundColor(Color(hex: themeBodyText)) }; NavigationLink(destination: ThemeSettingView()) { Label("テーマ設定", systemImage: "paintpalette").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("セキュリティ").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: PasscodeSettingView()) { Label("パスコードロック設定", systemImage: "lock.shield").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
-                    // 【修正】「月末」を28日の下に配置しました
                     Section(header: Text("予算・締め日設定").foregroundColor(Color(hex: themeSubText))) { 
                         Stepper("今月の予算: ¥\(monthlyBudget)", value: $monthlyBudget, in: 1000...500000, step: 1000).foregroundColor(Color(hex: themeBodyText)) 
                         Picker("締め日", selection: $closingDay) {
