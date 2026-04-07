@@ -75,7 +75,7 @@ struct AttachedMediaItem: Identifiable, Codable, Equatable {
     var id = UUID()
     var type: MediaType
     var localFileName: String
-    var originalFileName: String? // 画像のファイル名を保存
+    var originalFileName: String?
     var thumbnailData: Data?
     var durationText: String?
 }
@@ -135,6 +135,60 @@ extension Transaction {
             for v in vids { fallback.append(AttachedMediaItem(type: .video, localFileName: v.localFileName, originalFileName: "添付動画", thumbnailData: v.thumbnailData)) }
         }
         return fallback
+    }
+}
+
+// 【新規】サブスク・ローン用のデータモデル
+struct RecurringPayment: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var name: String
+    var amount: Int
+    var startDate: Date
+    var hasEndDate: Bool
+    var endDate: Date
+    var paymentDay: Int
+    var profileId: UUID?
+    var source: String
+    var isIncome: Bool
+    var fractionType: Int // 0: なし, 1: 初回, 2: 最終回
+    var fractionAmount: Int
+    
+    // 【新規】現在の年月と設定に基づいて、支払い状況を自動計算する関数
+    func paymentInfo() -> (total: Int, paid: Int, remaining: Int) {
+        let cal = Calendar.current
+        guard let startNorm = cal.date(from: cal.dateComponents([.year, .month], from: startDate)),
+              let endNorm = cal.date(from: cal.dateComponents([.year, .month], from: endDate)) else { return (0,0,0) }
+        
+        let now = Date()
+        let nowComps = cal.dateComponents([.year, .month, .day], from: now)
+        let nowNorm = cal.date(from: DateComponents(year: nowComps.year, month: nowComps.month))!
+        
+        var totalM = 1
+        if hasEndDate { totalM = max(1, (cal.dateComponents([.month], from: startNorm, to: endNorm).month ?? 0) + 1) } else { totalM = 0 }
+        
+        var paidM = 0
+        if nowNorm >= startNorm {
+            paidM = (cal.dateComponents([.month], from: startNorm, to: nowNorm).month ?? 0)
+            if (nowComps.day ?? 0) >= paymentDay { paidM += 1 }
+            if hasEndDate && paidM > totalM { paidM = totalM }
+        }
+        
+        var totalAmt = 0; var paidAmt = 0
+        
+        if hasEndDate {
+            if fractionType == 1 { totalAmt = fractionAmount + max(0, totalM - 1) * amount } 
+            else if fractionType == 2 { totalAmt = max(0, totalM - 1) * amount + fractionAmount } 
+            else { totalAmt = totalM * amount }
+        }
+        
+        for i in 0..<paidM {
+            if i == 0 && fractionType == 1 { paidAmt += fractionAmount } 
+            else if hasEndDate && i == (totalM - 1) && fractionType == 2 { paidAmt += fractionAmount } 
+            else { paidAmt += amount }
+        }
+        
+        let remAmt = hasEndDate ? max(0, totalAmt - paidAmt) : 0
+        return (totalAmt, paidAmt, remAmt)
     }
 }
 
