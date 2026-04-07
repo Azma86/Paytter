@@ -178,7 +178,6 @@ struct TransactionDetailView: View {
         if let idx = transactions.firstIndex(where: { $0.id == item.id }) {
             let nAmt = editLineText.components(separatedBy: .whitespacesAndNewlines)
                 .filter { $0.contains("¥") }
-                // 【修正】カンマが含まれる金額も正しく再計算されるように変更
                 .reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "").replacingOccurrences(of: ",", with: "")) ?? 0) }
             
             var nSrc = currentItem.source
@@ -557,7 +556,6 @@ struct AccountCreateView: View {
                             }
                         } label: { Text("種類").foregroundColor(Color(hex: themeBodyText)) }
                         
-                        // 【修正】¥マークを数字のすぐ左にピタッとくっつけました
                         HStack {
                             Text("現在の金額").foregroundColor(Color(hex: themeBodyText))
                             Spacer()
@@ -630,7 +628,6 @@ struct AccountEditView: View {
                 
                 Section(header: Text("残高の調整").foregroundColor(Color(hex: themeSubText))) {
                     HStack {
-                        // 【修正】¥マークを数字のすぐ左にピタッとくっつけました
                         HStack(spacing: 2) {
                             Text("¥").foregroundColor(Color(hex: themeSubText))
                             TextField("新しい残高", text: $editBalance)
@@ -820,6 +817,88 @@ struct AccountGroupCreateView: View {
     }
 }
 
+struct WalletAnalysisView: View {
+    let transactions: [Transaction]
+    @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000
+    @AppStorage("closingDay") var closingDay: Int = 0
+    
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
+    @ObservedObject var lockManager = LockManager.shared
+    
+    var validTransactions: [Transaction] {
+        if lockManager.isUnlocked || lockManager.reflectPrivateBalanceWhenLocked {
+            return transactions
+        } else {
+            return transactions.filter { tx in
+                let profile = profiles.first(where: { $0.id == tx.profileId }) ?? profiles.first
+                return !(profile?.isPrivate ?? false)
+            }
+        }
+    }
+    
+    var currentPeriodRange: (start: Date, end: Date) {
+        let cal = Calendar.current
+        let now = Date()
+        let currentDay = cal.component(.day, from: now)
+        
+        if closingDay == 0 { 
+            let comps = cal.dateComponents([.year, .month], from: now)
+            let start = cal.date(from: comps)!
+            let end = cal.date(byAdding: DateComponents(month: 1, day: -1), to: start)!
+            return (start, cal.date(bySettingHour: 23, minute: 59, second: 59, of: end)!)
+        } else { 
+            var startComps = cal.dateComponents([.year, .month], from: now)
+            if currentDay <= closingDay { startComps.month! -= 1 }
+            startComps.day = closingDay + 1
+            let start = cal.date(from: startComps)!
+            
+            let endMonth = cal.date(byAdding: .month, value: 1, to: start)!
+            let end = cal.date(byAdding: .day, value: -1, to: endMonth)!
+            return (start, cal.date(bySettingHour: 23, minute: 59, second: 59, of: end)!)
+        }
+    }
+    
+    var monthlyTotal: Int {
+        let range = currentPeriodRange
+        return validTransactions.filter { !$0.isIncome && $0.date >= range.start && $0.date <= range.end }.reduce(0) { $0 + $1.amount }
+    }
+    
+    var rangeText: String {
+        let df = DateFormatter()
+        df.dateFormat = "M/d"
+        return "\(df.string(from: currentPeriodRange.start)) 〜 \(df.string(from: currentPeriodRange.end))"
+    }
+    
+    var body: some View {
+        ZStack {
+            Color(hex: themeBG).ignoresSafeArea()
+            List {
+                Section(header: Text("今期のサマリー (\(rangeText))").foregroundColor(Color(hex: themeSubText))) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("合計支出").font(.caption).foregroundColor(Color(hex: themeSubText))
+                        Text("¥\(monthlyTotal.formattedWithComma)").font(.system(.title, design: .rounded).bold()).foregroundColor(Color(hex: themeBodyText))
+                        
+                        ProgressView(value: min(Double(monthlyTotal), Double(monthlyBudget)), total: Double(monthlyBudget))
+                            .accentColor(monthlyTotal > Int(Double(monthlyBudget) * 0.9) ? Color(hex: themeExpense) : Color(hex: themeMain))
+                        
+                        Text("予算 ¥\(monthlyBudget.formattedWithComma) まであと ¥\(max(0, monthlyBudget - monthlyTotal).formattedWithComma)")
+                            .font(.caption2).foregroundColor(Color(hex: themeSubText))
+                    }.padding(.vertical, 10)
+                }
+                .listRowBackground(Color(hex: themeBG).opacity(0.5))
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+        }
+        .navigationTitle("分析")
+    }
+}
+
 struct RecurringPaymentCreateView: View {
     @Binding var recurringPayments: [RecurringPayment]
     let accounts: [Account]
@@ -851,7 +930,6 @@ struct RecurringPaymentCreateView: View {
                     Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
                         TextField("名前（例：Apple Music）", text: $name).foregroundColor(Color(hex: themeBodyText))
                         
-                        // 【修正】¥マークを数字のすぐ左にピタッとくっつけました
                         HStack {
                             Text("毎月の金額").foregroundColor(Color(hex: themeBodyText))
                             Spacer()
@@ -896,7 +974,6 @@ struct RecurringPaymentCreateView: View {
                             Text("初回").tag(1)
                             Text("最終回").tag(2)
                         }.pickerStyle(.segmented)
-                        
                         if fractionType != 0 {
                             HStack {
                                 Text("調整金額").foregroundColor(Color(hex: themeBodyText))
