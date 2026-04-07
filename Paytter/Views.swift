@@ -367,7 +367,7 @@ struct PasscodeSettingView: View {
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93" // 【追加】
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     
     @Environment(\.dismiss) var dismiss
 
@@ -402,7 +402,7 @@ struct PasscodeSettingView: View {
                         .foregroundColor(Color(hex: themeMain))
                         .disabled(!validate())
                     }
-                    .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
+                    .listRowBackground(Color(hex: themeBG).opacity(0.5))
                 } else {
                     Section(header: Text("パスコード設定").foregroundColor(Color(hex: themeSubText))) {
                         Text("パスコードは設定済みです").foregroundColor(Color(hex: themeBodyText))
@@ -411,7 +411,7 @@ struct PasscodeSettingView: View {
                             lockManager.isUnlocked = true
                         }
                     }
-                    .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
+                    .listRowBackground(Color(hex: themeBG).opacity(0.5))
                     
                     Section(header: Text("ロックの動作").foregroundColor(Color(hex: themeSubText))) {
                         Picker("ロック時の制限", selection: $lockManager.lockBehavior) {
@@ -427,7 +427,7 @@ struct PasscodeSettingView: View {
                         Toggle("ロック時も鍵投稿を残額に反映", isOn: $lockManager.reflectPrivateBalanceWhenLocked)
                             .foregroundColor(Color(hex: themeBodyText))
                     }
-                    .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
+                    .listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }
             }.scrollContentBackground(.hidden)
         }
@@ -534,8 +534,8 @@ struct AccountCreateView: View {
     
     @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
-    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000" // 【追加】
-    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93" // 【追加】
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
     
     @State private var name = ""
@@ -558,7 +558,7 @@ struct AccountCreateView: View {
                         TextField("現在の金額", text: $initial).keyboardType(.numbersAndPunctuation).foregroundColor(Color(hex: themeBodyText))
                         Toggle("ホーム上部に表示", isOn: $isVisible).foregroundColor(Color(hex: themeBodyText))
                     }
-                    .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
+                    .listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden)
             }
             .navigationTitle("新しいお財布")
@@ -798,7 +798,7 @@ struct WalletAnalysisView: View {
     @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"
     @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
     @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
-    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF" // 【追加】
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
     @AppStorage("user_profiles_v1") var profiles: [UserProfile] = []
     @ObservedObject var lockManager = LockManager.shared
     
@@ -819,7 +819,7 @@ struct WalletAnalysisView: View {
     
     var body: some View {
         ZStack {
-            Color(hex: themeBG).ignoresSafeArea() // 【追加】
+            Color(hex: themeBG).ignoresSafeArea()
             List {
                 Section(header: Text("今月のサマリー").foregroundColor(Color(hex: themeSubText))) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -833,11 +833,158 @@ struct WalletAnalysisView: View {
                             .font(.caption2).foregroundColor(Color(hex: themeSubText))
                     }.padding(.vertical, 10)
                 }
-                .listRowBackground(Color(hex: themeBG).opacity(0.5)) // 【追加】
+                .listRowBackground(Color(hex: themeBG).opacity(0.5))
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden) // 【追加】
+            .scrollContentBackground(.hidden)
         }
         .navigationTitle("分析")
+    }
+}
+
+// 【新規】サブスク・ローンを作成する画面
+struct RecurringPaymentCreateView: View {
+    @Binding var recurringPayments: [RecurringPayment]
+    let accounts: [Account]
+    let profiles: [UserProfile]
+    @Environment(\.dismiss) var dismiss
+    
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("isDarkMode") var isDarkMode: Bool = false
+    
+    @State private var name = ""
+    @State private var amountStr = ""
+    @State private var startDate = Date()
+    @State private var hasEndDate = false
+    @State private var endDate = Date()
+    @State private var paymentDay = 1
+    @State private var selectedProfileId: UUID?
+    @State private var selectedSourceName = ""
+    @State private var fractionType = 0
+    @State private var fractionAmountStr = ""
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color(hex: themeBG).ignoresSafeArea()
+                Form {
+                    Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
+                        TextField("名前（例：Apple Music）", text: $name).foregroundColor(Color(hex: themeBodyText))
+                        TextField("毎月の金額", text: $amountStr).keyboardType(.numberPad).foregroundColor(Color(hex: themeBodyText))
+                        
+                        Picker(selection: $selectedSourceName) {
+                            ForEach(accounts, id: \.name) { acc in Text(acc.name).tag(acc.name) }
+                        } label: { Text("お財布").foregroundColor(Color(hex: themeBodyText)) }
+                        
+                        Picker(selection: $selectedProfileId) {
+                            Text("未選択").tag(UUID?(nil))
+                            ForEach(profiles) { prof in Text(prof.name).tag(UUID?(prof.id)) }
+                        } label: { Text("ユーザー").foregroundColor(Color(hex: themeBodyText)) }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
+                    Section(header: Text("スケジュール").foregroundColor(Color(hex: themeSubText))) {
+                        DatePicker("開始月", selection: $startDate, displayedComponents: .date).environment(\.locale, Locale(identifier: "ja_JP"))
+                        Picker("支払日", selection: $paymentDay) {
+                            ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) }
+                        }
+                        Toggle("終了月を設定する", isOn: $hasEndDate).foregroundColor(Color(hex: themeBodyText))
+                        if hasEndDate {
+                            DatePicker("終了月", selection: $endDate, displayedComponents: .date).environment(\.locale, Locale(identifier: "ja_JP"))
+                        }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
+                    Section(header: Text("端数調整").foregroundColor(Color(hex: themeSubText))) {
+                        Picker("調整のタイミング", selection: $fractionType) {
+                            Text("なし").tag(0)
+                            Text("初回").tag(1)
+                            Text("最終回").tag(2)
+                        }.pickerStyle(.segmented)
+                        if fractionType != 0 {
+                            TextField("調整月の金額", text: $fractionAmountStr).keyboardType(.numberPad).foregroundColor(Color(hex: themeBodyText))
+                        }
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                }.scrollContentBackground(.hidden)
+            }
+            .navigationTitle("新規登録")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(leading: Button("キャンセル") { dismiss() }.foregroundColor(Color(hex: themeMain)), trailing: Button("追加") {
+                let rp = RecurringPayment(name: name, amount: Int(amountStr) ?? 0, startDate: startDate, hasEndDate: hasEndDate, endDate: endDate, paymentDay: paymentDay, profileId: selectedProfileId, source: selectedSourceName.isEmpty ? (accounts.first?.name ?? "お財布") : selectedSourceName, isIncome: false, fractionType: fractionType, fractionAmount: Int(fractionAmountStr) ?? 0)
+                recurringPayments.append(rp)
+                dismiss()
+            }.disabled(name.isEmpty || amountStr.isEmpty).foregroundColor(Color(hex: themeMain)).fontWeight(.bold))
+            .preferredColorScheme(isDarkMode ? .dark : .light)
+            .onAppear {
+                if selectedSourceName.isEmpty { selectedSourceName = accounts.first?.name ?? "お財布" }
+            }
+        }
+    }
+}
+
+// 【新規】サブスク・ローンを閲覧・編集する画面（自動計算のプログレスバー付き）
+struct RecurringPaymentEditView: View {
+    @Binding var payment: RecurringPayment
+    @Binding var recurringPayments: [RecurringPayment]
+    let accounts: [Account]
+    let profiles: [UserProfile]
+    
+    @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"
+    @AppStorage("theme_main") var themeMain: String = "#FF007AFF"
+    @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"
+    @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
+    @AppStorage("isDarkMode") var isDarkMode: Bool = false
+    
+    @Environment(\.dismiss) var dismiss
+    @State private var amountStr = ""
+    @State private var fractionAmountStr = ""
+    
+    var body: some View {
+        ZStack {
+            Color(hex: themeBG).ignoresSafeArea()
+            Form {
+                let info = payment.paymentInfo()
+                Section(header: Text("状況").foregroundColor(Color(hex: themeSubText))) {
+                    HStack { Text("支払った金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(info.paid)").foregroundColor(Color(hex: themeBodyText)).bold() }
+                    if payment.hasEndDate {
+                        HStack { Text("残りの金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(info.remaining)").foregroundColor(Color(hex: themeBodyText)).bold() }
+                        HStack { Text("合計金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(info.total)").foregroundColor(Color(hex: themeBodyText)).bold() }
+                        if info.total > 0 {
+                            ProgressView(value: min(Double(info.paid), Double(info.total)), total: Double(info.total)).accentColor(Color(hex: themeMain))
+                        }
+                    } else {
+                        HStack { Text("合計金額").foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("無限").foregroundColor(Color(hex: themeSubText)) }
+                    }
+                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                
+                Section(header: Text("基本情報").foregroundColor(Color(hex: themeSubText))) {
+                    TextField("名前", text: $payment.name).foregroundColor(Color(hex: themeBodyText))
+                    TextField("毎月の金額", text: $amountStr).keyboardType(.numberPad).foregroundColor(Color(hex: themeBodyText)).onChange(of: amountStr) { val in payment.amount = Int(val) ?? 0 }
+                    Picker(selection: $payment.source) { ForEach(accounts, id: \.name) { acc in Text(acc.name).tag(acc.name) } } label: { Text("お財布").foregroundColor(Color(hex: themeBodyText)) }
+                    Picker(selection: $payment.profileId) { Text("未選択").tag(UUID?(nil)); ForEach(profiles) { prof in Text(prof.name).tag(UUID?(prof.id)) } } label: { Text("ユーザー").foregroundColor(Color(hex: themeBodyText)) }
+                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                
+                Section(header: Text("スケジュール").foregroundColor(Color(hex: themeSubText))) {
+                    DatePicker("開始月", selection: $payment.startDate, displayedComponents: .date).environment(\.locale, Locale(identifier: "ja_JP"))
+                    Picker("支払日", selection: $payment.paymentDay) { ForEach(1...31, id: \.self) { day in Text("\(day)日").tag(day) } }
+                    Toggle("終了月を設定する", isOn: $payment.hasEndDate).foregroundColor(Color(hex: themeBodyText))
+                    if payment.hasEndDate {
+                        DatePicker("終了月", selection: $payment.endDate, displayedComponents: .date).environment(\.locale, Locale(identifier: "ja_JP"))
+                    }
+                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                
+                Section(header: Text("端数調整").foregroundColor(Color(hex: themeSubText))) {
+                    Picker("調整のタイミング", selection: $payment.fractionType) { Text("なし").tag(0); Text("初回").tag(1); Text("最終回").tag(2) }.pickerStyle(.segmented)
+                    if payment.fractionType != 0 {
+                        TextField("調整月の金額", text: $fractionAmountStr).keyboardType(.numberPad).foregroundColor(Color(hex: themeBodyText)).onChange(of: fractionAmountStr) { val in payment.fractionAmount = Int(val) ?? 0 }
+                    }
+                }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+            }.scrollContentBackground(.hidden)
+        }
+        .navigationTitle(payment.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .preferredColorScheme(isDarkMode ? .dark : .light)
+        .onAppear { amountStr = String(payment.amount); fractionAmountStr = String(payment.fractionAmount) }
     }
 }
