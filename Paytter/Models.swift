@@ -65,7 +65,6 @@ enum AccountType: String, Codable, CaseIterable {
 
 struct AccountGroup: Identifiable, Codable, Equatable { var id = UUID(); var name: String; var isVisible: Bool = true; var accountIds: [UUID] = [] }
 
-// 【修正】クレジットカード用の設定（限度額や引き落とし記録）を追加
 struct Account: Identifiable, Codable, Equatable { 
     var id = UUID(); 
     var name: String; 
@@ -171,6 +170,9 @@ struct RecurringPayment: Identifiable, Codable, Equatable {
     var postedMonths: [String]?
     var createdAt: Date?
     
+    // 【追加】当月引き落としか、翌月引き落としかを管理
+    var isNextMonth: Bool? 
+    
     func paymentInfo() -> (total: Int, paid: Int, remaining: Int) {
         let cal = Calendar.current
         guard let startNorm = cal.date(from: cal.dateComponents([.year, .month], from: startDate)),
@@ -184,8 +186,14 @@ struct RecurringPayment: Identifiable, Codable, Equatable {
         if hasEndDate { totalM = max(1, (cal.dateComponents([.month], from: startNorm, to: endNorm).month ?? 0) + 1) } else { totalM = 0 }
         
         var paidM = 0
-        if nowNorm >= startNorm {
-            paidM = (cal.dateComponents([.month], from: startNorm, to: nowNorm).month ?? 0)
+        
+        // 【修正】引き落とし開始月を「当月」か「翌月」かに応じてずらす
+        var targetStartComps = cal.dateComponents([.year, .month], from: startNorm)
+        if isNextMonth == true { targetStartComps.month! += 1 }
+        let targetStartNorm = cal.date(from: targetStartComps)!
+        
+        if nowNorm >= targetStartNorm {
+            paidM = (cal.dateComponents([.month], from: targetStartNorm, to: nowNorm).month ?? 0)
             if (nowComps.day ?? 0) >= paymentDay { paidM += 1 }
             if hasEndDate && paidM > totalM { paidM = totalM }
         }
