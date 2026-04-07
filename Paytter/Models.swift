@@ -152,8 +152,6 @@ struct RecurringPayment: Identifiable, Codable, Equatable {
     var fractionType: Int 
     var fractionAmount: Int
     var postedMonths: [String]?
-    
-    // 【新規】このサブスクが「いつアプリに登録されたか」を記憶（過去分の自動投稿を防ぐため）
     var createdAt: Date?
     
     func paymentInfo() -> (total: Int, paid: Int, remaining: Int) {
@@ -197,4 +195,13 @@ struct RecurringPayment: Identifiable, Codable, Equatable {
 extension Array: RawRepresentable where Element: Codable {
     public init?(rawValue: String) { guard let data = rawValue.data(using: .utf8), let result = try? JSONDecoder().decode([Element].self, from: data) else { return nil }; self = result }
     public var rawValue: String { guard let data = try? JSONEncoder().encode(self), let result = String(data: data, encoding: .utf8) else { return "[]" }; return result }
+}
+
+// 【新規】数字にカンマを付与する拡張機能
+extension Int {
+    var formattedWithComma: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: self)) ?? "\(self)"
+    }
 }
