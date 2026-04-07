@@ -40,10 +40,18 @@ struct ContentView: View {
     @AppStorage("accounts_v2") var accounts: [Account] = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]
     @AppStorage("account_groups") var groups: [AccountGroup] = []; @AppStorage("user_profiles_v1") var profiles: [UserProfile] = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]
     
+    // 【新規】サブスク・ローンの保存用データ
+    @AppStorage("recurring_payments_v1") var recurringPayments: [RecurringPayment] = []
+    
     @AppStorage("monthlyBudget") var monthlyBudget: Int = 50000; @AppStorage("isDarkMode") var isDarkMode: Bool = false; @AppStorage("theme_main") var themeMain: String = "#FF007AFF"; @AppStorage("theme_income") var themeIncome: String = "#FF19B219"; @AppStorage("theme_expense") var themeExpense: String = "#FFFF3B30"; @AppStorage("theme_holiday") var themeHoliday: String = "#FFFF3B30"; @AppStorage("theme_saturday") var themeSaturday: String = "#FF007AFF"; @AppStorage("theme_bg") var themeBG: String = "#FFFFFFFF"; @AppStorage("theme_barBG") var themeBarBG: String = "#F8F8F8FF"; @AppStorage("theme_barText") var themeBarText: String = "#FF000000"; @AppStorage("theme_tabAccent") var themeTabAccent: String = "#FF007AFF"; @AppStorage("theme_bodyText") var themeBodyText: String = "#FF000000"; @AppStorage("theme_subText") var themeSubText: String = "#FF8E8E93"
     @AppStorage("show_total_assets") var showTotalAssets: Bool = true; @AppStorage("home_display_order") var homeDisplayOrder: [String] = []
 
     @State private var selection = 0; @State private var isShowingInputSheet = false; @State private var inputText: String = ""; @State private var isShowingSwipeDeleteAlert = false; @State private var transactionToDelete: Transaction?; @State private var isShowingAccountCreator = false; @State private var isShowingGroupCreator = false; @State private var isShowingAccountDeleteAlert = false; @State private var isShowingGroupDeleteAlert = false; @State private var accountToDelete: Account?; @State private var groupToDelete: AccountGroup?
+    
+    // 【新規】サブスク・ローン用の状態変数
+    @State private var isShowingRPCreator = false
+    @State private var isShowingRPDeleteAlert = false
+    @State private var rpToDelete: RecurringPayment?
     
     @State private var isHomeEditMode = false; @State private var homeItems: [DisplayHomeItem] = []; @State private var cachedVisibleTransactions: [Transaction] = []
     @State private var activeAlert: ActiveAlert?; @State private var isRestoringManual = false; @State private var isShowingImporter = false; @State private var pendingImportData: FullBackupData?
@@ -78,11 +86,10 @@ struct ContentView: View {
             }
             .accentColor(Color(hex: themeTabAccent))
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToHomeTab"))) { _ in self.selection = 0 }
-            // 【重要】タグがタップされたら検索タブに飛ぶ処理
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SearchTag"))) { notification in
                 if let tag = notification.object as? String {
-                    self.selection = 1 // 検索タブに切り替え
-                    self.searchText = tag // 検索バーにタグを入力
+                    self.selection = 1
+                    self.searchText = tag
                 }
             }
             
@@ -201,10 +208,47 @@ struct ContentView: View {
                 Color(hex: themeBG).ignoresSafeArea()
                 List { 
                     Section(header: Text("お財布の管理").foregroundColor(Color(hex: themeSubText))) { ForEach(accounts) { acc in NavigationLink(destination: AccountEditView(account: binding(for: acc), transactions: $transactions, allAccounts: accounts)) { HStack { Image(systemName: acc.type.icon).foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(acc.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); Text("¥\(acc.balance)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { accountToDelete = acc; isShowingAccountDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingAccountCreator = true }) { Label("新しいお財布を追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
+                    // 【新規】サブスク・ローンの管理セクション
+                    Section(header: Text("サブスク・ローンの管理").foregroundColor(Color(hex: themeSubText))) {
+                        ForEach(recurringPayments) { rp in
+                            NavigationLink(destination: RecurringPaymentEditView(payment: binding(forRP: rp), recurringPayments: $recurringPayments, accounts: accounts, profiles: profiles)) {
+                                HStack {
+                                    Image(systemName: "repeat.circle").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                    Text(rp.name).foregroundColor(Color(hex: themeBodyText))
+                                    Spacer()
+                                    Text("¥\(rp.amount)/月").foregroundColor(Color(hex: themeBodyText).opacity(0.6))
+                                }
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    rpToDelete = rp
+                                    isShowingRPDeleteAlert = true
+                                } label: { Text("削除") }
+                            }
+                        }
+                        Button(action: { isShowingRPCreator = true }) {
+                            Label("新しいサブスク・ローンを追加", systemImage: "plus.circle")
+                        }.foregroundColor(Color(hex: themeMain))
+                    }.listRowBackground(Color(hex: themeBG).opacity(0.5))
+                    
                     Section(header: Text("グループ設定").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: TotalAssetEditView(isVisible: $showTotalAssets)) { HStack { Image(systemName: "sum").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text("総資産").foregroundColor(Color(hex: themeBodyText)); Spacer(); let totalB = accounts.reduce(0) { $0 + $1.balance }; Text("¥\(totalB)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }; ForEach(groups) { group in NavigationLink(destination: AccountGroupEditView(group: binding(for: group), accounts: $accounts)) { HStack { Image(systemName: "folder").foregroundColor(Color(hex: themeBodyText).opacity(0.6)); Text(group.name).foregroundColor(Color(hex: themeBodyText)); Spacer(); let groupTotal = accounts.filter { group.accountIds.contains($0.id) }.reduce(0) { $0 + $1.balance }; Text("¥\(groupTotal)").foregroundColor(Color(hex: themeBodyText).opacity(0.6)) } }.swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { groupToDelete = group; isShowingGroupDeleteAlert = true } label: { Text("削除") } } }; Button(action: { isShowingGroupCreator = true }) { Label("新しいグループを追加", systemImage: "plus.circle") }.foregroundColor(Color(hex: themeMain)) }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                     Section(header: Text("分析").foregroundColor(Color(hex: themeSubText))) { NavigationLink(destination: WalletAnalysisView(transactions: transactions)) { Label("今月の収支分析", systemImage: "chart.bar.xaxis").foregroundColor(Color(hex: themeBodyText)) } }.listRowBackground(Color(hex: themeBG).opacity(0.5))
                 }.scrollContentBackground(.hidden).listStyle(.insetGrouped) 
-            }.navigationTitle("お財布").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }.toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar).sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }.sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }.alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel) { accountToDelete = nil }; Button("削除", role: .destructive) { if let acc = accountToDelete { for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == acc.id }) }; accounts.removeAll(where: { $0.id == acc.id }); recalculateBalances() }; accountToDelete = nil } }.alert("グループの削除", isPresented: $isShowingGroupDeleteAlert) { Button("キャンセル", role: .cancel) { groupToDelete = nil }; Button("削除", role: .destructive) { if let grp = groupToDelete { groups.removeAll(where: { $0.id == grp.id }) }; groupToDelete = nil } }
+            }.navigationTitle("お財布").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .navigationBarLeading) { if !lockManager.passcode.isEmpty { Button(action: { if lockManager.isUnlocked { lockManager.lock() } else { lockManager.promptUnlock() } }) { Image(systemName: lockManager.isUnlocked ? "lock.open.fill" : "lock.fill").foregroundColor(Color(hex: themeMain)) } } } }.toolbarBackground(Color(hex: themeBarBG), for: .navigationBar, .tabBar).toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .sheet(isPresented: $isShowingAccountCreator) { AccountCreateView(accounts: $accounts, transactions: $transactions) }
+            .sheet(isPresented: $isShowingGroupCreator) { AccountGroupCreateView(groups: $groups, accounts: $accounts) }
+            .sheet(isPresented: $isShowingRPCreator) { RecurringPaymentCreateView(recurringPayments: $recurringPayments, accounts: accounts, profiles: profiles) } // 【新規】
+            .alert("お財布の削除", isPresented: $isShowingAccountDeleteAlert) { Button("キャンセル", role: .cancel) { accountToDelete = nil }; Button("削除", role: .destructive) { if let acc = accountToDelete { for i in 0..<groups.count { groups[i].accountIds.removeAll(where: { $0 == acc.id }) }; accounts.removeAll(where: { $0.id == acc.id }); recalculateBalances() }; accountToDelete = nil } }
+            .alert("グループの削除", isPresented: $isShowingGroupDeleteAlert) { Button("キャンセル", role: .cancel) { groupToDelete = nil }; Button("削除", role: .destructive) { if let grp = groupToDelete { groups.removeAll(where: { $0.id == grp.id }) }; groupToDelete = nil } }
+            // 【新規】サブスク・ローンの削除アラート
+            .alert("サブスク・ローンの削除", isPresented: $isShowingRPDeleteAlert) {
+                Button("キャンセル", role: .cancel) { rpToDelete = nil }
+                Button("削除", role: .destructive) {
+                    if let rp = rpToDelete { recurringPayments.removeAll(where: { $0.id == rp.id }) }
+                    rpToDelete = nil
+                }
+            }
         } 
     }
 
@@ -225,6 +269,8 @@ struct ContentView: View {
 
     private func binding(for account: Account) -> Binding<Account> { Binding( get: { self.accounts.first(where: { $0.id == account.id }) ?? account }, set: { if let i = self.accounts.firstIndex(where: { $0.id == account.id }) { self.accounts[i] = $0 } } ) }
     private func binding(for group: AccountGroup) -> Binding<AccountGroup> { Binding( get: { self.groups.first(where: { $0.id == group.id }) ?? group }, set: { if let i = self.groups.firstIndex(where: { $0.id == group.id }) { self.groups[i] = $0 } } ) }
+    // 【新規】サブスク・ローン用のBinding
+    private func binding(forRP rp: RecurringPayment) -> Binding<RecurringPayment> { Binding( get: { self.recurringPayments.first(where: { $0.id == rp.id }) ?? rp }, set: { if let i = self.recurringPayments.firstIndex(where: { $0.id == rp.id }) { self.recurringPayments[i] = $0 } } ) }
 
     func handlePostTransaction(isInc: Bool, date: Date, isExc: Bool, profileId: UUID?, medias: [AttachedMediaItem]?, files: [AttachedFile]?) {
         transactions.append(Transaction(amount: parseAmount(from: inputText), date: date, note: inputText, source: parseSourceName(from: inputText), isIncome: isInc, isExcludedFromBalance: isExc, profileId: profileId, attachedMediaItems: medias, attachedFiles: files))
@@ -232,9 +278,9 @@ struct ContentView: View {
 
     func syncHomeItems() { var items: [DisplayHomeItem] = []; if showTotalAssets { let totalB = accounts.reduce(0) { $0 + $1.balance }; let totalD = accounts.reduce(0) { $0 + $1.diffAmount }; items.append(DisplayHomeItem(id: "TOTAL_ASSETS", title: "総資産", amount: totalB, diffAmount: totalD)) }; for acc in accounts where acc.isVisible { items.append(DisplayHomeItem(id: "ACCOUNT_\(acc.id.uuidString)", title: acc.name, amount: acc.balance, diffAmount: acc.diffAmount)) }; for g in groups where g.isVisible { let accs = accounts.filter { g.accountIds.contains($0.id) }; let b = accs.reduce(0) { $0 + $1.balance }; let d = accs.reduce(0) { $0 + $1.diffAmount }; items.append(DisplayHomeItem(id: "GROUP_\(g.id.uuidString)", title: g.name, amount: b, diffAmount: d)) }; items.sort { i1, i2 in let idx1 = homeDisplayOrder.firstIndex(of: i1.id) ?? Int.max; let idx2 = homeDisplayOrder.firstIndex(of: i2.id) ?? Int.max; return idx1 < idx2 }; self.homeItems = items }
     func createFullBackupData() -> FullBackupData { return FullBackupData( transactions: transactions, accounts: accounts, groups: groups, profiles: profiles, monthlyBudget: monthlyBudget, isDarkMode: isDarkMode, themeMain: themeMain, themeIncome: themeIncome, themeExpense: themeExpense, themeHoliday: themeHoliday, themeSaturday: themeSaturday, themeBG: themeBG, themeBarBG: themeBarBG, themeBarText: themeBarText, themeTabAccent: themeTabAccent, themeBodyText: themeBodyText, themeSubText: themeSubText, showTotalAssets: showTotalAssets, homeDisplayOrder: homeDisplayOrder, backupDate: BackupManager.currentDateString() ) }
-    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = backup.showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance(); updateVisibleTransactions() }
+    func applyFullBackup(_ backup: FullBackupData) { transactions = backup.transactions; accounts = backup.accounts; groups = backup.groups; profiles = backup.profiles; monthlyBudget = backup.monthlyBudget; isDarkMode = backup.isDarkMode; themeMain = backup.themeMain; themeIncome = backup.themeIncome; themeExpense = backup.themeExpense; themeHoliday = backup.themeHoliday; themeSaturday = backup.themeSaturday; themeBG = backup.themeBG; themeBarBG = backup.themeBarBG; themeBarText = backup.themeBarText; themeTabAccent = backup.themeTabAccent; themeBodyText = backup.themeBodyText; themeSubText = backup.themeSubText; showTotalAssets = backup.showTotalAssets; homeDisplayOrder = backup.homeDisplayOrder; recalculateBalances(); updateAppearance(); updateVisibleTransactions() }
     func handleImport(from url: URL) { guard let data = try? Data(contentsOf: url) else { return }; if let fd = try? JSONDecoder().decode(FullBackupData.self, from: data) { self.pendingImportData = fd; self.activeAlert = .importConfirm } else if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let txStr = json["transactions"] as? String, let accStr = json["accounts"] as? String, let dec = try? JSONDecoder().decode([Transaction].self, from: txStr.data(using: .utf8)!), let aDec = try? JSONDecoder().decode([Account].self, from: accStr.data(using: .utf8)!) { let fd = createFullBackupData(); self.pendingImportData = FullBackupData( transactions: dec, accounts: aDec, groups: fd.groups, profiles: fd.profiles, monthlyBudget: fd.monthlyBudget, isDarkMode: fd.isDarkMode, themeMain: fd.themeMain, themeIncome: fd.themeIncome, themeExpense: fd.themeExpense, themeHoliday: fd.themeHoliday, themeSaturday: fd.themeSaturday, themeBG: fd.themeBG, themeBarBG: fd.themeBarBG, themeBarText: fd.themeBarText, themeTabAccent: fd.themeTabAccent, themeBodyText: fd.themeBodyText, themeSubText: fd.themeSubText, showTotalAssets: fd.showTotalAssets, homeDisplayOrder: fd.homeDisplayOrder, backupDate: "以前の形式" ); self.activeAlert = .importConfirm } }
-    func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("リセット完了") }
+    func resetAll() { transactions = []; accounts = [ Account(name: "お財布", balance: 0, type: .wallet), Account(name: "口座", balance: 0, type: .bank), Account(name: "ポイント", balance: 0, type: .point) ]; groups = []; monthlyBudget = 50000; profiles = [UserProfile(name: "むつき", userId: "Mutsuki_dev")]; recurringPayments = []; recalculateBalances(); updateVisibleTransactions(); activeAlert = .completion("リセット完了") } // 【修正】サブスクデータもリセット
     
     func recalculateBalances(saveBackup: Bool = true) { let currentAccounts = accounts; let currentTransactions = transactions; let currentProfiles = profiles; let isUn = lockManager.isUnlocked; let reflectPriv = lockManager.reflectPrivateBalanceWhenLocked; DispatchQueue.global(qos: .userInitiated).async { var tempAccounts = currentAccounts; for i in 0..<tempAccounts.count { var cur = 0; for tx in currentTransactions where tx.source == tempAccounts[i].name { if tx.isExcludedFromBalance == true { continue }; let profile = currentProfiles.first(where: { $0.id == tx.profileId }) ?? currentProfiles.first; let isPrivate = profile?.isPrivate ?? false; let isDeleted = profile?.isDeleted ?? false; if isDeleted { cur += (tx.isIncome ? tx.amount : -tx.amount); continue }; if isPrivate && !isUn && !reflectPriv { continue }; cur += (tx.isIncome ? tx.amount : -tx.amount) }; tempAccounts[i].diffAmount = cur - tempAccounts[i].balance; tempAccounts[i].balance = cur }; DispatchQueue.main.async { self.accounts = tempAccounts; if saveBackup { let backupData = self.createFullBackupData(); DispatchQueue.global(qos: .background).async { BackupManager.saveFullBackup(data: backupData, isManual: false) } } } } }
     func parseAmount(from text: String) -> Int { text.components(separatedBy: .whitespacesAndNewlines).filter { $0.contains("¥") }.reduce(0) { $0 + (Int($1.replacingOccurrences(of: "¥", with: "")) ?? 0) } }
